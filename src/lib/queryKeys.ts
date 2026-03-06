@@ -1,0 +1,15 @@
+export const queryKeys = {
+  me: ['me'] as const,
+  analytics: ['analytics'] as const,
+  contacts: ['contacts'] as const,
+  residentProfile: (slug: string) => ['resident-profile', slug] as const,
+  directory: (query: string, page: number) => ['directory', query, page] as const,
+  leaderboard: ['leaderboard'] as const,
+  nfcHistory: ['nfc-history'] as const,
+  nfcTags: ['nfc-tags'] as const,
+  wristband: ['wristband'] as const,
+  notifications: ['notifications'] as const,
+  order: (id: string) => ['order', id] as const,
+  homeSummary: ['home-summary'] as const,
+  homeRecent: ['home-recent'] as const,
+} as const;

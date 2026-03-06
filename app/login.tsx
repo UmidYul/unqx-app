@@ -1,0 +1,292 @@
+import React from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Redirect } from 'expo-router';
+
+import { AuthLoadingScreen } from '@/components/AuthLoadingScreen';
+import { MESSAGES } from '@/constants/messages';
+import { useAuthStatus } from '@/hooks/useAuthStatus';
+import { useBiometrics } from '@/hooks/useBiometrics';
+import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
+import { AuthSessionError, loginWithApi } from '@/services/authSession';
+import { validateEmail } from '@/services/authValidation';
+import { useThemeContext } from '@/theme/ThemeProvider';
+
+export default function LoginPage(): React.JSX.Element {
+  const { safePush, safeReplace } = useThrottledNavigation();
+  const { tokens } = useThemeContext();
+  const { ready, signedIn } = useAuthStatus();
+
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [verificationEmail, setVerificationEmail] = React.useState<string>('');
+  const {
+    isAvailable: isBiometricsAvailable,
+    isEnrolled: isBiometricsEnrolled,
+    authenticate: authenticateBiometrics,
+    getBiometricType,
+    getBiometricsAsked,
+    setBiometricsAsked,
+    setBiometricsEnabled,
+  } = useBiometrics();
+
+  const maybeOfferBiometrics = React.useCallback(async (): Promise<void> => {
+    const asked = await getBiometricsAsked();
+    if (asked) return;
+
+    const [available, enrolled, type] = await Promise.all([
+      isBiometricsAvailable(),
+      isBiometricsEnrolled(),
+      getBiometricType(),
+    ]);
+    if (!available || !enrolled) {
+      await setBiometricsAsked(true);
+      await setBiometricsEnabled(false);
+      return;
+    }
+
+    const biometricTypeLabel = type ?? 'Face ID / отпечаток';
+    await new Promise<void>((resolve) => {
+      Alert.alert(
+        'Включить биометрию?',
+        `Хотите входить через ${biometricTypeLabel} в следующий раз?`,
+        [
+          {
+            text: 'Не сейчас',
+            style: 'cancel',
+            onPress: () => {
+              void (async () => {
+                await setBiometricsEnabled(false);
+                await setBiometricsAsked(true);
+                resolve();
+              })();
+            },
+          },
+          {
+            text: 'Включить',
+            onPress: () => {
+              void (async () => {
+                const success = await authenticateBiometrics('Подтвердите включение биометрии');
+                await setBiometricsEnabled(success);
+                await setBiometricsAsked(true);
+                resolve();
+              })();
+            },
+          },
+        ],
+        { cancelable: false },
+      );
+    });
+  }, [
+    authenticateBiometrics,
+    getBiometricType,
+    getBiometricsAsked,
+    isBiometricsAvailable,
+    isBiometricsEnrolled,
+    setBiometricsAsked,
+    setBiometricsEnabled,
+  ]);
+
+  const submit = React.useCallback(async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailError = validateEmail(normalizedEmail);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+    if (!password) {
+      setError(MESSAGES.validation.passwordRequired);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setVerificationEmail('');
+    try {
+      const result = await loginWithApi(normalizedEmail, password);
+      if (result.requiresVerification) {
+        setError(result.message ?? MESSAGES.auth.unverifiedEmail);
+        setVerificationEmail(normalizedEmail);
+        return;
+      }
+      await maybeOfferBiometrics();
+      safeReplace('/(tabs)/home');
+    } catch (e) {
+      if (e instanceof AuthSessionError) {
+        setError(e.message);
+        return;
+      }
+      setError(e instanceof Error ? e.message : MESSAGES.auth.loginError);
+    } finally {
+      setLoading(false);
+    }
+  }, [email, maybeOfferBiometrics, password, safeReplace]);
+
+  if (!ready) {
+    return <AuthLoadingScreen tokens={tokens} title='Проверка сессии...' />;
+  }
+
+  if (signedIn) {
+    return <Redirect href='/(tabs)/home' />;
+  }
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={[styles.container, { backgroundColor: tokens.bg }]}
+    >
+      <View style={styles.body}>
+        <Text style={[styles.kicker, { color: tokens.textMuted }]}>UNQX</Text>
+        <Text style={[styles.title, { color: tokens.text }]}>{MESSAGES.ui.auth.loginTitle}</Text>
+        <Text style={[styles.subtitle, { color: tokens.textSub }]}>{MESSAGES.ui.auth.loginSubtitle}</Text>
+
+        <View style={styles.form}>
+          <TextInput
+            value={email}
+            onChangeText={setEmail}
+            placeholder='Email'
+            placeholderTextColor={tokens.textMuted}
+            autoCapitalize='none'
+            keyboardType='email-address'
+            autoCorrect={false}
+            style={[
+              styles.input,
+              { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text },
+            ]}
+          />
+
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            placeholder='Пароль'
+            placeholderTextColor={tokens.textMuted}
+            secureTextEntry
+            style={[
+              styles.input,
+              { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text },
+            ]}
+          />
+
+          {error ? <Text style={[styles.error, { color: tokens.red }]}>{error}</Text> : null}
+
+          <Pressable
+            onPress={() => void submit()}
+            disabled={loading}
+            style={[
+              styles.submit,
+              { backgroundColor: tokens.accent, opacity: loading ? 0.5 : 1 },
+            ]}
+          >
+            {loading ? (
+              <ActivityIndicator color={tokens.accentText} />
+            ) : (
+              <Text style={[styles.submitText, { color: tokens.accentText }]}>Войти</Text>
+            )}
+          </Pressable>
+
+          {verificationEmail ? (
+            <Pressable style={[styles.secondary, { borderColor: tokens.border }]} onPress={() => safePush(`/verify-email?email=${encodeURIComponent(verificationEmail)}`)}>
+              <Text style={[styles.secondaryText, { color: tokens.text }]}>Подтвердить email</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: tokens.textMuted }]}>Нет аккаунта?</Text>
+          <Pressable onPress={() => safePush('/register')}>
+            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.registerTitle}</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: tokens.textMuted }]}>Забыли пароль?</Text>
+          <Pressable onPress={() => safePush('/forgot-password')}>
+            <Text style={[styles.footerLink, { color: tokens.text }]}>Сбросить</Text>
+          </Pressable>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  body: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  kicker: {
+    fontSize: 11,
+    letterSpacing: 2.4,
+    textTransform: 'uppercase',
+    fontFamily: 'Inter_500Medium',
+  },
+  title: {
+    marginTop: 10,
+    fontSize: 40,
+    lineHeight: 40,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  subtitle: {
+    marginTop: 8,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  form: {
+    marginTop: 26,
+    gap: 10,
+  },
+  input: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+  },
+  error: {
+    marginTop: 4,
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+  },
+  submit: {
+    marginTop: 4,
+    minHeight: 50,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  secondary: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryText: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+  },
+  footer: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  footerText: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  footerLink: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+});
