@@ -55,6 +55,12 @@ export const AUTO_THEME_HOURS = {
   darkEnd: 8,
 };
 
+export const UZBEKISTAN_UTC_OFFSET_HOURS = 5;
+
+export function getUzbekistanHour(date: Date = new Date()): number {
+  return (date.getUTCHours() + UZBEKISTAN_UTC_OFFSET_HOURS) % 24;
+}
+
 export function resolveThemeByHour(hour: number): ThemeMode {
   if (hour >= AUTO_THEME_HOURS.darkStart || hour < AUTO_THEME_HOURS.darkEnd) {
     return 'dark';

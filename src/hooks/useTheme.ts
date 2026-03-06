@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { ThemeMode } from '@/types';
-import { DARK_TOKENS, LIGHT_TOKENS, resolveThemeByHour } from '@/theme/tokens';
+import { DARK_TOKENS, LIGHT_TOKENS, getUzbekistanHour, resolveThemeByHour } from '@/theme/tokens';
 
 const THEME_KEY = 'unqx.theme.mode';
 const AUTO_THEME_KEY = 'unqx.theme.auto';
@@ -50,7 +50,7 @@ export function useTheme(): UseThemeResult {
       setAutoThemeState(isAutoEnabled);
 
       if (isAutoEnabled) {
-        setThemeState(resolveThemeByHour(new Date().getHours()));
+        setThemeState(resolveThemeByHour(getUzbekistanHour()));
         return;
       }
 
@@ -72,7 +72,7 @@ export function useTheme(): UseThemeResult {
     }
 
     const applyAutoTheme = (): void => {
-      setThemeState(resolveThemeByHour(new Date().getHours()));
+      setThemeState(resolveThemeByHour(getUzbekistanHour()));
     };
 
     applyAutoTheme();
@@ -94,7 +94,7 @@ export function useTheme(): UseThemeResult {
     void saveStoredValue(AUTO_THEME_KEY, enabled ? '1' : '0');
 
     if (enabled) {
-      const autoMode = resolveThemeByHour(new Date().getHours());
+      const autoMode = resolveThemeByHour(getUzbekistanHour());
       setThemeState(autoMode);
       void saveStoredValue(THEME_KEY, autoMode);
     }

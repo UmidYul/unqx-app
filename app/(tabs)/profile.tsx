@@ -22,6 +22,7 @@ import { MESSAGES } from '@/constants/messages';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useStoreReview } from '@/hooks/useStoreReview';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { resolveAssetUrl } from '@/lib/assetUrl';
 import { nfcApi, apiClient } from '@/lib/apiClient';
 import { queryKeys } from '@/lib/queryKeys';
@@ -36,6 +37,7 @@ import {
 import { signOut } from '@/services/authSession';
 import { NFCHistoryItem, ProfileCard, ThemeTokens, WristbandOrder, WristbandStatus } from '@/types';
 import { useThemeContext } from '@/theme/ThemeProvider';
+import { getUzbekistanHour, resolveThemeByHour } from '@/theme/tokens';
 import { formatSlug } from '@/utils/avatar';
 import { toast } from '@/utils/toast';
 
@@ -90,10 +92,10 @@ function parseProfileCard(raw: unknown): ProfileCard {
     theme: normalizeCardTheme(card?.theme),
     buttons: Array.isArray(card?.buttons)
       ? card.buttons.map((item: any) => ({
-          icon: String(item?.icon ?? item?.type ?? 'phone'),
-          label: String(item?.label ?? item?.type ?? ''),
-          url: String(item?.url ?? item?.value ?? item?.href ?? ''),
-        }))
+        icon: String(item?.icon ?? item?.type ?? 'phone'),
+        label: String(item?.label ?? item?.type ?? ''),
+        url: String(item?.url ?? item?.value ?? item?.href ?? ''),
+      }))
       : DEFAULT_CARD.buttons,
   };
 }
@@ -160,7 +162,7 @@ function Toggle({ value, onPress, tokens }: { value: boolean; onPress: () => voi
   }));
 
   return (
-    <Pressable onPress={onPress} style={[styles.toggleTrack, { backgroundColor: value ? tokens.accent : tokens.surface, borderColor: tokens.border }]}> 
+    <Pressable onPress={onPress} style={[styles.toggleTrack, { backgroundColor: value ? tokens.accent : tokens.surface, borderColor: tokens.border }]}>
       <Animated.View style={[styles.toggleKnob, { backgroundColor: value ? tokens.accentText : tokens.textMuted }, knobStyle]} />
     </Pressable>
   );
@@ -173,6 +175,7 @@ export default function ProfilePage(): React.JSX.Element {
   const { isOnline } = useNetworkStatus({ invalidateOnReconnect: false });
   const { incrementSuccess, maybeAskReview } = useStoreReview();
   const { tokens, theme, autoTheme, setTheme, setAutoTheme } = useThemeContext();
+  const { language, toggleLanguage } = useLanguageContext();
 
   const [error, setError] = React.useState<string | null>(null);
   const [editorVisible, setEditorVisible] = React.useState(false);
@@ -448,12 +451,73 @@ export default function ProfilePage(): React.JSX.Element {
     return history.filter((item) => (item.uid ? uids.has(item.uid) : true));
   }, [history, tags]);
 
-  const currentHour = new Date().getHours();
+  const currentHour = getUzbekistanHour();
+  const autoModeByHour = resolveThemeByHour(currentHour);
+  const isUz = language === 'uz';
+  const profileText = isUz
+    ? {
+      premium: 'Premium',
+      nfcActive: '● NFC faol',
+      qrTitle: 'QR-kod',
+      qrSub: "Yuklab olish yoki ko'rsatish",
+      shareTitle: 'Ulashish',
+      shareSub: 'WhatsApp, Telegram...',
+      editCard: 'Vizitkani tahrirlash',
+      editCardSub: "Ism, havolalar, mavzu, tugmalar",
+      wristband: 'Bilaguzuk va teglar',
+      wristbandSub: 'Holat, tarix, buyurtma',
+      settings: 'Sozlamalar',
+      theme: 'Mavzu',
+      autoTheme: 'Avto-mavzu (vaqt bo\'yicha)',
+      autoThemeHours: 'Qorong\'i 20:00-08:00 (UZT)',
+      notifications: 'Bildirishnomalar',
+      notificationsSub: 'Taplar va faollik',
+      biometricEntry: 'Kirish',
+      biometricSubOn: 'Ilovani tezkor ochish',
+      biometricSubOff: 'Ushbu qurilmada mavjud emas',
+      language: 'Til',
+      languageValue: "O'zbekcha",
+      support: "Qo'llab-quvvatlash",
+      about: 'Ilova haqida',
+      logout: 'Akkauntdan chiqish',
+      autoLight: "Yorug'",
+      autoDark: "Qorong'i",
+      autoPrefix: 'Avto',
+    }
+    : {
+      premium: 'Премиум',
+      nfcActive: '● NFC активен',
+      qrTitle: 'QR-код',
+      qrSub: 'Скачать или показать',
+      shareTitle: 'Поделиться',
+      shareSub: 'WhatsApp, Telegram...',
+      editCard: 'Редактировать визитку',
+      editCardSub: 'Имя, ссылки, тема, кнопки',
+      wristband: 'Браслет и метки',
+      wristbandSub: 'Статус, история, заказ',
+      settings: 'Настройки',
+      theme: 'Тема',
+      autoTheme: 'Авто-тема (по времени)',
+      autoThemeHours: 'Тёмная 20:00-08:00 (UZT)',
+      notifications: 'Уведомления',
+      notificationsSub: 'Тапы и активность',
+      biometricEntry: 'Вход',
+      biometricSubOn: 'Быстрая разблокировка приложения',
+      biometricSubOff: 'Недоступно на этом устройстве',
+      language: 'Язык',
+      languageValue: 'Русский',
+      support: 'Поддержка',
+      about: 'О приложении',
+      logout: 'Выйти из аккаунта',
+      autoLight: 'Светлая',
+      autoDark: 'Тёмная',
+      autoPrefix: 'Авто',
+    };
   const autoLabel = autoTheme
-    ? `Авто (${currentHour >= 20 || currentHour < 8 ? 'Тёмная' : 'Светлая'} · ${currentHour}:00)`
+    ? `${profileText.autoPrefix} (${autoModeByHour === 'dark' ? profileText.autoDark : profileText.autoLight} · ${String(currentHour).padStart(2, '0')}:00 UZT)`
     : theme === 'light'
-      ? 'Светлая'
-      : 'Тёмная';
+      ? profileText.autoLight
+      : profileText.autoDark;
 
   if (loading && !card) {
     return (
@@ -505,162 +569,168 @@ export default function ProfilePage(): React.JSX.Element {
   return (
     <ErrorBoundary>
       <AppShell title={MESSAGES.ui.screens.profile} tokens={tokens}>
-      <ScreenTransition>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void onRefresh()} tintColor={tokens.accent} colors={[tokens.accent]} />}
-      >
-        {loading ? <SkeletonBlock tokens={tokens} height={8} width={96} radius={5} /> : null}
-        {error ? <Text style={[styles.error, { color: tokens.red }]}>{error}</Text> : null}
-
-        <View style={[styles.avatarCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}> 
-          {card.avatarUrl ? (
-            <Image source={{ uri: card.avatarUrl }} style={styles.avatarImage} />
-          ) : (
-            <View style={[styles.avatar, { backgroundColor: tokens.inputBg, borderColor: tokens.border, borderWidth: 1 }]}>
-              <Text style={[styles.avatarText, { color: tokens.text }]}>{card.name[0] ?? 'U'}</Text>
-            </View>
-          )}
-          <View style={styles.avatarBody}>
-            <Text style={[styles.name, { color: tokens.text }]}>{card.name}</Text>
-            <Text style={[styles.slug, { color: tokens.textMuted }]}>
-              unqx.uz/<Text style={styles.slugStrong}>{formatSlug(card.slug)}</Text>
-            </Text>
-            <View style={styles.heroPills}>
-              <Pill color={tokens.amber} bg={tokens.amberBg}>Премиум</Pill>
-              <Pill color={tokens.green} bg={tokens.greenBg}>● NFC активен</Pill>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.shareGrid}>
-          <AnimatedPressable
-            containerStyle={styles.shareHalf}
-            style={[styles.shareCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
-            onPress={() => setQrVisible(true)}
+        <ScreenTransition>
+          <ScrollView
+            contentContainerStyle={styles.content}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void onRefresh()} tintColor={tokens.accent} colors={[tokens.accent]} />}
           >
-            <QrCode size={22} strokeWidth={1.5} color={tokens.text} />
-            <Text style={[styles.shareTitle, { color: tokens.text }]}>QR-код</Text>
-            <Text style={[styles.shareSub, { color: tokens.textMuted }]}>Скачать или показать</Text>
-          </AnimatedPressable>
-          <AnimatedPressable
-            containerStyle={styles.shareHalf}
-            style={[styles.shareCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
-            onPress={() => setShareVisible(true)}
-          >
-            <Share2 size={22} strokeWidth={1.5} color={tokens.text} />
-            <Text style={[styles.shareTitle, { color: tokens.text }]}>Поделиться</Text>
-            <Text style={[styles.shareSub, { color: tokens.textMuted }]}>WhatsApp, Telegram...</Text>
-          </AnimatedPressable>
-        </View>
+            {loading ? <SkeletonBlock tokens={tokens} height={8} width={96} radius={5} /> : null}
+            {error ? <Text style={[styles.error, { color: tokens.red }]}>{error}</Text> : null}
 
-        {[
-          { label: 'Редактировать визитку', sub: 'Имя, ссылки, тема, кнопки', onPress: () => setEditorVisible(true) },
-          { label: 'Браслет и метки', sub: 'Статус, история, заказ', onPress: () => setWristbandVisible(true) },
-        ].map((item) => (
-          <AnimatedPressable key={item.label} onPress={item.onPress} style={[styles.actionRow, { backgroundColor: tokens.surface, borderColor: tokens.border }]}> 
-            <View style={styles.actionBody}>
-              <Text style={[styles.actionTitle, { color: tokens.text }]}>{item.label}</Text>
-              <Text style={[styles.actionSub, { color: tokens.textMuted }]}>{item.sub}</Text>
-            </View>
-            <ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />
-          </AnimatedPressable>
-        ))}
-
-        <Label color={tokens.textMuted}>Настройки</Label>
-        <View style={[styles.settingsBox, { backgroundColor: tokens.surface, borderColor: tokens.border }]}> 
-          <SettingsRow
-            tokens={tokens}
-            label='Тема'
-            sub={autoLabel}
-            right={
-              <Toggle
-                value={theme === 'dark' && !autoTheme}
-                onPress={() => {
-                  if (!autoTheme) {
-                    setTheme(theme === 'light' ? 'dark' : 'light');
-                  }
-                }}
-                tokens={tokens}
-              />
-            }
-          />
-          <SettingsRow
-            tokens={tokens}
-            label='Авто-тема (по времени)'
-            sub='Тёмная 20:00–08:00'
-            right={<Toggle value={autoTheme} onPress={() => setAutoTheme(!autoTheme)} tokens={tokens} />}
-          />
-          <SettingsRow
-            tokens={tokens}
-            label='Уведомления'
-            sub='Тапы и активность'
-            right={<Toggle value={notificationsEnabled} onPress={() => void toggleNotifications()} tokens={tokens} />}
-          />
-          <SettingsRow
-            tokens={tokens}
-            label={`Вход по ${biometricLabel}`}
-            sub={biometricsAvailable ? 'Быстрая разблокировка приложения' : 'Недоступно на этом устройстве'}
-            right={
-              biometricsAvailable ? (
-                <Toggle value={biometricsEnabled} onPress={() => void toggleBiometrics()} tokens={tokens} />
+            <View style={[styles.avatarCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+              {card.avatarUrl ? (
+                <Image source={{ uri: card.avatarUrl }} style={styles.avatarImage} />
               ) : (
-                <Text style={[styles.settingsMuted, { color: tokens.textMuted }]}>—</Text>
-              )
-            }
-          />
-          <SettingsRow tokens={tokens} label='Язык' sub='Русский' right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />} />
-          <SettingsRow tokens={tokens} label='Поддержка' sub='@unqx_uz' right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />} />
-          <SettingsRow tokens={tokens} label='О приложении' sub='UNQX v2.0.0' right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />} last />
-        </View>
+                <View style={[styles.avatar, { backgroundColor: tokens.inputBg, borderColor: tokens.border, borderWidth: 1 }]}>
+                  <Text style={[styles.avatarText, { color: tokens.text }]}>{card.name[0] ?? 'U'}</Text>
+                </View>
+              )}
+              <View style={styles.avatarBody}>
+                <Text style={[styles.name, { color: tokens.text }]}>{card.name}</Text>
+                <Text style={[styles.slug, { color: tokens.textMuted }]}>
+                  unqx.uz/<Text style={styles.slugStrong}>{formatSlug(card.slug)}</Text>
+                </Text>
+                <View style={styles.heroPills}>
+                  <Pill color={tokens.amber} bg={tokens.amberBg}>{profileText.premium}</Pill>
+                  <Pill color={tokens.green} bg={tokens.greenBg}>{profileText.nfcActive}</Pill>
+                </View>
+              </View>
+            </View>
 
-        <AnimatedPressable style={[styles.logoutBtn, { borderColor: tokens.border }]} onPress={() => void handleLogout()}>
-          <Text style={[styles.logoutText, { color: tokens.red }]}>Выйти из аккаунта</Text>
-        </AnimatedPressable>
-      </ScrollView>
-      </ScreenTransition>
+            <View style={styles.shareGrid}>
+              <AnimatedPressable
+                containerStyle={styles.shareHalf}
+                style={[styles.shareCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+                onPress={() => setQrVisible(true)}
+              >
+                <QrCode size={22} strokeWidth={1.5} color={tokens.text} />
+                <Text style={[styles.shareTitle, { color: tokens.text }]}>{profileText.qrTitle}</Text>
+                <Text style={[styles.shareSub, { color: tokens.textMuted }]}>{profileText.qrSub}</Text>
+              </AnimatedPressable>
+              <AnimatedPressable
+                containerStyle={styles.shareHalf}
+                style={[styles.shareCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+                onPress={() => setShareVisible(true)}
+              >
+                <Share2 size={22} strokeWidth={1.5} color={tokens.text} />
+                <Text style={[styles.shareTitle, { color: tokens.text }]}>{profileText.shareTitle}</Text>
+                <Text style={[styles.shareSub, { color: tokens.textMuted }]}>{profileText.shareSub}</Text>
+              </AnimatedPressable>
+            </View>
 
-      <CardEditor
-        visible={editorVisible}
-        tokens={tokens}
-        card={card}
-        saving={saveCardMutation.isPending}
-        onClose={() => setEditorVisible(false)}
-        onPreview={(nextCard) => {
-          setPreviewCard(nextCard);
-          setPreviewVisible(true);
-        }}
-        onSave={handleSaveCard}
-      />
+            {[
+              { label: profileText.editCard, sub: profileText.editCardSub, onPress: () => setEditorVisible(true) },
+              { label: profileText.wristband, sub: profileText.wristbandSub, onPress: () => setWristbandVisible(true) },
+            ].map((item) => (
+              <AnimatedPressable key={item.label} onPress={item.onPress} style={[styles.actionRow, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                <View style={styles.actionBody}>
+                  <Text style={[styles.actionTitle, { color: tokens.text }]}>{item.label}</Text>
+                  <Text style={[styles.actionSub, { color: tokens.textMuted }]}>{item.sub}</Text>
+                </View>
+                <ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />
+              </AnimatedPressable>
+            ))}
 
-      <CardPreview
-        visible={previewVisible}
-        card={previewCard ?? card}
-        tokens={tokens}
-        onClose={() => {
-          setPreviewVisible(false);
-          setPreviewCard(null);
-        }}
-      />
+            <Label color={tokens.textMuted}>{profileText.settings}</Label>
+            <View style={[styles.settingsBox, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.theme}
+                sub={autoLabel}
+                right={
+                  <Toggle
+                    value={theme === 'dark' && !autoTheme}
+                    onPress={() => {
+                      if (!autoTheme) {
+                        setTheme(theme === 'light' ? 'dark' : 'light');
+                      }
+                    }}
+                    tokens={tokens}
+                  />
+                }
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.autoTheme}
+                sub={profileText.autoThemeHours}
+                right={<Toggle value={autoTheme} onPress={() => setAutoTheme(!autoTheme)} tokens={tokens} />}
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.notifications}
+                sub={profileText.notificationsSub}
+                right={<Toggle value={notificationsEnabled} onPress={() => void toggleNotifications()} tokens={tokens} />}
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={`${profileText.biometricEntry} ${biometricLabel}`}
+                sub={biometricsAvailable ? profileText.biometricSubOn : profileText.biometricSubOff}
+                right={
+                  biometricsAvailable ? (
+                    <Toggle value={biometricsEnabled} onPress={() => void toggleBiometrics()} tokens={tokens} />
+                  ) : (
+                    <Text style={[styles.settingsMuted, { color: tokens.textMuted }]}>—</Text>
+                  )
+                }
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.language}
+                sub={profileText.languageValue}
+                right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={toggleLanguage}
+              />
+              <SettingsRow tokens={tokens} label={profileText.support} sub='@unqx_uz' right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />} />
+              <SettingsRow tokens={tokens} label={profileText.about} sub='UNQX v2.0.0' right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />} last />
+            </View>
 
-      <WristbandPage
-        visible={wristbandVisible}
-        onClose={() => setWristbandVisible(false)}
-        tokens={tokens}
-        status={wristbandStatus}
-        tags={tags}
-        history={filteredHistory}
-        loading={loading}
-        orderStatus={order}
-        onRenameTag={handleRenameTag}
-        onCreateOrder={handleCreateOrder}
-        onTrackOrder={handleTrackOrder}
-        renamePending={renameTagMutation.isPending}
-        orderPending={createOrderMutation.isPending}
-      />
+            <AnimatedPressable style={[styles.logoutBtn, { borderColor: tokens.border }]} onPress={() => void handleLogout()}>
+              <Text style={[styles.logoutText, { color: tokens.red }]}>{profileText.logout}</Text>
+            </AnimatedPressable>
+          </ScrollView>
+        </ScreenTransition>
 
-      <QRCodeModal visible={qrVisible} slug={card.slug} tokens={tokens} onClose={() => setQrVisible(false)} />
-      <ShareSheet visible={shareVisible} slug={card.slug} name={card.name} tokens={tokens} onClose={() => setShareVisible(false)} />
+        <CardEditor
+          visible={editorVisible}
+          tokens={tokens}
+          card={card}
+          saving={saveCardMutation.isPending}
+          onClose={() => setEditorVisible(false)}
+          onPreview={(nextCard) => {
+            setPreviewCard(nextCard);
+            setPreviewVisible(true);
+          }}
+          onSave={handleSaveCard}
+        />
+
+        <CardPreview
+          visible={previewVisible}
+          card={previewCard ?? card}
+          tokens={tokens}
+          onClose={() => {
+            setPreviewVisible(false);
+            setPreviewCard(null);
+          }}
+        />
+
+        <WristbandPage
+          visible={wristbandVisible}
+          onClose={() => setWristbandVisible(false)}
+          tokens={tokens}
+          status={wristbandStatus}
+          tags={tags}
+          history={filteredHistory}
+          loading={loading}
+          orderStatus={order}
+          onRenameTag={handleRenameTag}
+          onCreateOrder={handleCreateOrder}
+          onTrackOrder={handleTrackOrder}
+          renamePending={renameTagMutation.isPending}
+          orderPending={createOrderMutation.isPending}
+        />
+
+        <QRCodeModal visible={qrVisible} slug={card.slug} tokens={tokens} onClose={() => setQrVisible(false)} />
+        <ShareSheet visible={shareVisible} slug={card.slug} name={card.name} tokens={tokens} onClose={() => setShareVisible(false)} />
       </AppShell>
     </ErrorBoundary>
   );
@@ -672,21 +742,27 @@ function SettingsRow({
   sub,
   right,
   last,
+  onPress,
 }: {
   tokens: ThemeTokens;
   label: string;
   sub: string;
   right: React.ReactNode;
   last?: boolean;
+  onPress?: () => void;
 }): React.JSX.Element {
   return (
-    <View style={[styles.settingsRow, { borderBottomColor: tokens.border, borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth }]}> 
+    <Pressable
+      disabled={!onPress}
+      onPress={onPress}
+      style={[styles.settingsRow, { borderBottomColor: tokens.border, borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth }]}
+    >
       <View>
         <Text style={[styles.settingsTitle, { color: tokens.text }]}>{label}</Text>
         <Text style={[styles.settingsSub, { color: tokens.textMuted }]}>{sub}</Text>
       </View>
       {right}
-    </View>
+    </Pressable>
   );
 }
 

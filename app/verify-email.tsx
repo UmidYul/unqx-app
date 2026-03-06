@@ -115,7 +115,7 @@ export default function VerifyEmailPage(): React.JSX.Element {
   }, [code, email, loading, resending, submit]);
 
   if (!ready) {
-    return <AuthLoadingScreen tokens={tokens} title='Проверка сессии...' />;
+    return <AuthLoadingScreen tokens={tokens} title={MESSAGES.ui.auth.sessionChecking} />;
   }
 
   if (signedIn) {
@@ -136,7 +136,7 @@ export default function VerifyEmailPage(): React.JSX.Element {
           <TextInput
             value={email}
             onChangeText={setEmail}
-            placeholder='Email'
+            placeholder={MESSAGES.ui.auth.emailPlaceholder}
             placeholderTextColor={tokens.textMuted}
             autoCapitalize='none'
             keyboardType='email-address'
@@ -160,7 +160,7 @@ export default function VerifyEmailPage(): React.JSX.Element {
             {loading ? (
               <ActivityIndicator color={tokens.accentText} />
             ) : (
-              <Text style={[styles.submitText, { color: tokens.accentText }]}>Подтвердить</Text>
+              <Text style={[styles.submitText, { color: tokens.accentText }]}>{MESSAGES.ui.auth.verifySubmit}</Text>
             )}
           </Pressable>
 
@@ -172,15 +172,15 @@ export default function VerifyEmailPage(): React.JSX.Element {
             {resending ? (
               <ActivityIndicator color={tokens.text} />
             ) : (
-              <Text style={[styles.secondaryText, { color: tokens.text }]}>Отправить код заново</Text>
+              <Text style={[styles.secondaryText, { color: tokens.text }]}>{MESSAGES.ui.auth.verifyResend}</Text>
             )}
           </Pressable>
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>Уже подтверждено?</Text>
+          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.verifyAlreadyDone}</Text>
           <Pressable onPress={() => safePush('/login')}>
-            <Text style={[styles.footerLink, { color: tokens.text }]}>Войти</Text>
+            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.verifyAlreadyDoneAction}</Text>
           </Pressable>
         </View>
       </View>

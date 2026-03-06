@@ -1,4 +1,6 @@
-export const MESSAGES = {
+export type LanguageCode = 'ru' | 'uz';
+
+const RU_MESSAGES = {
   ui: {
     screens: {
       home: 'Главная',
@@ -18,6 +20,40 @@ export const MESSAGES = {
       verifyEmailSubtitle: 'Введите код из письма',
       forgotPasswordSubtitle: 'Мы отправим код подтверждения на email',
       resetPasswordSubtitle: 'Введите код из email и задайте новый пароль',
+      sessionChecking: 'Проверка сессии...',
+      emailPlaceholder: 'Email',
+      namePlaceholder: 'Имя',
+      passwordPlaceholder: 'Пароль',
+      passwordConfirmPlaceholder: 'Повтор пароля',
+      newPasswordPlaceholder: 'Новый пароль',
+      newPasswordConfirmPlaceholder: 'Повтор нового пароля',
+      loginSubmit: 'Войти',
+      loginVerifyEmail: 'Подтвердить email',
+      loginNoAccount: 'Нет аккаунта?',
+      loginForgotPassword: 'Забыли пароль?',
+      loginForgotPasswordAction: 'Сбросить',
+      registerSubmit: 'Создать аккаунт',
+      registerVerifyEmail: 'Подтвердить email',
+      registerHasAccount: 'Уже есть аккаунт?',
+      registerHasAccountAction: 'Войти',
+      forgotSubmitCode: 'Отправить код',
+      forgotHaveCode: 'У меня есть код',
+      forgotRemembered: 'Вспомнили пароль?',
+      forgotRememberedAction: 'Войти',
+      resetSubmit: 'Сбросить пароль',
+      resetRedirectHint: 'Переход на экран входа...',
+      resetNoCode: 'Нет кода?',
+      resetNoCodeAction: 'Отправить заново',
+      verifySubmit: 'Подтвердить',
+      verifyResend: 'Отправить код заново',
+      verifyAlreadyDone: 'Уже подтверждено?',
+      verifyAlreadyDoneAction: 'Войти',
+      biometricTypeFallback: 'Face ID / отпечаток',
+      biometricPromptTitle: 'Включить биометрию?',
+      biometricPromptMessage: 'Хотите входить через {type} в следующий раз?',
+      biometricPromptSkip: 'Не сейчас',
+      biometricPromptEnable: 'Включить',
+      biometricPromptConfirm: 'Подтвердите включение биометрии',
     },
     home: {
       quickActions: 'Быстрые действия',
@@ -27,7 +63,7 @@ export const MESSAGES = {
       actionWrite: 'Записать метку',
       actionWriteSub: 'Привязать UNQ к NFC',
       actionAnalytics: 'Аналитика',
-      actionAnalyticsSub: 'Статистика и карта тапов',
+      actionAnalyticsSub: 'Статистика по источникам и городам',
     },
     people: {
       contacts: 'Контакты',
@@ -115,3 +151,192 @@ export const MESSAGES = {
     nfcWriteError: 'Ошибка записи',
   },
 } as const;
+
+type MessageCatalog = typeof RU_MESSAGES;
+
+const UZ_MESSAGES: MessageCatalog = {
+  ui: {
+    screens: {
+      home: 'Asosiy',
+      nfc: 'NFC',
+      people: 'Odamlar',
+      analytics: 'Analitika',
+      profile: 'Profil',
+    },
+    auth: {
+      loginTitle: 'Kirish',
+      registerTitle: "Ro'yxatdan o'tish",
+      verifyEmailTitle: 'Emailni tasdiqlash',
+      forgotPasswordTitle: 'Parolni tiklash',
+      resetPasswordTitle: 'Yangi parol',
+      loginSubtitle: 'NFC va analitika bilan ishlash uchun kiring',
+      registerSubtitle: 'Karta va NFC uchun akkaunt yarating',
+      verifyEmailSubtitle: 'Emaildagi kodni kiriting',
+      forgotPasswordSubtitle: 'Tasdiqlash kodini emailingizga yuboramiz',
+      resetPasswordSubtitle: 'Emaildagi kodni kiriting va yangi parol o\'rnating',
+      sessionChecking: 'Sessiya tekshirilmoqda...',
+      emailPlaceholder: 'Email',
+      namePlaceholder: 'Ism',
+      passwordPlaceholder: 'Parol',
+      passwordConfirmPlaceholder: 'Parolni qayta kiriting',
+      newPasswordPlaceholder: 'Yangi parol',
+      newPasswordConfirmPlaceholder: 'Yangi parolni qayta kiriting',
+      loginSubmit: 'Kirish',
+      loginVerifyEmail: 'Emailni tasdiqlash',
+      loginNoAccount: "Akkauntingiz yo'qmi?",
+      loginForgotPassword: 'Parolni unutdingizmi?',
+      loginForgotPasswordAction: 'Tiklash',
+      registerSubmit: 'Akkaunt yaratish',
+      registerVerifyEmail: 'Emailni tasdiqlash',
+      registerHasAccount: 'Akkauntingiz bormi?',
+      registerHasAccountAction: 'Kirish',
+      forgotSubmitCode: 'Kod yuborish',
+      forgotHaveCode: 'Menda kod bor',
+      forgotRemembered: 'Parolni esladingizmi?',
+      forgotRememberedAction: 'Kirish',
+      resetSubmit: 'Parolni tiklash',
+      resetRedirectHint: 'Kirish oynasiga o\'tilmoqda...',
+      resetNoCode: "Kodingiz yo'qmi?",
+      resetNoCodeAction: 'Qayta yuborish',
+      verifySubmit: 'Tasdiqlash',
+      verifyResend: 'Kodni qayta yuborish',
+      verifyAlreadyDone: 'Allaqachon tasdiqlanganmi?',
+      verifyAlreadyDoneAction: 'Kirish',
+      biometricTypeFallback: 'Face ID / barmoq izi',
+      biometricPromptTitle: 'Biometriyani yoqilsinmi?',
+      biometricPromptMessage: 'Keyingi safar {type} orqali kirishni xohlaysizmi?',
+      biometricPromptSkip: 'Hozir emas',
+      biometricPromptEnable: 'Yoqish',
+      biometricPromptConfirm: 'Biometriyani yoqishni tasdiqlang',
+    },
+    home: {
+      quickActions: 'Tezkor amallar',
+      recentTaps: 'So\'nggi taplar',
+      actionScan: 'NFC skanerlash',
+      actionScanSub: 'Boshqa tegni o\'qish',
+      actionWrite: 'Teg yozish',
+      actionWriteSub: 'UNQ ni NFC ga ulash',
+      actionAnalytics: 'Analitika',
+      actionAnalyticsSub: 'Manbalar va shaharlar statistikasi',
+    },
+    people: {
+      contacts: 'Kontaktlar',
+      residents: 'Rezidentlar',
+      elite: 'Elite',
+    },
+    nfc: {
+      scanButton: 'NFC skanerlash',
+      history: 'Tarix',
+      historyEmpty: 'Tarix bo\'sh. Skanerlash, yozish yoki tekshirishni bajaring.',
+    },
+    bottomNav: {
+      home: 'Asosiy',
+      nfc: 'NFC',
+      people: 'Odamlar',
+      analytics: 'Analitika',
+      profile: 'Profil',
+    },
+  },
+  common: {
+    retryConnection: 'Ulanishni tekshiring',
+    loadFailed: 'Ma\'lumotlarni yuklab bo\'lmadi',
+  },
+  auth: {
+    errorTitle: 'Avtorizatsiya xatosi',
+    loginError: 'Kirish xatosi',
+    registerError: "Ro'yxatdan o'tish xatosi",
+    verifyError: 'Tasdiqlash xatosi',
+    otpSendError: 'Kod yuborish xatosi',
+    resetPasswordError: 'Parolni tiklash xatosi',
+    unverifiedEmail: 'Kirishdan oldin emailni tasdiqlang',
+    registerDoneVerify: "Ro'yxatdan o'tish yakunlandi. Emailni tasdiqlang va kiring.",
+    otpSent: 'Tasdiqlash kodi emailingizga yuborildi',
+    emailVerifiedLogin: 'Email tasdiqlandi. Endi kiring.',
+    forgotPasswordSent: 'Agar email mavjud bo\'lsa, kod yuborildi',
+    passwordResetDone: 'Parol yangilandi. Yangi parol bilan kiring.',
+    codeMessages: {
+      VALIDATION_ERROR: 'Kiritilgan ma\'lumotlarni tekshiring',
+      INVALID_CREDENTIALS: 'Email yoki parol noto\'g\'ri',
+      EMAIL_TAKEN: 'Bu email allaqachon ro\'yxatdan o\'tgan. Akkauntga kiring',
+      LOCKED: 'Juda ko\'p urinish. Keyinroq qayta urinib ko\'ring',
+      AUTH_REQUIRED: 'Avtorizatsiya talab qilinadi. Akkauntga kiring',
+      UNVERIFIED: 'Kirishdan oldin emailni tasdiqlang',
+      OTP_INVALID: 'Tasdiqlash kodi noto\'g\'ri',
+      OTP_EXPIRED: 'Tasdiqlash kodi muddati tugagan. Yangisini so\'rang',
+      OTP_INVALIDATED: 'Bir necha urinishdan so\'ng kod bekor qilindi. Yangisini so\'rang',
+      RESET_TOKEN_INVALID: 'Parol tiklash kodi noto\'g\'ri',
+      RESET_TOKEN_EXPIRED: 'Parol tiklash kodi muddati tugagan. Yangisini so\'rang',
+    },
+  },
+  validation: {
+    emailRequired: 'Email kiriting',
+    emailInvalid: 'Email formati noto\'g\'ri',
+    nameRequired: 'Ism kiriting',
+    nameTooShort: 'Ism juda qisqa',
+    nameTooLong: 'Ism juda uzun',
+    passwordRequired: 'Parol kiriting',
+    passwordMin: 'Parol kamida 8 ta belgidan iborat bo\'lishi kerak',
+    passwordRules: 'Parolda harf va raqam bo\'lishi kerak',
+    confirmRequired: 'Parolni takrorlang',
+    passwordMismatch: 'Parollar mos emas',
+    otpRequired: 'Emaildagi kodni kiriting',
+    otpInvalid: 'Kod 6 ta raqamdan iborat bo\'lishi kerak',
+  },
+  query: {
+    homeCacheUpdateFailed: 'Ma\'lumotlarni yangilab bo\'lmadi. Kesh ko\'rsatildi.',
+    analyticsCacheUpdateFailed: 'Analitikani yangilab bo\'lmadi. Kesh ko\'rsatildi.',
+    profileLoadFailed: 'Profilni yuklab bo\'lmadi',
+    nfcHistoryLoadFailed: 'NFC tarixini yuklab bo\'lmadi',
+  },
+  toast: {
+    linkCopied: 'Havola nusxalandi',
+    linkCopyFailed: 'Nusxalab bo\'lmadi',
+    offlineQueued: 'Internet yo\'q. Amal tarmoq paydo bo\'lganda bajariladi.',
+    cardSaved: 'Vizitka saqlandi',
+    saveFailed: 'Saqlab bo\'lmadi',
+    tagNameSaved: 'Nomi saqlandi',
+    favoritesAdded: 'Sevimlilarga qo\'shildi',
+    favoritesRemoved: 'Sevimlilardan olib tashlandi',
+    subscribeDone: 'Obuna rasmiylashtirildi',
+    subscribeFailed: 'Obuna qilib bo\'lmadi',
+    orderSent: 'So\'rov yuborildi',
+    orderSendFailed: 'Yuborib bo\'lmadi',
+    nfcWritten: 'Teg yozildi',
+    nfcWriteError: 'Yozish xatosi',
+  },
+};
+
+const MESSAGE_CATALOGS: Record<LanguageCode, MessageCatalog> = {
+  ru: RU_MESSAGES,
+  uz: UZ_MESSAGES,
+};
+
+let currentLanguage: LanguageCode = 'uz';
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function applyCatalog(language: LanguageCode): void {
+  const next = deepClone(MESSAGE_CATALOGS[language]) as Record<string, unknown>;
+  const target = MESSAGES as unknown as Record<string, unknown>;
+
+  for (const key of Object.keys(target)) {
+    delete target[key];
+  }
+
+  Object.assign(target, next);
+}
+
+export const MESSAGES = deepClone(MESSAGE_CATALOGS[currentLanguage]) as MessageCatalog;
+
+export function getMessagesLanguage(): LanguageCode {
+  return currentLanguage;
+}
+
+export function setMessagesLanguage(language: LanguageCode): void {
+  currentLanguage = language;
+  applyCatalog(language);
+}
+
+export const SUPPORTED_LANGUAGES: ReadonlyArray<LanguageCode> = ['ru', 'uz'];

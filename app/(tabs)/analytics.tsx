@@ -1,6 +1,5 @@
 import React from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { TrendingUp } from 'lucide-react-native';
 import Animated, {
@@ -35,149 +34,33 @@ interface AnalyticsPayload {
   geo: Array<{ city: string; x: number; y: number; r: number; value?: number }>;
 }
 
-type RegionId =
-  | 'karakalpakstan'
-  | 'khorezm'
-  | 'bukhara_navoi'
-  | 'samarkand_jizzakh'
-  | 'tashkent_sirdarya'
-  | 'fergana_valley'
-  | 'qashqadaryo'
-  | 'surxondaryo';
-
-const MAP_REGIONS: Array<{ id: RegionId; path: string }> = [
-  { id: 'karakalpakstan', path: 'M22,20 L64,10 L67,11 L53,67 L40,72 L22,81 Z' },
-  { id: 'khorezm', path: 'M53,67 L67,57 L88,66 L97,82 L87,94 L66,100 L40,72 Z' },
-  { id: 'bukhara_navoi', path: 'M88,66 L120,85 L142,92 L132,109 L97,110 L87,94 L97,82 Z' },
-  { id: 'samarkand_jizzakh', path: 'M132,109 L142,92 L170,74 L198,70 L198,106 L171,104 Z' },
-  { id: 'tashkent_sirdarya', path: 'M170,74 L198,70 L206,83 L217,110 L198,106 Z' },
-  { id: 'fergana_valley', path: 'M206,83 L232,92 L239,80 L261,68 L286,80 L306,88 L284,100 L231,110 L217,110 Z' },
-  { id: 'qashqadaryo', path: 'M132,109 L171,104 L176,129 L158,121 L147,113 Z' },
-  { id: 'surxondaryo', path: 'M171,104 L206,112 L212,117 L225,121 L228,133 L219,150 L197,146 L198,136 L176,129 Z' },
-];
-
-const CITY_TO_REGION: Record<string, RegionId> = {
-  // Tashkent/Sirdarya/Jizzakh
-  tashkent: 'tashkent_sirdarya',
-  sirdarya: 'tashkent_sirdarya',
-  gulistan: 'tashkent_sirdarya',
-  jizzakh: 'samarkand_jizzakh',
-  djizzak: 'samarkand_jizzakh',
-
-  // Fergana valley
-  andijan: 'fergana_valley',
-  namangan: 'fergana_valley',
-  fergana: 'fergana_valley',
-
-  // Samarkand/Jizzakh
-  samarkand: 'samarkand_jizzakh',
-
-  // Bukhara/Navoi
-  bukhara: 'bukhara_navoi',
-  navoi: 'bukhara_navoi',
-
-  // West
-  nukus: 'karakalpakstan',
-  karakalpakstan: 'karakalpakstan',
-  urgench: 'khorezm',
-  khorezm: 'khorezm',
-  xorazm: 'khorezm',
-
-  // South
-  qarshi: 'qashqadaryo',
-  karshi: 'qashqadaryo',
-  qashqadaryo: 'qashqadaryo',
-  termiz: 'surxondaryo',
-  termez: 'surxondaryo',
-  surxondaryo: 'surxondaryo',
-  surkhandarya: 'surxondaryo',
-};
-const UZBEKISTAN_OUTLINE_PATH =
-  'M197.11,146.39 L197.56,136.24 L175.5,129.14 L158.16,121.02 L147.34,113.21 L128.38,101.76 L120.22,84.66 L114.66,81.65 L96.73,82.41 L90.38,79.02 L88.61,65.78 L66.26,57.02 L52.29,66.66 L38.12,72.37 L40.85,80.72 L22.14,80.95 L21.49,19.8 L64.18,10 L67.28,11.44 L92.98,23.31 L106.55,29.59 L122.39,44.53 L141.83,42.12 L170.28,40.83 L190.13,52.94 L188.89,69.57 L196.97,69.69 L200.35,83.27 L221.44,83.81 L225.98,91.67 L232.16,91.56 L239.42,79.7 L261.29,68.14 L270.8,65.07 L275.73,66.7 L261.81,77.44 L274.04,83.69 L285.86,79.55 L305.51,88.29 L284.28,100.23 L271.66,98.6 L264.82,99.03 L262.44,94.42 L265.9,86.73 L243.72,90.58 L238.45,101.22 L230.57,110.39 L216.72,109.61 L212.42,116.91 L224.59,120.87 L228.18,133.22 L218.86,150 L206.35,146.5 L197.11,146.39 Z';
-
-function normalizeCityKey(city: string): string {
-  const map: Record<string, string> = {
-    '\u0430': 'a',
-    '\u0431': 'b',
-    '\u0432': 'v',
-    '\u0433': 'g',
-    '\u0434': 'd',
-    '\u0435': 'e',
-    '\u0451': 'yo',
-    '\u0436': 'j',
-    '\u0437': 'z',
-    '\u0438': 'i',
-    '\u0439': 'y',
-    '\u043a': 'k',
-    '\u043b': 'l',
-    '\u043c': 'm',
-    '\u043d': 'n',
-    '\u043e': 'o',
-    '\u043f': 'p',
-    '\u0440': 'r',
-    '\u0441': 's',
-    '\u0442': 't',
-    '\u0443': 'u',
-    '\u0444': 'f',
-    '\u0445': 'h',
-    '\u0446': 'c',
-    '\u0447': 'ch',
-    '\u0448': 'sh',
-    '\u0449': 'sch',
-    '\u044b': 'y',
-    '\u044d': 'e',
-    '\u044e': 'yu',
-    '\u044f': 'ya',
-    '\u0433\u02bb': 'g',
-    '\u045b': 'g',
-    '\u045e': 'u',
-    '\u049b': 'q',
-    '\u04b3': 'h',
-  };
-
-  const normalized = city
-    .trim()
-    .toLowerCase()
-    .replace(/[\u02bc\u02bb\u2018\u2019\u201b\u0060\u00b4]/g, "'")
-    .replace(/\u045e/g, '\u0443')
-    .replace(/\u049b/g, '\u043a')
-    .replace(/\u04b3/g, '\u0445')
-    .replace(/\u045b/g, '\u0433')
-    .replace(/\u02bb/g, '');
-
-  return normalized
-    .split('')
-    .map((ch) => map[ch] || ch)
-    .join('')
-    .replace(/['`\-\s]+/g, '');
+interface CityStat {
+  city: string;
+  taps: number;
+  percent: number;
 }
 
-function resolveRegionByCity(city: string): RegionId | null {
-  const key = normalizeCityKey(city);
-  if (!key) return null;
-  return CITY_TO_REGION[key] || null;
-}
-
-function buildRegionTotals(points: Array<{ city: string; value?: number }>): Record<RegionId, number> {
-  const totals: Record<RegionId, number> = {
-    karakalpakstan: 0,
-    khorezm: 0,
-    bukhara_navoi: 0,
-    samarkand_jizzakh: 0,
-    tashkent_sirdarya: 0,
-    fergana_valley: 0,
-    qashqadaryo: 0,
-    surxondaryo: 0,
-  };
+function buildCityStats(points: Array<{ city: string; value?: number }>, totalTaps: number): CityStat[] {
+  const cityTotals = new Map<string, number>();
 
   for (const point of points) {
-    const region = resolveRegionByCity(String(point.city || ''));
-    if (!region) continue;
-    const value = Number(point.value || 0);
-    totals[region] += Number.isFinite(value) ? value : 0;
+    const city = String(point.city || '').trim();
+    if (!city) continue;
+
+    const taps = Number(point.value || 0);
+    if (!Number.isFinite(taps) || taps < 1) continue;
+
+    cityTotals.set(city, (cityTotals.get(city) || 0) + taps);
   }
 
-  return totals;
+  return [...cityTotals.entries()]
+    .map(([city, taps]) => ({
+      city,
+      taps,
+      percent: totalTaps > 0 ? Math.round((taps / totalTaps) * 100) : 0,
+    }))
+    .filter((item) => item.taps >= 1)
+    .sort((a, b) => b.taps - a.taps);
 }
 
 function parseSummary(raw: unknown): AnalyticsPayload {
@@ -219,7 +102,7 @@ function parseSummary(raw: unknown): AnalyticsPayload {
       x: Number(item?.x ?? 178),
       y: Number(item?.y ?? 72),
       r: Number(item?.r ?? 3),
-      value: Number(item?.value ?? 0),
+      value: Number(item?.value ?? item?.taps ?? item?.count ?? 0),
     })),
   };
 }
@@ -265,8 +148,8 @@ export default function AnalyticsPage(): React.JSX.Element {
   }, []);
 
   const analytics = parseSummary(query.data ?? {});
-  const regionTotals = React.useMemo(() => buildRegionTotals(analytics.geo), [analytics.geo]);
-  const regionMax = React.useMemo(() => Math.max(...Object.values(regionTotals), 1), [regionTotals]);
+  const cityStats = React.useMemo(() => buildCityStats(analytics.geo, analytics.totalTaps), [analytics.geo, analytics.totalTaps]);
+  const cityMax = React.useMemo(() => Math.max(...cityStats.map((item) => item.taps), 1), [cityStats]);
   const weekMax = Math.max(...analytics.weekTaps, 1);
   const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
   const growthLabel = `${analytics.growth > 0 ? '+' : ''}${analytics.growth}%`;
@@ -355,39 +238,23 @@ export default function AnalyticsPage(): React.JSX.Element {
                   </View>
                 </View>
 
-                <Label color={tokens.textMuted}>Карта тапов</Label>
-                <View style={[styles.mapWrap, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
-                  <Svg viewBox='0 0 327 160' width='100%' height={160}>
-                    <Path
-                      d={UZBEKISTAN_OUTLINE_PATH}
-                      fill={tokens.surface}
-                      opacity={0.7}
-                      stroke='none'
-                    />
-                    {MAP_REGIONS.map((region) => {
-                      const regionValue = Number(regionTotals[region.id] || 0);
-                      const ratio = regionValue > 0 ? regionValue / regionMax : 0;
-                      const opacity = regionValue > 0 ? Math.min(0.9, 0.2 + ratio * 0.7) : 0.05;
-                      return (
-                        <Path
-                          key={region.id}
-                          d={region.path}
-                          fill={tokens.accent}
-                          opacity={opacity}
-                          stroke={tokens.border}
-                          strokeWidth={0.45}
-                        />
-                      );
-                    })}
-                    <Path
-                      d={UZBEKISTAN_OUTLINE_PATH}
-                      fill='none'
-                      stroke={tokens.borderStrong}
-                      strokeWidth={1.35}
-                    />
-                    <Path d={UZBEKISTAN_OUTLINE_PATH} fill='none' stroke={tokens.border} strokeWidth={0.7} opacity={0.65} />
-                  </Svg>
-                </View>
+                <Label color={tokens.textMuted}>Города</Label>
+                {cityStats.length > 0 ? cityStats.map((item, index) => {
+                  const fillRatio = Math.max(0.08, item.taps / cityMax);
+                  return (
+                    <View key={`${item.city}-${index}`} style={[styles.cityRow, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+                      <View style={styles.cityHeader}>
+                        <Text style={[styles.cityName, { color: tokens.text }]} numberOfLines={1}>{item.city}</Text>
+                        <Text style={[styles.cityMeta, { color: tokens.textMuted }]}>{`${item.taps} (${item.percent}%)`}</Text>
+                      </View>
+                      <View style={[styles.cityTrack, { backgroundColor: tokens.border }]}>
+                        <View style={[styles.cityFill, { backgroundColor: tokens.accent, width: `${Math.round(fillRatio * 100)}%` }]} />
+                      </View>
+                    </View>
+                  );
+                }) : (
+                  <Text style={[styles.loadingText, { color: tokens.textMuted }]}>Пока нет городов с тапами</Text>
+                )}
 
                 <Label color={tokens.textMuted}>Источники</Label>
                 {analytics.sources.length > 0 ? analytics.sources.map((item, index) => (
@@ -497,9 +364,36 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'Inter_500Medium',
   },
-  mapWrap: {
+  cityRow: {
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  cityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  cityName: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    flex: 1,
+  },
+  cityMeta: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+  },
+  cityTrack: {
+    width: '100%',
+    height: 8,
+    borderRadius: 999,
     overflow: 'hidden',
+  },
+  cityFill: {
+    height: '100%',
+    borderRadius: 999,
   },
 });

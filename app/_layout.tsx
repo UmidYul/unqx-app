@@ -16,6 +16,7 @@ import { BiometricType, useBiometrics } from '@/hooks/useBiometrics';
 import { useAuthStatus } from '@/hooks/useAuthStatus';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { LanguageProvider } from '@/i18n/LanguageProvider';
 import { apiClient } from '@/lib/apiClient';
 import { queryClient, queryPersister, queryPersistMaxAge } from '@/lib/queryClient';
 import { storageGetItem, storageSetItem } from '@/lib/secureStorage';
@@ -227,9 +228,11 @@ function RootLayout(): React.JSX.Element | null {
         }}
       >
         <ErrorBoundary>
-          <ThemeProvider>
-            <RootNavigator />
-          </ThemeProvider>
+          <LanguageProvider>
+            <ThemeProvider>
+              <RootNavigator />
+            </ThemeProvider>
+          </LanguageProvider>
         </ErrorBoundary>
         <Toast config={toastConfig} />
       </PersistQueryClientProvider>

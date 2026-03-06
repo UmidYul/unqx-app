@@ -71,7 +71,7 @@ export default function RegisterPage(): React.JSX.Element {
   }, [confirmPassword, email, firstName, password, safeReplace]);
 
   if (!ready) {
-    return <AuthLoadingScreen tokens={tokens} title='Проверка сессии...' />;
+    return <AuthLoadingScreen tokens={tokens} title={MESSAGES.ui.auth.sessionChecking} />;
   }
 
   if (signedIn) {
@@ -92,7 +92,7 @@ export default function RegisterPage(): React.JSX.Element {
           <TextInput
             value={firstName}
             onChangeText={setFirstName}
-            placeholder='Имя'
+            placeholder={MESSAGES.ui.auth.namePlaceholder}
             placeholderTextColor={tokens.textMuted}
             style={[
               styles.input,
@@ -103,7 +103,7 @@ export default function RegisterPage(): React.JSX.Element {
           <TextInput
             value={email}
             onChangeText={setEmail}
-            placeholder='Email'
+            placeholder={MESSAGES.ui.auth.emailPlaceholder}
             placeholderTextColor={tokens.textMuted}
             autoCapitalize='none'
             keyboardType='email-address'
@@ -117,7 +117,7 @@ export default function RegisterPage(): React.JSX.Element {
           <TextInput
             value={password}
             onChangeText={setPassword}
-            placeholder='Пароль'
+            placeholder={MESSAGES.ui.auth.passwordPlaceholder}
             placeholderTextColor={tokens.textMuted}
             secureTextEntry
             style={[
@@ -129,7 +129,7 @@ export default function RegisterPage(): React.JSX.Element {
           <TextInput
             value={confirmPassword}
             onChangeText={setConfirmPassword}
-            placeholder='Повтор пароля'
+            placeholder={MESSAGES.ui.auth.passwordConfirmPlaceholder}
             placeholderTextColor={tokens.textMuted}
             secureTextEntry
             style={[
@@ -152,21 +152,21 @@ export default function RegisterPage(): React.JSX.Element {
             {loading ? (
               <ActivityIndicator color={tokens.accentText} />
             ) : (
-              <Text style={[styles.submitText, { color: tokens.accentText }]}>Создать аккаунт</Text>
+              <Text style={[styles.submitText, { color: tokens.accentText }]}>{MESSAGES.ui.auth.registerSubmit}</Text>
             )}
           </Pressable>
 
           {verifyEmail ? (
             <Pressable style={[styles.secondary, { borderColor: tokens.border }]} onPress={() => safePush(`/verify-email?email=${encodeURIComponent(verifyEmail)}`)}>
-              <Text style={[styles.secondaryText, { color: tokens.text }]}>Подтвердить email</Text>
+              <Text style={[styles.secondaryText, { color: tokens.text }]}>{MESSAGES.ui.auth.registerVerifyEmail}</Text>
             </Pressable>
           ) : null}
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>Уже есть аккаунт?</Text>
+          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.registerHasAccount}</Text>
           <Pressable onPress={() => safePush('/login')}>
-            <Text style={[styles.footerLink, { color: tokens.text }]}>Войти</Text>
+            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.registerHasAccountAction}</Text>
           </Pressable>
         </View>
       </View>

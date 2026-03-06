@@ -57,7 +57,7 @@ export default function ForgotPasswordPage(): React.JSX.Element {
           <TextInput
             value={email}
             onChangeText={setEmail}
-            placeholder='Email'
+            placeholder={MESSAGES.ui.auth.emailPlaceholder}
             placeholderTextColor={tokens.textMuted}
             autoCapitalize='none'
             keyboardType='email-address'
@@ -79,21 +79,21 @@ export default function ForgotPasswordPage(): React.JSX.Element {
             {loading ? (
               <ActivityIndicator color={tokens.accentText} />
             ) : (
-              <Text style={[styles.submitText, { color: tokens.accentText }]}>Отправить код</Text>
+              <Text style={[styles.submitText, { color: tokens.accentText }]}>{MESSAGES.ui.auth.forgotSubmitCode}</Text>
             )}
           </Pressable>
 
           {submittedEmail ? (
             <Pressable style={[styles.secondary, { borderColor: tokens.border }]} onPress={() => safePush(`/reset-password?email=${encodeURIComponent(submittedEmail)}`)}>
-              <Text style={[styles.secondaryText, { color: tokens.text }]}>У меня есть код</Text>
+              <Text style={[styles.secondaryText, { color: tokens.text }]}>{MESSAGES.ui.auth.forgotHaveCode}</Text>
             </Pressable>
           ) : null}
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>Вспомнили пароль?</Text>
+          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.forgotRemembered}</Text>
           <Pressable onPress={() => safePush('/login')}>
-            <Text style={[styles.footerLink, { color: tokens.text }]}>Войти</Text>
+            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.forgotRememberedAction}</Text>
           </Pressable>
         </View>
       </View>

@@ -46,14 +46,14 @@ export default function LoginPage(): React.JSX.Element {
       return;
     }
 
-    const biometricTypeLabel = type ?? 'Face ID / отпечаток';
+    const biometricTypeLabel = type ?? MESSAGES.ui.auth.biometricTypeFallback;
     await new Promise<void>((resolve) => {
       Alert.alert(
-        'Включить биометрию?',
-        `Хотите входить через ${biometricTypeLabel} в следующий раз?`,
+        MESSAGES.ui.auth.biometricPromptTitle,
+        MESSAGES.ui.auth.biometricPromptMessage.replace('{type}', biometricTypeLabel),
         [
           {
-            text: 'Не сейчас',
+            text: MESSAGES.ui.auth.biometricPromptSkip,
             style: 'cancel',
             onPress: () => {
               void (async () => {
@@ -64,10 +64,10 @@ export default function LoginPage(): React.JSX.Element {
             },
           },
           {
-            text: 'Включить',
+            text: MESSAGES.ui.auth.biometricPromptEnable,
             onPress: () => {
               void (async () => {
-                const success = await authenticateBiometrics('Подтвердите включение биометрии');
+                const success = await authenticateBiometrics(MESSAGES.ui.auth.biometricPromptConfirm);
                 await setBiometricsEnabled(success);
                 await setBiometricsAsked(true);
                 resolve();
@@ -124,7 +124,7 @@ export default function LoginPage(): React.JSX.Element {
   }, [email, maybeOfferBiometrics, password, safeReplace]);
 
   if (!ready) {
-    return <AuthLoadingScreen tokens={tokens} title='Проверка сессии...' />;
+    return <AuthLoadingScreen tokens={tokens} title={MESSAGES.ui.auth.sessionChecking} />;
   }
 
   if (signedIn) {
@@ -145,7 +145,7 @@ export default function LoginPage(): React.JSX.Element {
           <TextInput
             value={email}
             onChangeText={setEmail}
-            placeholder='Email'
+            placeholder={MESSAGES.ui.auth.emailPlaceholder}
             placeholderTextColor={tokens.textMuted}
             autoCapitalize='none'
             keyboardType='email-address'
@@ -159,7 +159,7 @@ export default function LoginPage(): React.JSX.Element {
           <TextInput
             value={password}
             onChangeText={setPassword}
-            placeholder='Пароль'
+            placeholder={MESSAGES.ui.auth.passwordPlaceholder}
             placeholderTextColor={tokens.textMuted}
             secureTextEntry
             style={[
@@ -181,28 +181,28 @@ export default function LoginPage(): React.JSX.Element {
             {loading ? (
               <ActivityIndicator color={tokens.accentText} />
             ) : (
-              <Text style={[styles.submitText, { color: tokens.accentText }]}>Войти</Text>
+              <Text style={[styles.submitText, { color: tokens.accentText }]}>{MESSAGES.ui.auth.loginSubmit}</Text>
             )}
           </Pressable>
 
           {verificationEmail ? (
             <Pressable style={[styles.secondary, { borderColor: tokens.border }]} onPress={() => safePush(`/verify-email?email=${encodeURIComponent(verificationEmail)}`)}>
-              <Text style={[styles.secondaryText, { color: tokens.text }]}>Подтвердить email</Text>
+              <Text style={[styles.secondaryText, { color: tokens.text }]}>{MESSAGES.ui.auth.loginVerifyEmail}</Text>
             </Pressable>
           ) : null}
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>Нет аккаунта?</Text>
+          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.loginNoAccount}</Text>
           <Pressable onPress={() => safePush('/register')}>
             <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.registerTitle}</Text>
           </Pressable>
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>Забыли пароль?</Text>
+          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.loginForgotPassword}</Text>
           <Pressable onPress={() => safePush('/forgot-password')}>
-            <Text style={[styles.footerLink, { color: tokens.text }]}>Сбросить</Text>
+            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.loginForgotPasswordAction}</Text>
           </Pressable>
         </View>
       </View>

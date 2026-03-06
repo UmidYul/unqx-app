@@ -120,7 +120,7 @@ export default function ResetPasswordPage(): React.JSX.Element {
           <TextInput
             value={email}
             onChangeText={setEmail}
-            placeholder='Email'
+            placeholder={MESSAGES.ui.auth.emailPlaceholder}
             placeholderTextColor={tokens.textMuted}
             autoCapitalize='none'
             keyboardType='email-address'
@@ -136,7 +136,7 @@ export default function ResetPasswordPage(): React.JSX.Element {
           <TextInput
             value={newPassword}
             onChangeText={setNewPassword}
-            placeholder='Новый пароль'
+            placeholder={MESSAGES.ui.auth.newPasswordPlaceholder}
             placeholderTextColor={tokens.textMuted}
             secureTextEntry
             style={[
@@ -148,7 +148,7 @@ export default function ResetPasswordPage(): React.JSX.Element {
           <TextInput
             value={confirmPassword}
             onChangeText={setConfirmPassword}
-            placeholder='Повтор нового пароля'
+            placeholder={MESSAGES.ui.auth.newPasswordConfirmPlaceholder}
             placeholderTextColor={tokens.textMuted}
             secureTextEntry
             style={[
@@ -168,19 +168,19 @@ export default function ResetPasswordPage(): React.JSX.Element {
             {loading ? (
               <ActivityIndicator color={tokens.accentText} />
             ) : (
-              <Text style={[styles.submitText, { color: tokens.accentText }]}>Сбросить пароль</Text>
+              <Text style={[styles.submitText, { color: tokens.accentText }]}>{MESSAGES.ui.auth.resetSubmit}</Text>
             )}
           </Pressable>
 
           {done ? (
-            <Text style={[styles.redirectHint, { color: tokens.textMuted }]}>Переход на экран входа...</Text>
+            <Text style={[styles.redirectHint, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.resetRedirectHint}</Text>
           ) : null}
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>Нет кода?</Text>
+          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.resetNoCode}</Text>
           <Pressable onPress={() => safePush('/forgot-password')}>
-            <Text style={[styles.footerLink, { color: tokens.text }]}>Отправить заново</Text>
+            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.resetNoCodeAction}</Text>
           </Pressable>
         </View>
       </View>
