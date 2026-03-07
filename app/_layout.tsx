@@ -94,7 +94,7 @@ function RootNavigator(): React.JSX.Element {
     }
 
     const syncToken = async () => {
-      if (!token && !nativeToken) {
+      if (!token) {
         return;
       }
       const payloadKey = `${token ?? ''}|${nativeToken ?? ''}`;

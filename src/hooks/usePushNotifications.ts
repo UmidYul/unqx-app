@@ -14,6 +14,26 @@ function resolveProjectId(): string | undefined {
   return fromEasConfig ?? fromExpoConfig;
 }
 
+async function getExpoPushTokenSafe(Notifications: typeof import('expo-notifications')): Promise<string | null> {
+  const projectId = resolveProjectId();
+
+  if (projectId) {
+    try {
+      const token = await Notifications.getExpoPushTokenAsync({ projectId });
+      return token?.data ?? null;
+    } catch {
+      // Fall through to no-arg call for builds where projectId metadata is missing.
+    }
+  }
+
+  try {
+    const token = await Notifications.getExpoPushTokenAsync();
+    return token?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function registerForPushNotifications(Notifications: typeof import('expo-notifications')): Promise<string | null> {
   if (!Device.isDevice) {
     return null;
@@ -33,10 +53,7 @@ async function registerForPushNotifications(Notifications: typeof import('expo-n
     return null;
   }
 
-  const token = await Notifications.getExpoPushTokenAsync({
-    projectId: resolveProjectId(),
-  });
-  return token.data;
+  return getExpoPushTokenSafe(Notifications);
 }
 
 async function getNativePushToken(Notifications: typeof import('expo-notifications')): Promise<string | null> {
@@ -69,10 +86,7 @@ async function getExistingPushToken(Notifications: typeof import('expo-notificat
     return null;
   }
 
-  const token = await Notifications.getExpoPushTokenAsync({
-    projectId: resolveProjectId(),
-  });
-  return token.data;
+  return getExpoPushTokenSafe(Notifications);
 }
 
 export async function requestPushPermission(): Promise<string | null> {
