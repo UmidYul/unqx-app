@@ -102,14 +102,16 @@ function RootNavigator(): React.JSX.Element {
         return;
       }
 
-      await apiClient
-        .post('/notifications/token', {
+      try {
+        await apiClient.post('/notifications/token', {
           token,
           expoToken: token,
           deviceToken: nativeToken,
           platform: Platform.OS,
-        })
-        .catch(() => undefined);
+        });
+      } catch {
+        return;
+      }
       await storageSetItem('unqx.push.last-token', token ?? nativeToken ?? '');
       lastTokenRef.current = token ?? nativeToken ?? null;
       pushedTokenRef.current = payloadKey;
