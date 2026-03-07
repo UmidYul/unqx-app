@@ -17,8 +17,10 @@ import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 import { Chevron, Label, Pill } from '@/components/ui/shared';
 import { MESSAGES } from '@/constants/messages';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { apiClient } from '@/lib/apiClient';
 import { queryKeys } from '@/lib/queryKeys';
+import { updateWidgetTapStats } from '@/lib/widgetStats';
 import {
   fetchAnalyticsDashboardLike,
   fetchContactsLike,
@@ -67,8 +69,8 @@ function parseRecent(raw: unknown): RecentTap[] {
 
   return source.slice(0, 4).map((item: any, index: number) => ({
     id: String(item?.id ?? `${index}`),
-    name: item?.name ?? item?.ownerName ?? item?.viewerName ?? item?.slug ?? 'Неизвестный',
-    time: item?.time ?? item?.timestamp ?? item?.createdAt ?? 'только что',
+    name: item?.name ?? item?.ownerName ?? item?.viewerName ?? item?.slug ?? 'Unknown',
+    time: item?.time ?? item?.timestamp ?? item?.createdAt ?? 'just now',
     source: item?.source ?? item?.channel ?? item?.slug ?? item?.visitorSlug ?? 'direct',
   }));
 }
@@ -77,9 +79,9 @@ function initialLetter(name: string): string {
   return (name || 'U').trim().charAt(0).toUpperCase();
 }
 
-function toAgoLabel(raw: string): string {
-  if (!raw) return 'только что';
-  if (raw.includes('назад') || raw.includes('сегодня') || raw.includes('вчера')) return raw;
+function toAgoLabel(raw: string, isUz: boolean): string {
+  if (!raw) return isUz ? 'hozirgina' : 'только что';
+  if (raw.includes('назад') || raw.includes('сегодня') || raw.includes('вчера') || raw.includes('oldin') || raw.includes('bugun') || raw.includes('kecha')) return raw;
 
   const parsed = Date.parse(raw);
   if (Number.isNaN(parsed)) {
@@ -88,31 +90,63 @@ function toAgoLabel(raw: string): string {
 
   const diffMs = Math.max(0, Date.now() - parsed);
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'только что';
-  if (diffMin < 60) return `${diffMin} мин назад`;
+  if (diffMin < 1) return isUz ? 'hozirgina' : 'только что';
+  if (diffMin < 60) return isUz ? `${diffMin} daqiqa oldin` : `${diffMin} мин назад`;
 
   const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours} ч назад`;
+  if (diffHours < 24) return isUz ? `${diffHours} soat oldin` : `${diffHours} ч назад`;
 
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays} д назад`;
+  if (diffDays < 7) return isUz ? `${diffDays} kun oldin` : `${diffDays} д назад`;
 
-  return new Date(parsed).toLocaleDateString('ru-RU');
+  return new Date(parsed).toLocaleDateString(isUz ? 'uz-UZ' : 'ru-RU');
 }
 
-function sourceLabel(value?: string): string {
+function sourceLabel(value: string | undefined, isUz: boolean): string {
   const lower = String(value || '').toLowerCase();
   if (lower.includes('nfc')) return 'NFC';
   if (lower.includes('qr')) return 'QR';
   if (lower.includes('share') || lower.includes('telegram')) return 'Share';
   if (lower.includes('widget')) return 'Widget';
-  return 'Прямая';
+  return isUz ? "To'g'ridan-to'g'ri" : 'Прямая';
 }
 
 export default function HomePage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const { tokens } = useThemeContext();
   const { safePush } = useThrottledNavigation();
+  const { language } = useLanguageContext();
+  const isUz = language === 'uz';
+
+  const homeText = isUz
+    ? {
+      unknownName: 'Noma\'lum',
+      justNow: 'hozirgina',
+      growthSuffix: 'oldingi davrga nisbatan',
+      retry: 'Qayta urinish',
+      premium: 'Premium',
+      basic: 'Asosiy',
+      share: 'Ulashish',
+      showQr: 'QR ko\'rsatish',
+      today: 'Bugun',
+      realtime: 'real vaqtda yangilanadi',
+      totalTaps: 'Jami taplar',
+      noEvents: 'Hozircha hodisalar yo\'q',
+    }
+    : {
+      unknownName: 'Неизвестный',
+      justNow: 'только что',
+      growthSuffix: 'к прошлому периоду',
+      retry: 'Повторить',
+      premium: 'Премиум',
+      basic: 'Базовый',
+      share: 'Поделиться',
+      showQr: 'Показать QR',
+      today: 'Сегодня',
+      realtime: 'обновляется в реальном времени',
+      totalTaps: 'Всего тапов',
+      noEvents: 'Пока нет событий',
+    };
 
   const [shareVisible, setShareVisible] = React.useState(false);
   const [qrVisible, setQrVisible] = React.useState(false);
@@ -191,6 +225,14 @@ export default function HomePage(): React.JSX.Element {
     return () => cancelAnimationFrame(frameId);
   }, [payload?.summary.totalTaps]);
 
+  React.useEffect(() => {
+    if (!payload) {
+      return;
+    }
+
+    void updateWidgetTapStats(payload.summary.todayTaps ?? 0, payload.summary.totalTaps ?? 0);
+  }, [payload]);
+
   if (loading && !payload) {
     return (
       <AppShell title={MESSAGES.ui.screens.home} tokens={tokens}>
@@ -244,8 +286,9 @@ export default function HomePage(): React.JSX.Element {
   const user = payload.user;
   const summary = payload.summary;
   const recent = payload.recent;
+
   const growth = Number(summary.growth ?? 0);
-  const growthText = `${growth > 0 ? '+' : ''}${growth}% к прошлому периоду`;
+  const growthText = `${growth > 0 ? '+' : ''}${growth}% ${homeText.growthSuffix}`;
   const isPremium = String(user.plan).toLowerCase() === 'premium';
 
   return (
@@ -266,7 +309,7 @@ export default function HomePage(): React.JSX.Element {
                     void queryClient.invalidateQueries({ queryKey: queryKeys.homeRecent });
                   }}
                 >
-                  <Text style={[styles.retryText, { color: tokens.text }]}>Повторить</Text>
+                  <Text style={[styles.retryText, { color: tokens.text }]}>{homeText.retry}</Text>
                 </AnimatedPressable>
               </View>
             ) : null}
@@ -279,7 +322,7 @@ export default function HomePage(): React.JSX.Element {
 
               <View style={styles.heroPills}>
                 <BlurView intensity={28} tint='dark' style={styles.blurPill}>
-                  <Text style={styles.blurText}>{isPremium ? 'Премиум' : 'Базовый'}</Text>
+                  <Text style={styles.blurText}>{isPremium ? homeText.premium : homeText.basic}</Text>
                 </BlurView>
                 <BlurView intensity={28} tint='dark' style={styles.blurPill}>
                   <Text style={styles.blurText}>● NFC active</Text>
@@ -292,27 +335,27 @@ export default function HomePage(): React.JSX.Element {
                   style={styles.heroActionBtn}
                   containerStyle={styles.heroActionWrap}
                 >
-                  <Text style={styles.heroActionText}>Поделиться</Text>
+                  <Text style={styles.heroActionText}>{homeText.share}</Text>
                 </AnimatedPressable>
                 <AnimatedPressable
                   onPress={() => setQrVisible(true)}
                   style={styles.heroActionBtn}
                   containerStyle={styles.heroActionWrap}
                 >
-                  <Text style={styles.heroActionText}>Показать QR</Text>
+                  <Text style={styles.heroActionText}>{homeText.showQr}</Text>
                 </AnimatedPressable>
               </View>
             </LinearGradient>
 
             <View style={styles.metricsGrid}>
               <View style={[styles.metricCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-                <Label color={tokens.textMuted}>Сегодня</Label>
+                <Label color={tokens.textMuted}>{homeText.today}</Label>
                 <Text style={[styles.metricValue, { color: tokens.text }]}>{summary.todayTaps ?? 0}</Text>
-                <Text style={[styles.metricSub, { color: tokens.textMuted }]}>обновляется в реальном времени</Text>
+                <Text style={[styles.metricSub, { color: tokens.textMuted }]}>{homeText.realtime}</Text>
               </View>
 
               <View style={[styles.metricCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-                <Label color={tokens.textMuted}>Всего тапов</Label>
+                <Label color={tokens.textMuted}>{homeText.totalTaps}</Label>
                 <Text style={[styles.metricValue, { color: tokens.text }]}>{loading ? '...' : animatedTotal}</Text>
                 <View style={styles.growthRow}>
                   <TrendingUp size={12} strokeWidth={1.5} color={growth >= 0 ? tokens.green : tokens.red} />
@@ -342,7 +385,7 @@ export default function HomePage(): React.JSX.Element {
             ))}
 
             <Label color={tokens.textMuted}>{MESSAGES.ui.home.recentTaps}</Label>
-            {recent.length === 0 ? <Text style={[styles.recentEmpty, { color: tokens.textMuted }]}>Пока нет событий</Text> : null}
+            {recent.length === 0 ? <Text style={[styles.recentEmpty, { color: tokens.textMuted }]}>{homeText.noEvents}</Text> : null}
             {recent.map((item, index) => {
               return (
                 <Animated.View key={item.id} entering={FadeInDown.duration(220).delay(index * 50)}>
@@ -361,14 +404,14 @@ export default function HomePage(): React.JSX.Element {
                       </View>
                       <View>
                         <Text style={[styles.recentName, { color: tokens.text }]}>{item.name}</Text>
-                        <Text style={[styles.recentSlug, { color: tokens.textMuted }]}>{sourceLabel(item.source)}</Text>
+                        <Text style={[styles.recentSlug, { color: tokens.textMuted }]}>{sourceLabel(item.source, isUz)}</Text>
                       </View>
                     </View>
                     <View style={styles.recentRight}>
                       <Pill color={tokens.accent} bg={`${tokens.accent}14`}>
-                        {sourceLabel(item.source)}
+                        {sourceLabel(item.source, isUz)}
                       </Pill>
-                      <Text style={[styles.recentTime, { color: tokens.textMuted }]}>{toAgoLabel(item.time)}</Text>
+                      <Text style={[styles.recentTime, { color: tokens.textMuted }]}>{toAgoLabel(item.time, isUz)}</Text>
                     </View>
                   </View>
                 </Animated.View>

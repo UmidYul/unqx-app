@@ -1,10 +1,11 @@
 import React from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Redirect } from 'expo-router';
 
 import { AuthLoadingScreen } from '@/components/AuthLoadingScreen';
 import { MESSAGES } from '@/constants/messages';
 import { useAuthStatus } from '@/hooks/useAuthStatus';
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { AuthSessionError, registerWithApi } from '@/services/authSession';
 import { validateConfirmPassword, validateEmail, validateFirstName, validatePassword } from '@/services/authValidation';
@@ -14,12 +15,15 @@ export default function RegisterPage(): React.JSX.Element {
   const { safePush, safeReplace } = useThrottledNavigation();
   const { tokens } = useThemeContext();
   const { ready, signedIn } = useAuthStatus();
+  const { language } = useLanguageContext();
+  const isUz = language === 'uz';
 
   const [firstName, setFirstName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  const [agreed, setAgreed] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<string | null>(null);
   const [verifyEmail, setVerifyEmail] = React.useState<string>('');
@@ -37,6 +41,14 @@ export default function RegisterPage(): React.JSX.Element {
     if (firstError) {
       setInfo(null);
       setError(firstError);
+      return;
+    }
+
+    if (!agreed) {
+      setInfo(null);
+      setError(isUz
+        ? "Ro'yxatdan o'tishdan oldin Foydalanish shartlari va Maxfiylik siyosatini qabul qiling"
+        : 'Перед регистрацией примите Пользовательское соглашение и Политику конфиденциальности');
       return;
     }
 
@@ -68,7 +80,7 @@ export default function RegisterPage(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [confirmPassword, email, firstName, password, safeReplace]);
+  }, [agreed, confirmPassword, email, firstName, isUz, password, safeReplace]);
 
   if (!ready) {
     return <AuthLoadingScreen tokens={tokens} title={MESSAGES.ui.auth.sessionChecking} />;
@@ -142,11 +154,50 @@ export default function RegisterPage(): React.JSX.Element {
           {info ? <Text style={[styles.info, { color: tokens.green }]}>{info}</Text> : null}
 
           <Pressable
+            onPress={() => setAgreed((prev) => !prev)}
+            style={styles.consentRow}
+            accessibilityRole='checkbox'
+            accessibilityState={{ checked: agreed }}
+          >
+            <View
+              style={[
+                styles.checkbox,
+                {
+                  borderColor: agreed ? tokens.accent : tokens.border,
+                  backgroundColor: agreed ? tokens.accent : 'transparent',
+                },
+              ]}
+            >
+              {agreed ? <Text style={[styles.checkboxMark, { color: tokens.accentText }]}>✓</Text> : null}
+            </View>
+            <Text style={[styles.consentText, { color: tokens.textMuted }]}>
+              {isUz ? 'Men ' : 'Я принимаю '}
+              <Text
+                style={[styles.consentLink, { color: tokens.text }]}
+                onPress={() => {
+                  void Linking.openURL('https://unqx.uz/terms');
+                }}
+              >
+                {isUz ? 'Foydalanuvchi shartlari' : 'Пользовательское соглашение'}
+              </Text>
+              {isUz ? ' va ' : ' и '}
+              <Text
+                style={[styles.consentLink, { color: tokens.text }]}
+                onPress={() => {
+                  void Linking.openURL('https://unqx.uz/privacy');
+                }}
+              >
+                {isUz ? 'Maxfiylik siyosati' : 'Политику конфиденциальности'}
+              </Text>
+            </Text>
+          </Pressable>
+
+          <Pressable
             onPress={() => void submit()}
-            disabled={loading}
+            disabled={loading || !agreed}
             style={[
               styles.submit,
-              { backgroundColor: tokens.accent, opacity: loading ? 0.5 : 1 },
+              { backgroundColor: tokens.accent, opacity: loading || !agreed ? 0.5 : 1 },
             ]}
           >
             {loading ? (
@@ -220,6 +271,36 @@ const styles = StyleSheet.create({
   info: {
     marginTop: 4,
     fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+  },
+  consentRow: {
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  checkbox: {
+    marginTop: 2,
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxMark: {
+    fontSize: 12,
+    lineHeight: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  consentText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
+  },
+  consentLink: {
+    textDecorationLine: 'underline',
     fontFamily: 'Inter_500Medium',
   },
   submit: {

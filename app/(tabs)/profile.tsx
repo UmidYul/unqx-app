@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ChevronRight, QrCode, Share2 } from 'lucide-react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
@@ -13,6 +13,7 @@ import { ScreenTransition } from '@/components/ScreenTransition';
 import { CardEditor } from '@/components/profile/CardEditor';
 import { CardPreview } from '@/components/profile/CardPreview';
 import { WristbandPage } from '@/components/profile/WristbandPage';
+import { normalizeButtonIconKey } from '@/components/profile/buttonIcons';
 import { ShareSheet } from '@/components/ShareSheet';
 import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 import { SkeletonBlock, SkeletonCircle } from '@/components/ui/skeleton';
@@ -20,15 +21,17 @@ import { Label, Pill } from '@/components/ui/shared';
 import { useBiometrics } from '@/hooks/useBiometrics';
 import { MESSAGES } from '@/constants/messages';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { useStoreReview } from '@/hooks/useStoreReview';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { resolveAssetUrl } from '@/lib/assetUrl';
-import { nfcApi, apiClient } from '@/lib/apiClient';
+import { ApiError, nfcApi, apiClient } from '@/lib/apiClient';
 import { queryKeys } from '@/lib/queryKeys';
 import { storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import {
   createWristbandOrderLike,
+  fetchWristbandOrdersLike,
   fetchAnalyticsDashboardLike,
   fetchProfileLike,
   saveProfileCardLike,
@@ -56,13 +59,15 @@ const DEFAULT_CARD: ProfileCard = {
   email: '',
   slug: 'UNQ001',
   avatarUrl: undefined,
-  theme: 'light',
+  theme: 'default_dark',
   buttons: [
     { icon: 'phone', label: 'Позвонить', url: '' },
-    { icon: 'send', label: 'Telegram', url: '' },
-    { icon: 'globe', label: 'Сайт', url: '' },
+    { icon: 'telegram', label: 'Telegram', url: '' },
+    { icon: 'website', label: 'Сайт', url: '' },
   ],
 };
+
+const BIOMETRIC_TIMEOUT_OPTIONS_MS = [0, 30_000, 60_000, 5 * 60_000] as const;
 
 function pickPrimarySlug(raw: any): string {
   const slugs = Array.isArray(raw?.slugs) ? raw.slugs : [];
@@ -71,9 +76,13 @@ function pickPrimarySlug(raw: any): string {
 }
 
 function normalizeCardTheme(rawTheme: unknown): ProfileCard['theme'] {
-  if (rawTheme === 'dark') return 'dark';
-  if (rawTheme === 'gradient') return 'gradient';
-  return 'light';
+  const raw = String(rawTheme ?? '').trim().toLowerCase();
+  if (raw === 'default_dark' || raw === 'dark' || raw === 'light' || raw === 'gradient') return 'default_dark';
+  if (raw === 'arctic') return 'arctic';
+  if (raw === 'linen') return 'linen';
+  if (raw === 'marble') return 'marble';
+  if (raw === 'forest') return 'forest';
+  return 'default_dark';
 }
 
 function parseProfileCard(raw: unknown): ProfileCard {
@@ -92,7 +101,7 @@ function parseProfileCard(raw: unknown): ProfileCard {
     theme: normalizeCardTheme(card?.theme),
     buttons: Array.isArray(card?.buttons)
       ? card.buttons.map((item: any) => ({
-        icon: String(item?.icon ?? item?.type ?? 'phone'),
+        icon: normalizeButtonIconKey(String(item?.icon ?? item?.type ?? 'other')),
         label: String(item?.label ?? item?.type ?? ''),
         url: String(item?.url ?? item?.value ?? item?.href ?? ''),
       }))
@@ -144,10 +153,31 @@ function parseOrder(raw: unknown): WristbandOrder {
   const source = (raw as { order?: any })?.order ?? raw;
   return {
     id: String(source?.id ?? source?.orderId ?? ''),
-    status: String(source?.status ?? 'pending'),
+    status: String(source?.status ?? 'pending').toLowerCase(),
+    slug: source?.slug ? String(source.slug) : undefined,
+    slugPrice: Number.isFinite(Number(source?.slugPrice)) ? Number(source.slugPrice) : undefined,
+    requestedPlan: source?.requestedPlan ? String(source.requestedPlan) : undefined,
+    planPrice: Number.isFinite(Number(source?.planPrice)) ? Number(source.planPrice) : undefined,
+    bracelet: source?.bracelet === undefined ? undefined : Boolean(source.bracelet),
+    statusBadge: source?.statusBadge ? String(source.statusBadge) : undefined,
+    adminNote: source?.adminNote ? String(source.adminNote) : null,
     createdAt: source?.createdAt,
     estimatedAt: source?.estimatedAt,
   };
+}
+
+function parseOrders(raw: unknown): WristbandOrder[] {
+  const source = (raw as { items?: unknown[] })?.items ?? raw;
+  if (!Array.isArray(source)) return [];
+
+  return source
+    .map((item) => parseOrder(item))
+    .filter((item) => item.id)
+    .sort((a, b) => {
+      const aTime = Date.parse(String(a.createdAt ?? '')) || 0;
+      const bTime = Date.parse(String(b.createdAt ?? '')) || 0;
+      return bTime - aTime;
+    });
 }
 
 function Toggle({ value, onPress, tokens }: { value: boolean; onPress: () => void; tokens: ThemeTokens }): React.JSX.Element {
@@ -170,12 +200,13 @@ function Toggle({ value, onPress, tokens }: { value: boolean; onPress: () => voi
 
 export default function ProfilePage(): React.JSX.Element {
   const { safeReplace } = useThrottledNavigation();
-  const params = useLocalSearchParams<{ wristband?: string | string[] }>();
+  const params = useLocalSearchParams<{ wristband?: string | string[]; showQr?: string | string[] }>();
   const queryClient = useQueryClient();
   const { isOnline } = useNetworkStatus({ invalidateOnReconnect: false });
   const { incrementSuccess, maybeAskReview } = useStoreReview();
   const { tokens, theme, autoTheme, setTheme, setAutoTheme } = useThemeContext();
-  const { language, toggleLanguage } = useLanguageContext();
+  const { language, setLanguage } = useLanguageContext();
+  const isUz = language === 'uz';
 
   const [error, setError] = React.useState<string | null>(null);
   const [editorVisible, setEditorVisible] = React.useState(false);
@@ -184,12 +215,26 @@ export default function ProfilePage(): React.JSX.Element {
   const [shareVisible, setShareVisible] = React.useState(false);
   const [qrVisible, setQrVisible] = React.useState(false);
   const [wristbandVisible, setWristbandVisible] = React.useState(false);
+  const [languageModalVisible, setLanguageModalVisible] = React.useState(false);
+  const [biometricTimeoutModalVisible, setBiometricTimeoutModalVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    const raw = Array.isArray(params.showQr) ? params.showQr[0] : params.showQr;
+    const normalized = String(raw || '').trim().toLowerCase();
+    const shouldOpenQr = normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+    if (shouldOpenQr) {
+      setQrVisible(true);
+    }
+  }, [params.showQr]);
+  const [aboutModalVisible, setAboutModalVisible] = React.useState(false);
   const [trackedOrderId, setTrackedOrderId] = React.useState<string | null>(null);
+  const [autoOpenOrderId, setAutoOpenOrderId] = React.useState<string | null>(null);
 
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [biometricsEnabled, setBiometricsEnabledState] = React.useState(false);
   const [biometricsAvailable, setBiometricsAvailable] = React.useState(false);
   const [biometricLabel, setBiometricLabel] = React.useState<string>('Face ID / отпечаток');
+  const [biometricLockTimeoutMs, setBiometricLockTimeoutMs] = React.useState<number>(2000);
   const {
     isAvailable: isBiometricsAvailable,
     isEnrolled: isBiometricsEnrolled,
@@ -197,6 +242,8 @@ export default function ProfilePage(): React.JSX.Element {
     getBiometricType,
     getBiometricsEnabled,
     setBiometricsEnabled,
+    getBiometricLockTimeoutMs: getBiometricLockTimeoutSetting,
+    setBiometricLockTimeoutMs: setBiometricLockTimeoutSetting,
   } = useBiometrics();
 
   const loadWristbandStatus = React.useCallback(async () => apiClient.get<any>('/wristband/status'), []);
@@ -226,6 +273,11 @@ export default function ProfilePage(): React.JSX.Element {
     queryFn: nfcApi.history,
   });
 
+  const ordersQuery = useQuery({
+    queryKey: queryKeys.wristbandOrders,
+    queryFn: fetchWristbandOrdersLike,
+  });
+
   const orderQuery = useQuery({
     queryKey: queryKeys.order(trackedOrderId ?? ''),
     queryFn: () => trackWristbandOrderLike(trackedOrderId as string),
@@ -233,6 +285,7 @@ export default function ProfilePage(): React.JSX.Element {
   });
 
   const card = React.useMemo(() => (meQuery.data ? parseProfileCard(meQuery.data) : null), [meQuery.data]);
+  const avatarImage = useRetryImageUri(card?.avatarUrl);
   const totalTaps = React.useMemo(() => parseTotalTaps(analyticsQuery.data), [analyticsQuery.data]);
   const wristbandStatus = React.useMemo(
     () => (wristbandQuery.data ? parseWristbandStatus(wristbandQuery.data) : null),
@@ -240,6 +293,7 @@ export default function ProfilePage(): React.JSX.Element {
   );
   const tags = React.useMemo(() => parseTags(tagsQuery.data), [tagsQuery.data]);
   const history = React.useMemo(() => parseHistory(historyQuery.data), [historyQuery.data]);
+  const orders = React.useMemo(() => parseOrders(ordersQuery.data), [ordersQuery.data]);
   const order = React.useMemo<WristbandOrder | null>(() => {
     if (orderQuery.data) {
       return parseOrder(orderQuery.data);
@@ -249,8 +303,8 @@ export default function ProfilePage(): React.JSX.Element {
   const loading = !card && (meQuery.isLoading || analyticsQuery.isLoading || tagsQuery.isLoading || historyQuery.isLoading);
   const isRefreshing = meQuery.isRefetching || wristbandQuery.isRefetching;
   const onRefresh = React.useCallback(async () => {
-    await Promise.all([meQuery.refetch(), wristbandQuery.refetch()]);
-  }, [meQuery, wristbandQuery]);
+    await Promise.all([meQuery.refetch(), wristbandQuery.refetch(), ordersQuery.refetch()]);
+  }, [meQuery, ordersQuery, wristbandQuery]);
 
   React.useEffect(() => {
     const wristbandParam = Array.isArray(params.wristband) ? params.wristband[0] : params.wristband;
@@ -261,21 +315,23 @@ export default function ProfilePage(): React.JSX.Element {
 
   React.useEffect(() => {
     const loadSettings = async () => {
-      const [notificationsValue, available, enrolled, type, enabled] = await Promise.all([
+      const [notificationsValue, available, enrolled, type, enabled, lockTimeoutMs] = await Promise.all([
         storageGetItem('unqx.settings.notifications'),
         isBiometricsAvailable(),
         isBiometricsEnrolled(),
         getBiometricType(),
         getBiometricsEnabled(),
+        getBiometricLockTimeoutSetting(),
       ]);
       setNotificationsEnabled(notificationsValue !== '0');
       setBiometricsAvailable(Boolean(available && enrolled));
       setBiometricLabel(type ?? 'Face ID / отпечаток');
       setBiometricsEnabledState(Boolean(available && enrolled && enabled));
+      setBiometricLockTimeoutMs(lockTimeoutMs);
     };
 
     void loadSettings();
-  }, [getBiometricType, getBiometricsEnabled, isBiometricsAvailable, isBiometricsEnrolled]);
+  }, [getBiometricLockTimeoutSetting, getBiometricType, getBiometricsEnabled, isBiometricsAvailable, isBiometricsEnrolled]);
 
   const saveCardMutation = useMutation({
     networkMode: 'offlineFirst',
@@ -355,14 +411,80 @@ export default function ProfilePage(): React.JSX.Element {
     },
   });
 
+  const deleteTagMutation = useMutation({
+    networkMode: 'offlineFirst',
+    mutationFn: ({ uid }: { uid: string }) => nfcApi.deleteTag(uid),
+    onMutate: async ({ uid }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.nfcTags });
+      await queryClient.cancelQueries({ queryKey: queryKeys.nfcHistory });
+
+      const previousTags = queryClient.getQueryData(queryKeys.nfcTags);
+      const previousHistory = queryClient.getQueryData(queryKeys.nfcHistory);
+
+      queryClient.setQueryData(queryKeys.nfcTags, (old: any) => ({
+        ...(old ?? {}),
+        items: Array.isArray(old?.items)
+          ? old.items.filter((item: any) => String(item?.uid ?? '') !== uid)
+          : [],
+      }));
+
+      queryClient.setQueryData(queryKeys.nfcHistory, (old: any) => ({
+        ...(old ?? {}),
+        items: Array.isArray(old?.items)
+          ? old.items.filter((item: any) => String(item?.uid ?? '') !== uid)
+          : [],
+      }));
+
+      return { previousTags, previousHistory };
+    },
+    onError: (error) => {
+      setError(isUz ? 'Tegni o\'chirib bo\'lmadi' : 'Не удалось удалить метку');
+
+      if (error instanceof ApiError && error.code === 'NFC_TAG_DELETE_NOT_CONFIRMED') {
+        toast.error(
+          isUz ? 'Teg serverda o\'chirilmadi' : 'Сервер не подтвердил удаление метки',
+          isUz ? 'Iltimos, yana urinib ko\'ring' : 'Попробуйте удалить ещё раз',
+        );
+        return;
+      }
+
+      if (error instanceof ApiError && error.code === 'NFC_TAG_DELETE_FAILED') {
+        toast.error(
+          isUz ? 'Tegni o\'chirish endpointi ishlamadi' : 'Эндпоинт удаления метки не сработал',
+          isUz ? 'Server sozlamalarini tekshiring' : 'Проверьте настройки API на сервере',
+        );
+        return;
+      }
+
+      toast.error(MESSAGES.toast.saveFailed, MESSAGES.common.retryConnection);
+    },
+    onSuccess: () => {
+      toast.success(MESSAGES.toast.tagDeleted);
+    },
+    onSettled: (_data, _err, _variables, context) => {
+      if (_err && context?.previousTags) {
+        queryClient.setQueryData(queryKeys.nfcTags, context.previousTags);
+      }
+      if (_err && context?.previousHistory) {
+        queryClient.setQueryData(queryKeys.nfcHistory, context.previousHistory);
+      }
+      void queryClient.invalidateQueries({ queryKey: queryKeys.nfcTags });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.nfcHistory });
+    },
+  });
+
   const createOrderMutation = useMutation({
     networkMode: 'offlineFirst',
     mutationFn: (payload: { address: string; quantity: number }) => createWristbandOrderLike(payload),
     onSuccess: (response) => {
       const parsed = parseOrder(response);
-      setTrackedOrderId(parsed.id);
+      if (parsed.id) {
+        setTrackedOrderId(parsed.id);
+        setAutoOpenOrderId(parsed.id);
+      }
       setError(null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.wristband });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wristbandOrders });
       toast.success(MESSAGES.toast.orderSent);
       void incrementSuccess().then(() => maybeAskReview()).catch(() => undefined);
     },
@@ -405,6 +527,17 @@ export default function ProfilePage(): React.JSX.Element {
     [createOrderMutation, isOnline],
   );
 
+  const handleDeleteTag = React.useCallback(
+    (uid: string) => {
+      if (!isOnline) {
+        toast.info(MESSAGES.toast.offlineQueued);
+        return;
+      }
+      deleteTagMutation.mutate({ uid });
+    },
+    [deleteTagMutation, isOnline],
+  );
+
   const handleTrackOrder = React.useCallback(
     (orderId: string) => {
       setTrackedOrderId(orderId);
@@ -418,6 +551,32 @@ export default function ProfilePage(): React.JSX.Element {
     setNotificationsEnabled(next);
     await storageSetItem('unqx.settings.notifications', next ? '1' : '0');
   }, [notificationsEnabled]);
+
+  const handleOpenNotificationSettings = React.useCallback(async () => {
+    try {
+      await Linking.openSettings();
+    } catch {
+      toast.error(isUz ? 'Sozlamalarni ochib bo\'lmadi' : 'Не удалось открыть настройки');
+    }
+  }, [isUz]);
+
+  const biometricTimeoutLabel = React.useMemo(() => {
+    if (biometricLockTimeoutMs <= 0) {
+      return isUz ? 'Darhol' : 'Сразу';
+    }
+    if (biometricLockTimeoutMs < 60_000) {
+      const sec = Math.round(biometricLockTimeoutMs / 1000);
+      return isUz ? `${sec} soniya` : `${sec} сек`;
+    }
+    const min = Math.round(biometricLockTimeoutMs / 60_000);
+    return isUz ? `${min} daqiqa` : `${min} мин`;
+  }, [biometricLockTimeoutMs, isUz]);
+
+  const handleSelectBiometricTimeout = React.useCallback(async (timeoutMs: number) => {
+    setBiometricLockTimeoutMs(timeoutMs);
+    await setBiometricLockTimeoutSetting(timeoutMs);
+    setBiometricTimeoutModalVisible(false);
+  }, [setBiometricLockTimeoutSetting]);
 
   const toggleBiometrics = React.useCallback(async () => {
     if (!biometricsAvailable) {
@@ -446,6 +605,26 @@ export default function ProfilePage(): React.JSX.Element {
     }
   }, [safeReplace]);
 
+  const handleOpenSupport = React.useCallback(async () => {
+    const telegramAppUrl = 'tg://resolve?domain=unqx_uz';
+    const telegramWebUrl = 'https://t.me/unqx_uz';
+
+    try {
+      const canOpenTelegram = await Linking.canOpenURL(telegramAppUrl);
+      await Linking.openURL(canOpenTelegram ? telegramAppUrl : telegramWebUrl);
+    } catch {
+      toast.error(isUz ? 'Telegram ochib bo\'lmadi' : 'Не удалось открыть Telegram');
+    }
+  }, [isUz]);
+
+  const handleOpenLegalUrl = React.useCallback(async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      toast.error(isUz ? 'Havolani ochib bo\'lmadi' : 'Не удалось открыть ссылку');
+    }
+  }, [isUz]);
+
   const filteredHistory = React.useMemo(() => {
     const uids = new Set(tags.map((tag) => tag.uid));
     return history.filter((item) => (item.uid ? uids.has(item.uid) : true));
@@ -453,7 +632,6 @@ export default function ProfilePage(): React.JSX.Element {
 
   const currentHour = getUzbekistanHour();
   const autoModeByHour = resolveThemeByHour(currentHour);
-  const isUz = language === 'uz';
   const profileText = isUz
     ? {
       premium: 'Premium',
@@ -472,13 +650,32 @@ export default function ProfilePage(): React.JSX.Element {
       autoThemeHours: 'Qorong\'i 20:00-08:00 (UZT)',
       notifications: 'Bildirishnomalar',
       notificationsSub: 'Taplar va faollik',
+      systemNotifications: 'Telefon bildirishnomalari',
+      systemNotificationsSub: 'Qurilma sozlamalarini ochish',
       biometricEntry: 'Kirish',
       biometricSubOn: 'Ilovani tezkor ochish',
       biometricSubOff: 'Ushbu qurilmada mavjud emas',
+      biometricTimeout: 'Biometriya vaqti',
+      biometricTimeoutSub: 'Fon rejimidan keyin qulf vaqti',
+      biometricTimeoutModalTitle: 'Biometriya vaqtini tanlang',
       language: 'Til',
       languageValue: "O'zbekcha",
       support: "Qo'llab-quvvatlash",
+      terms: 'Foydalanuvchi shartlari',
+      privacy: 'Maxfiylik siyosati',
       about: 'Ilova haqida',
+      languageModalTitle: 'Til tanlash',
+      languageModalHint: 'Interfeys tilini tanlang',
+      modalClose: 'Yopish',
+      aboutModalTitle: 'UNQX haqida',
+      aboutVersionLabel: 'Versiya',
+      aboutDescription: 'UNQX - NFC va raqamli vizitka uchun ilova. Kontakt almashish, faoliyatni kuzatish va profildan to\'liq boshqarish imkonini beradi.',
+      aboutFeaturesTitle: 'Asosiy imkoniyatlar',
+      aboutFeature1: 'NFC va QR orqali tez ulashish',
+      aboutFeature2: 'Taplar bo\'yicha analitika va shahar kesimi',
+      aboutFeature3: 'Profil, vizitka va bilaguzuk sozlamalari',
+      aboutSupportLabel: 'Yordam',
+      aboutSupportValue: '@unqx_uz',
       logout: 'Akkauntdan chiqish',
       autoLight: "Yorug'",
       autoDark: "Qorong'i",
@@ -501,13 +698,32 @@ export default function ProfilePage(): React.JSX.Element {
       autoThemeHours: 'Тёмная 20:00-08:00 (UZT)',
       notifications: 'Уведомления',
       notificationsSub: 'Тапы и активность',
+      systemNotifications: 'Системные уведомления',
+      systemNotificationsSub: 'Открыть настройки телефона',
       biometricEntry: 'Вход',
       biometricSubOn: 'Быстрая разблокировка приложения',
       biometricSubOff: 'Недоступно на этом устройстве',
+      biometricTimeout: 'Время биометрии',
+      biometricTimeoutSub: 'Через сколько блокировать после фона',
+      biometricTimeoutModalTitle: 'Выберите время биометрии',
       language: 'Язык',
       languageValue: 'Русский',
       support: 'Поддержка',
+      terms: 'Пользовательское соглашение',
+      privacy: 'Политика конфиденциальности',
       about: 'О приложении',
+      languageModalTitle: 'Выбор языка',
+      languageModalHint: 'Выберите язык интерфейса',
+      modalClose: 'Закрыть',
+      aboutModalTitle: 'О UNQX',
+      aboutVersionLabel: 'Версия',
+      aboutDescription: 'UNQX - приложение для NFC и цифровой визитки. Помогает быстро делиться контактами, отслеживать активность и управлять профилем в одном месте.',
+      aboutFeaturesTitle: 'Ключевые возможности',
+      aboutFeature1: 'Быстрый обмен через NFC и QR',
+      aboutFeature2: 'Аналитика тапов и города',
+      aboutFeature3: 'Настройки профиля, визитки и браслета',
+      aboutSupportLabel: 'Поддержка',
+      aboutSupportValue: '@unqx_uz',
       logout: 'Выйти из аккаунта',
       autoLight: 'Светлая',
       autoDark: 'Тёмная',
@@ -518,6 +734,17 @@ export default function ProfilePage(): React.JSX.Element {
     : theme === 'light'
       ? profileText.autoLight
       : profileText.autoDark;
+  const getBiometricTimeoutOptionLabel = React.useCallback((timeoutMs: number): string => {
+    if (timeoutMs <= 0) {
+      return isUz ? 'Darhol' : 'Сразу';
+    }
+    if (timeoutMs < 60_000) {
+      const sec = Math.round(timeoutMs / 1000);
+      return isUz ? `${sec} soniya` : `${sec} сек`;
+    }
+    const min = Math.round(timeoutMs / 60_000);
+    return isUz ? `${min} daqiqa` : `${min} мин`;
+  }, [isUz]);
 
   if (loading && !card) {
     return (
@@ -578,8 +805,13 @@ export default function ProfilePage(): React.JSX.Element {
             {error ? <Text style={[styles.error, { color: tokens.red }]}>{error}</Text> : null}
 
             <View style={[styles.avatarCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-              {card.avatarUrl ? (
-                <Image source={{ uri: card.avatarUrl }} style={styles.avatarImage} />
+              {avatarImage.showImage && avatarImage.imageUri ? (
+                <Image
+                  key={`${card.avatarUrl}:${avatarImage.retryCount}`}
+                  source={{ uri: avatarImage.imageUri }}
+                  style={styles.avatarImage}
+                  onError={avatarImage.onError}
+                />
               ) : (
                 <View style={[styles.avatar, { backgroundColor: tokens.inputBg, borderColor: tokens.border, borderWidth: 1 }]}>
                   <Text style={[styles.avatarText, { color: tokens.text }]}>{card.name[0] ?? 'U'}</Text>
@@ -663,6 +895,15 @@ export default function ProfilePage(): React.JSX.Element {
               />
               <SettingsRow
                 tokens={tokens}
+                label={profileText.systemNotifications}
+                sub={profileText.systemNotificationsSub}
+                right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={() => {
+                  void handleOpenNotificationSettings();
+                }}
+              />
+              <SettingsRow
+                tokens={tokens}
                 label={`${profileText.biometricEntry} ${biometricLabel}`}
                 sub={biometricsAvailable ? profileText.biometricSubOn : profileText.biometricSubOff}
                 right={
@@ -675,13 +916,53 @@ export default function ProfilePage(): React.JSX.Element {
               />
               <SettingsRow
                 tokens={tokens}
+                label={profileText.biometricTimeout}
+                sub={`${profileText.biometricTimeoutSub}: ${biometricTimeoutLabel}`}
+                right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={() => setBiometricTimeoutModalVisible(true)}
+              />
+              <SettingsRow
+                tokens={tokens}
                 label={profileText.language}
                 sub={profileText.languageValue}
                 right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
-                onPress={toggleLanguage}
+                onPress={() => setLanguageModalVisible(true)}
               />
-              <SettingsRow tokens={tokens} label={profileText.support} sub='@unqx_uz' right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />} />
-              <SettingsRow tokens={tokens} label={profileText.about} sub='UNQX v2.0.0' right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />} last />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.support}
+                sub='@unqx_uz'
+                right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={() => {
+                  void handleOpenSupport();
+                }}
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.terms}
+                sub='unqx.uz/terms'
+                right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={() => {
+                  void handleOpenLegalUrl('https://unqx.uz/terms');
+                }}
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.privacy}
+                sub='unqx.uz/privacy'
+                right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={() => {
+                  void handleOpenLegalUrl('https://unqx.uz/privacy');
+                }}
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.about}
+                sub='UNQX v2.0.0'
+                right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={() => setAboutModalVisible(true)}
+                last
+              />
             </View>
 
             <AnimatedPressable style={[styles.logoutBtn, { borderColor: tokens.border }]} onPress={() => void handleLogout()}>
@@ -721,16 +1002,127 @@ export default function ProfilePage(): React.JSX.Element {
           tags={tags}
           history={filteredHistory}
           loading={loading}
+          orders={orders}
+          selectedOrderId={trackedOrderId}
           orderStatus={order}
+          autoOpenOrderId={autoOpenOrderId}
+          onAutoOpenHandled={() => setAutoOpenOrderId(null)}
           onRenameTag={handleRenameTag}
+          onDeleteTag={handleDeleteTag}
           onCreateOrder={handleCreateOrder}
           onTrackOrder={handleTrackOrder}
           renamePending={renameTagMutation.isPending}
+          deletePendingUid={deleteTagMutation.isPending ? deleteTagMutation.variables?.uid ?? null : null}
           orderPending={createOrderMutation.isPending}
         />
 
         <QRCodeModal visible={qrVisible} slug={card.slug} tokens={tokens} onClose={() => setQrVisible(false)} />
         <ShareSheet visible={shareVisible} slug={card.slug} name={card.name} tokens={tokens} onClose={() => setShareVisible(false)} />
+
+        <Modal
+          visible={languageModalVisible}
+          transparent={false}
+          animationType='fade'
+          onRequestClose={() => setLanguageModalVisible(false)}
+        >
+          <Pressable style={[styles.modalOverlay, { backgroundColor: tokens.bg }]} onPress={() => setLanguageModalVisible(false)}>
+            <Pressable style={[styles.modalCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={() => undefined}>
+              <Text style={[styles.modalTitle, { color: tokens.text }]}>{profileText.languageModalTitle}</Text>
+              <Text style={[styles.modalHint, { color: tokens.textMuted }]}>{profileText.languageModalHint}</Text>
+
+              {[
+                { code: 'ru', label: 'Русский' },
+                { code: 'uz', label: "O'zbekcha" },
+              ].map((item) => {
+                const selected = language === item.code;
+                return (
+                  <Pressable
+                    key={item.code}
+                    style={[styles.languageOption, { borderColor: tokens.border, backgroundColor: selected ? `${tokens.accent}14` : 'transparent' }]}
+                    onPress={() => {
+                      setLanguage(item.code as 'ru' | 'uz');
+                      setLanguageModalVisible(false);
+                    }}
+                  >
+                    <Text style={[styles.languageOptionLabel, { color: tokens.text }]}>{item.label}</Text>
+                    <Text style={[styles.languageOptionCheck, { color: selected ? tokens.accent : tokens.textMuted }]}>{selected ? '✓' : ''}</Text>
+                  </Pressable>
+                );
+              })}
+
+              <Pressable style={[styles.modalCloseBtn, { borderColor: tokens.border }]} onPress={() => setLanguageModalVisible(false)}>
+                <Text style={[styles.modalCloseText, { color: tokens.text }]}>{profileText.modalClose}</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
+          visible={biometricTimeoutModalVisible}
+          transparent={false}
+          animationType='fade'
+          onRequestClose={() => setBiometricTimeoutModalVisible(false)}
+        >
+          <Pressable style={[styles.modalOverlay, { backgroundColor: tokens.bg }]} onPress={() => setBiometricTimeoutModalVisible(false)}>
+            <Pressable style={[styles.modalCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={() => undefined}>
+              <Text style={[styles.modalTitle, { color: tokens.text }]}>{profileText.biometricTimeoutModalTitle}</Text>
+              <Text style={[styles.modalHint, { color: tokens.textMuted }]}>{profileText.biometricTimeoutSub}</Text>
+
+              {BIOMETRIC_TIMEOUT_OPTIONS_MS.map((timeoutMs) => {
+                const selected = biometricLockTimeoutMs === timeoutMs;
+                return (
+                  <Pressable
+                    key={String(timeoutMs)}
+                    style={[styles.languageOption, { borderColor: tokens.border, backgroundColor: selected ? `${tokens.accent}14` : 'transparent' }]}
+                    onPress={() => {
+                      void handleSelectBiometricTimeout(timeoutMs);
+                    }}
+                  >
+                    <Text style={[styles.languageOptionLabel, { color: tokens.text }]}>{getBiometricTimeoutOptionLabel(timeoutMs)}</Text>
+                    <Text style={[styles.languageOptionCheck, { color: selected ? tokens.accent : tokens.textMuted }]}>{selected ? '✓' : ''}</Text>
+                  </Pressable>
+                );
+              })}
+
+              <Pressable style={[styles.modalCloseBtn, { borderColor: tokens.border }]} onPress={() => setBiometricTimeoutModalVisible(false)}>
+                <Text style={[styles.modalCloseText, { color: tokens.text }]}>{profileText.modalClose}</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
+          visible={aboutModalVisible}
+          transparent={false}
+          animationType='fade'
+          onRequestClose={() => setAboutModalVisible(false)}
+        >
+          <Pressable style={[styles.modalOverlay, { backgroundColor: tokens.bg }]} onPress={() => setAboutModalVisible(false)}>
+            <Pressable style={[styles.modalCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={() => undefined}>
+              <Text style={[styles.modalTitle, { color: tokens.text }]}>{profileText.aboutModalTitle}</Text>
+              <Text style={[styles.aboutText, { color: tokens.textSub }]}>{profileText.aboutDescription}</Text>
+
+              <View style={styles.aboutMetaBox}>
+                <Text style={[styles.aboutMetaLabel, { color: tokens.textMuted }]}>{profileText.aboutVersionLabel}</Text>
+                <Text style={[styles.aboutMetaValue, { color: tokens.text }]}>UNQX v2.0.0</Text>
+              </View>
+
+              <Text style={[styles.aboutSectionTitle, { color: tokens.text }]}>{profileText.aboutFeaturesTitle}</Text>
+              <Text style={[styles.aboutListItem, { color: tokens.textSub }]}>{`• ${profileText.aboutFeature1}`}</Text>
+              <Text style={[styles.aboutListItem, { color: tokens.textSub }]}>{`• ${profileText.aboutFeature2}`}</Text>
+              <Text style={[styles.aboutListItem, { color: tokens.textSub }]}>{`• ${profileText.aboutFeature3}`}</Text>
+
+              <View style={styles.aboutMetaBox}>
+                <Text style={[styles.aboutMetaLabel, { color: tokens.textMuted }]}>{profileText.aboutSupportLabel}</Text>
+                <Text style={[styles.aboutMetaValue, { color: tokens.text }]}>{profileText.aboutSupportValue}</Text>
+              </View>
+
+              <Pressable style={[styles.modalCloseBtn, { borderColor: tokens.border }]} onPress={() => setAboutModalVisible(false)}>
+                <Text style={[styles.modalCloseText, { color: tokens.text }]}>{profileText.modalClose}</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </AppShell>
     </ErrorBoundary>
   );
@@ -978,5 +1370,84 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    gap: 10,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  modalHint: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  languageOption: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  languageOptionLabel: {
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+  },
+  languageOptionCheck: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+    minWidth: 16,
+    textAlign: 'center',
+  },
+  modalCloseBtn: {
+    marginTop: 4,
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseText: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  aboutText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: 'Inter_400Regular',
+  },
+  aboutSectionTitle: {
+    marginTop: 2,
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  aboutListItem: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: 'Inter_400Regular',
+  },
+  aboutMetaBox: {
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  aboutMetaLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  aboutMetaValue: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
   },
 });

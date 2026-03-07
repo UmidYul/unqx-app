@@ -146,7 +146,9 @@ export interface ResidentProfile {
   name: string;
   slug: string;
   slugs: string[];
+  slugPrice?: number;
   avatarUrl?: string;
+  address?: string;
   city?: string;
   tag?: 'premium' | 'basic' | string;
   taps?: number;
@@ -189,7 +191,7 @@ export interface ProfileCard {
   email: string;
   slug: string;
   avatarUrl?: string;
-  theme: 'light' | 'dark' | 'gradient';
+  theme: 'default_dark' | 'arctic' | 'linen' | 'marble' | 'forest';
   buttons: CardButton[];
 }
 
@@ -205,4 +207,11 @@ export interface WristbandOrder {
   status: string;
   createdAt?: string;
   estimatedAt?: string;
+  slug?: string;
+  slugPrice?: number;
+  requestedPlan?: string;
+  planPrice?: number;
+  bracelet?: boolean;
+  statusBadge?: string;
+  adminNote?: string | null;
 }

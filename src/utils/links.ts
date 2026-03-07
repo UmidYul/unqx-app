@@ -44,3 +44,56 @@ export function extractSlug(urlOrSlug: string): string | null {
     return /^[A-Z]{3}\d{3}$/.test(normalized) ? normalized : null;
   }
 }
+
+export function getPreferredTelegramUrl(urlOrHandle: string): string | null {
+  const candidate = String(urlOrHandle ?? '').trim();
+  if (!candidate) {
+    return null;
+  }
+
+  if (candidate.startsWith('tg://')) {
+    return candidate;
+  }
+
+  if (candidate.startsWith('@')) {
+    const domain = candidate.slice(1).trim();
+    return domain ? `tg://resolve?domain=${encodeURIComponent(domain)}` : null;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate.includes('://') ? candidate : `https://${candidate}`);
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  if (host !== 't.me' && host !== 'telegram.me') {
+    return null;
+  }
+
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  if (!parts.length) {
+    return null;
+  }
+
+  if ((parts[0] === 'joinchat' && parts[1]) || parts[0].startsWith('+')) {
+    const inviteCode = parts[0] === 'joinchat' ? parts[1] : parts[0].slice(1);
+    return inviteCode ? `tg://join?invite=${encodeURIComponent(inviteCode)}` : null;
+  }
+
+  const domain = parts[0].replace(/^@/, '');
+  if (!domain) {
+    return null;
+  }
+
+  const query = new URLSearchParams({ domain });
+  if (parts[1] && /^\d+$/.test(parts[1])) {
+    query.set('post', parts[1]);
+  }
+  const thread = parsed.searchParams.get('thread');
+  if (thread) {
+    query.set('thread', thread);
+  }
+  return `tg://resolve?${query.toString()}`;
+}

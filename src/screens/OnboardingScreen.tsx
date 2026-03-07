@@ -15,7 +15,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useNFC } from '@/hooks/useNFC';
 import { requestPushPermission } from '@/hooks/usePushNotifications';
+import { getBrandLogoSource } from '@/lib/brandAssets';
 import { apiClient } from '@/lib/apiClient';
+import { useThemeContext } from '@/theme/ThemeProvider';
 import { ThemeTokens } from '@/types';
 
 interface OnboardingScreenProps {
@@ -48,13 +50,13 @@ const STEPS: StepItem[] = [
   {
     key: 'nfc',
     title: 'Разрешить NFC',
-    text: 'Приложению нужен доступ к NFC чтобы читать и записывать метки. Данные не покидают устройство.',
+    text: 'UNQX использует NFC чтобы читать чужие метки, записывать ваш unqx.uz/SLUG и проверять состояние тега на устройстве.',
     Icon: Wifi,
   },
   {
     key: 'push',
     title: 'Будь в курсе',
-    text: 'Получай уведомления когда кто-то открывает твою визитку или меняется статус заказа.',
+    text: 'Уведомления помогут сразу узнавать о новых тапах визитки и изменении статуса заказа браслета.',
     Icon: Bell,
   },
   {
@@ -76,6 +78,8 @@ export function OnboardingScreen({
   onStepChange,
   onComplete,
 }: OnboardingScreenProps): React.JSX.Element {
+  const { theme } = useThemeContext();
+  const isDark = theme === 'dark';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { requestPermission: requestNfcPermission } = useNFC();
@@ -118,19 +122,29 @@ export function OnboardingScreen({
 
     if (step === 2) {
       setBusy(true);
-      await requestNfcPermission();
-      setBusy(false);
+      try {
+        await requestNfcPermission();
+      } catch {
+        // Continue onboarding even if permission request flow fails.
+      } finally {
+        setBusy(false);
+      }
       nextStep();
       return;
     }
 
     if (step === 3) {
       setBusy(true);
-      const token = await requestPushPermission();
-      if (token) {
-        await apiClient.post('/notifications/token', { token }).catch(() => undefined);
+      try {
+        const token = await requestPushPermission();
+        if (token) {
+          await apiClient.post('/notifications/token', { token }).catch(() => undefined);
+        }
+      } catch {
+        // Continue onboarding even if push permission/token request fails.
+      } finally {
+        setBusy(false);
       }
-      setBusy(false);
       nextStep();
       return;
     }
@@ -181,9 +195,9 @@ export function OnboardingScreen({
       <View style={[styles.slide, { width }]}>
         <View style={[styles.iconWrap, { backgroundColor: `${tokens.accent}15`, borderColor: `${tokens.accent}45` }]}>
           {item.key === 'welcome' ? (
-            <Image source={require('../../assets/brand/logo.png')} style={styles.brandLogo} resizeMode='contain' />
+            <Image source={getBrandLogoSource(isDark)} style={styles.brandLogo} resizeMode='contain' />
           ) : (
-            <item.Icon size={72} color={item.key === 'done' ? tokens.green : tokens.accent} strokeWidth={1.5} />
+            <item.Icon size={72} color={item.key === 'done' ? tokens.text : tokens.accent} strokeWidth={1.5} />
           )}
         </View>
 
@@ -200,7 +214,7 @@ export function OnboardingScreen({
         ) : null}
       </View>
     ),
-    [tokens, width],
+    [isDark, tokens, width],
   );
 
   return (

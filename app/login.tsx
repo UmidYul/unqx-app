@@ -1,11 +1,10 @@
 import React from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Redirect } from 'expo-router';
 
 import { AuthLoadingScreen } from '@/components/AuthLoadingScreen';
 import { MESSAGES } from '@/constants/messages';
 import { useAuthStatus } from '@/hooks/useAuthStatus';
-import { useBiometrics } from '@/hooks/useBiometrics';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { AuthSessionError, loginWithApi } from '@/services/authSession';
 import { validateEmail } from '@/services/authValidation';
@@ -21,72 +20,6 @@ export default function LoginPage(): React.JSX.Element {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [verificationEmail, setVerificationEmail] = React.useState<string>('');
-  const {
-    isAvailable: isBiometricsAvailable,
-    isEnrolled: isBiometricsEnrolled,
-    authenticate: authenticateBiometrics,
-    getBiometricType,
-    getBiometricsAsked,
-    setBiometricsAsked,
-    setBiometricsEnabled,
-  } = useBiometrics();
-
-  const maybeOfferBiometrics = React.useCallback(async (): Promise<void> => {
-    const asked = await getBiometricsAsked();
-    if (asked) return;
-
-    const [available, enrolled, type] = await Promise.all([
-      isBiometricsAvailable(),
-      isBiometricsEnrolled(),
-      getBiometricType(),
-    ]);
-    if (!available || !enrolled) {
-      await setBiometricsAsked(true);
-      await setBiometricsEnabled(false);
-      return;
-    }
-
-    const biometricTypeLabel = type ?? MESSAGES.ui.auth.biometricTypeFallback;
-    await new Promise<void>((resolve) => {
-      Alert.alert(
-        MESSAGES.ui.auth.biometricPromptTitle,
-        MESSAGES.ui.auth.biometricPromptMessage.replace('{type}', biometricTypeLabel),
-        [
-          {
-            text: MESSAGES.ui.auth.biometricPromptSkip,
-            style: 'cancel',
-            onPress: () => {
-              void (async () => {
-                await setBiometricsEnabled(false);
-                await setBiometricsAsked(true);
-                resolve();
-              })();
-            },
-          },
-          {
-            text: MESSAGES.ui.auth.biometricPromptEnable,
-            onPress: () => {
-              void (async () => {
-                const success = await authenticateBiometrics(MESSAGES.ui.auth.biometricPromptConfirm);
-                await setBiometricsEnabled(success);
-                await setBiometricsAsked(true);
-                resolve();
-              })();
-            },
-          },
-        ],
-        { cancelable: false },
-      );
-    });
-  }, [
-    authenticateBiometrics,
-    getBiometricType,
-    getBiometricsAsked,
-    isBiometricsAvailable,
-    isBiometricsEnrolled,
-    setBiometricsAsked,
-    setBiometricsEnabled,
-  ]);
 
   const submit = React.useCallback(async () => {
     const normalizedEmail = email.trim().toLowerCase();
@@ -110,7 +43,6 @@ export default function LoginPage(): React.JSX.Element {
         setVerificationEmail(normalizedEmail);
         return;
       }
-      await maybeOfferBiometrics();
       safeReplace('/(tabs)/home');
     } catch (e) {
       if (e instanceof AuthSessionError) {
@@ -121,7 +53,7 @@ export default function LoginPage(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [email, maybeOfferBiometrics, password, safeReplace]);
+  }, [email, password, safeReplace]);
 
   if (!ready) {
     return <AuthLoadingScreen tokens={tokens} title={MESSAGES.ui.auth.sessionChecking} />;

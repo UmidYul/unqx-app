@@ -1,5 +1,6 @@
 import { Link, Monitor, QrCode, Share2, Wifi } from 'lucide-react-native';
 
+import { LanguageCode } from '@/constants/messages';
 import { TapSource, ThemeTokens } from '@/types';
 
 export interface SourceUiConfig {
@@ -8,30 +9,32 @@ export interface SourceUiConfig {
   color: string;
 }
 
-export function getSourceConfig(tokens: ThemeTokens): Record<TapSource, SourceUiConfig> {
+export function getSourceConfig(tokens: ThemeTokens, language: LanguageCode = 'ru'): Record<TapSource, SourceUiConfig> {
+  const isUz = language === 'uz';
+
   return {
     nfc: {
-      label: 'NFC браслет',
+      label: isUz ? 'NFC bilaguzuk' : 'NFC браслет',
       Icon: Wifi,
       color: tokens.accent,
     },
     qr: {
-      label: 'QR код',
+      label: isUz ? 'QR kod' : 'QR код',
       Icon: QrCode,
       color: tokens.borderStrong,
     },
     share: {
-      label: 'Поделиться',
+      label: isUz ? "Ulashish" : 'Поделиться',
       Icon: Share2,
       color: tokens.text,
     },
     direct: {
-      label: 'Прямая ссылка',
+      label: isUz ? "To'g'ridan-to'g'ri havola" : 'Прямая ссылка',
       Icon: Link,
       color: tokens.textMuted,
     },
     widget: {
-      label: 'Виджет',
+      label: isUz ? 'Vidjet' : 'Виджет',
       Icon: Monitor,
       color: tokens.textSub,
     },

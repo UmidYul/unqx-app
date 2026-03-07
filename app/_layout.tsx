@@ -1,7 +1,8 @@
 import React from 'react';
 import { Stack } from 'expo-router';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as NavigationBar from 'expo-navigation-bar';
 import { useFonts } from 'expo-font';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -28,25 +29,53 @@ import { toastConfig } from '@/utils/toastConfig';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 
 initSentry();
-const APP_LOCK_AFTER_BACKGROUND_MS = 2000;
 
 function RootNavigator(): React.JSX.Element {
   const { theme, tokens, autoTheme } = useThemeContext();
   const { signedIn } = useAuthStatus();
   const { safeReplace } = useThrottledNavigation();
-  const { getBiometricsEnabled, getBiometricType } = useBiometrics();
+  const { getBiometricsEnabled, getBiometricType, getBiometricLockTimeoutMs } = useBiometrics();
   const { isOnline } = useNetworkStatus();
-  const { token, promptVisible, requestPermissionFromPrompt, dismissPrompt } = usePushNotifications();
+  const { token, nativeToken, promptVisible, requestPermissionFromPrompt, dismissPrompt } = usePushNotifications();
   const storeTheme = useNfcStore((state) => state.theme);
   const storeAutoTheme = useNfcStore((state) => state.autoTheme);
   const setTheme = useNfcStore((state) => state.setTheme);
   const setAutoTheme = useNfcStore((state) => state.setAutoTheme);
   const lastTokenRef = React.useRef<string | null>(null);
+  const pushedTokenRef = React.useRef<string | null>(null);
   const appStateRef = React.useRef(AppState.currentState);
   const backgroundAtRef = React.useRef<number | null>(null);
   const [lockVisible, setLockVisible] = React.useState(false);
   const [biometricEnabled, setBiometricEnabled] = React.useState(false);
   const [biometricType, setBiometricType] = React.useState<BiometricType>(null);
+
+  React.useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    const applyImmersiveMode = async () => {
+      try {
+        await NavigationBar.setPositionAsync('absolute');
+        await NavigationBar.setBehaviorAsync('overlay-swipe');
+        await NavigationBar.setBackgroundColorAsync('#00000000');
+        await NavigationBar.setVisibilityAsync('hidden');
+      } catch {
+        // noop
+      }
+    };
+
+    void applyImmersiveMode();
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void applyImmersiveMode();
+      }
+    });
+
+    return () => {
+      appStateSub.remove();
+    };
+  }, []);
 
   React.useEffect(() => {
     if (storeTheme !== theme) {
@@ -58,27 +87,36 @@ function RootNavigator(): React.JSX.Element {
   }, [autoTheme, setAutoTheme, setTheme, storeAutoTheme, storeTheme, theme]);
 
   React.useEffect(() => {
+    if (!signedIn) {
+      lastTokenRef.current = null;
+      pushedTokenRef.current = null;
+      return;
+    }
+
     const syncToken = async () => {
-      if (!token) {
+      if (!token && !nativeToken) {
         return;
       }
-      if (lastTokenRef.current === token) {
-        return;
-      }
-
-      const persisted = await storageGetItem('unqx.push.last-token');
-      if (persisted === token) {
-        lastTokenRef.current = token;
+      const payloadKey = `${token ?? ''}|${nativeToken ?? ''}`;
+      if (pushedTokenRef.current === payloadKey) {
         return;
       }
 
-      await apiClient.post('/notifications/token', { token }).catch(() => undefined);
-      await storageSetItem('unqx.push.last-token', token);
-      lastTokenRef.current = token;
+      await apiClient
+        .post('/notifications/token', {
+          token,
+          expoToken: token,
+          deviceToken: nativeToken,
+          platform: Platform.OS,
+        })
+        .catch(() => undefined);
+      await storageSetItem('unqx.push.last-token', token ?? nativeToken ?? '');
+      lastTokenRef.current = token ?? nativeToken ?? null;
+      pushedTokenRef.current = payloadKey;
     };
 
     void syncToken();
-  }, [token]);
+  }, [nativeToken, signedIn, token]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -116,12 +154,15 @@ function RootNavigator(): React.JSX.Element {
 
   React.useEffect(() => {
     const loadBiometricSettings = async () => {
-      const [enabled, type] = await Promise.all([getBiometricsEnabled(), getBiometricType()]);
+      const [enabled, type] = await Promise.all([
+        getBiometricsEnabled(),
+        getBiometricType(),
+      ]);
       setBiometricEnabled(enabled);
       setBiometricType(type);
     };
     void loadBiometricSettings();
-  }, [getBiometricType, getBiometricsEnabled]);
+  }, [getBiometricLockTimeoutMs, getBiometricType, getBiometricsEnabled]);
 
   React.useEffect(() => {
     const listener = AppState.addEventListener('change', (nextState) => {
@@ -135,7 +176,10 @@ function RootNavigator(): React.JSX.Element {
 
       if (nextState === 'active' && previousState !== 'active') {
         void (async () => {
-          const enabled = await getBiometricsEnabled();
+          const [enabled, timeoutMs] = await Promise.all([
+            getBiometricsEnabled(),
+            getBiometricLockTimeoutMs(),
+          ]);
           setBiometricEnabled(enabled);
           if (!signedIn || !enabled) {
             return;
@@ -144,7 +188,7 @@ function RootNavigator(): React.JSX.Element {
           if (!lastBackground) {
             return;
           }
-          if (Date.now() - lastBackground > APP_LOCK_AFTER_BACKGROUND_MS) {
+          if (Date.now() - lastBackground > timeoutMs) {
             setLockVisible(true);
           }
         })();
@@ -154,7 +198,7 @@ function RootNavigator(): React.JSX.Element {
     return () => {
       listener.remove();
     };
-  }, [getBiometricsEnabled, signedIn]);
+  }, [getBiometricLockTimeoutMs, getBiometricsEnabled, signedIn]);
 
   React.useEffect(() => {
     if (!signedIn) {
@@ -169,11 +213,11 @@ function RootNavigator(): React.JSX.Element {
       <Stack
         screenOptions={{
           headerShown: false,
-          animation: 'fade_from_bottom',
-          animationDuration: 250,
+          animation: 'fade',
+          animationDuration: 260,
           gestureEnabled: true,
           contentStyle: {
-            backgroundColor: tokens.bg,
+            backgroundColor: tokens.phoneBg,
           },
         }}
       />

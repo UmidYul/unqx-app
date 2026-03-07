@@ -2,6 +2,8 @@ import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { SkeletonBlock } from '@/components/ui/skeleton';
+import { APP_DISPLAY_NAME, getBrandLogoSource } from '@/lib/brandAssets';
+import { useThemeContext } from '@/theme/ThemeProvider';
 import { ThemeTokens } from '@/types';
 
 interface AuthLoadingScreenProps {
@@ -10,10 +12,13 @@ interface AuthLoadingScreenProps {
 }
 
 export function AuthLoadingScreen({ tokens, title = 'Проверка сессии...' }: AuthLoadingScreenProps): React.JSX.Element {
+  const { theme } = useThemeContext();
+  const isDark = theme === 'dark';
+
   return (
     <View style={[styles.container, { backgroundColor: tokens.bg }]}>
-      <Image source={require('../../assets/brand/logo.png')} style={styles.logo} resizeMode='contain' />
-      <Text style={[styles.brand, { color: tokens.text }]}>UNQX</Text>
+      <Image source={getBrandLogoSource(isDark)} style={styles.logo} resizeMode='contain' />
+      <Text style={[styles.brand, { color: tokens.text }]}>{APP_DISPLAY_NAME}</Text>
       <SkeletonBlock tokens={tokens} width={76} height={10} radius={6} />
       <SkeletonBlock tokens={tokens} width={Math.min(240, Math.max(160, title.length * 6))} height={10} radius={6} />
     </View>

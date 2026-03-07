@@ -8,6 +8,7 @@ export const queryKeys = {
   nfcHistory: ['nfc-history'] as const,
   nfcTags: ['nfc-tags'] as const,
   wristband: ['wristband'] as const,
+  wristbandOrders: ['wristband-orders'] as const,
   notifications: ['notifications'] as const,
   order: (id: string) => ['order', id] as const,
   homeSummary: ['home-summary'] as const,

@@ -22,8 +22,11 @@ export default function TabsLayout(): React.JSX.Element {
       screenOptions={{
         headerShown: false,
         animation: 'fade',
-        animationDuration: 220,
+        animationDuration: 240,
         gestureEnabled: true,
+        contentStyle: {
+          backgroundColor: tokens.phoneBg,
+        },
       }}
     />
   );

@@ -141,6 +141,7 @@ const RU_MESSAGES = {
     cardSaved: 'Визитка сохранена',
     saveFailed: 'Не удалось сохранить',
     tagNameSaved: 'Название сохранено',
+    tagDeleted: 'Метка удалена',
     favoritesAdded: 'Добавлено в избранное',
     favoritesRemoved: 'Удалено из избранного',
     subscribeDone: 'Подписка оформлена',
@@ -150,7 +151,7 @@ const RU_MESSAGES = {
     nfcWritten: 'Метка записана',
     nfcWriteError: 'Ошибка записи',
   },
-} as const;
+};
 
 type MessageCatalog = typeof RU_MESSAGES;
 
@@ -295,6 +296,7 @@ const UZ_MESSAGES: MessageCatalog = {
     cardSaved: 'Vizitka saqlandi',
     saveFailed: 'Saqlab bo\'lmadi',
     tagNameSaved: 'Nomi saqlandi',
+    tagDeleted: 'Teg o\'chirildi',
     favoritesAdded: 'Sevimlilarga qo\'shildi',
     favoritesRemoved: 'Sevimlilardan olib tashlandi',
     subscribeDone: 'Obuna rasmiylashtirildi',

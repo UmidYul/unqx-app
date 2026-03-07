@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Award, Download, Search, Star, TrendingUp, UserX } from 'lucide-react-native';
@@ -25,6 +26,7 @@ import { Label, Pill } from '@/components/ui/shared';
 import { MESSAGES } from '@/constants/messages';
 import { useExport } from '@/hooks/useExport';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { useStoreReview } from '@/hooks/useStoreReview';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { resolveAssetUrl } from '@/lib/assetUrl';
@@ -32,6 +34,7 @@ import { apiClient } from '@/lib/apiClient';
 import { queryKeys } from '@/lib/queryKeys';
 import { fetchContactsLike, fetchDirectoryLike, saveContactLike } from '@/services/mobileApi';
 import { Contact, LeaderboardEntry, Resident } from '@/types';
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { formatSlug } from '@/utils/avatar';
 import { toast } from '@/utils/toast';
@@ -44,16 +47,30 @@ function parseContacts(raw: unknown): Contact[] {
     return [];
   }
 
-  return source.map((item: any) => ({
-    name: item?.name ?? item?.displayName ?? item?.ownerName ?? item?.firstName ?? 'Unknown',
-    slug: item?.slug ?? item?.code ?? item?.fullSlug ?? 'UNQ000',
-    avatarUrl: resolveAssetUrl(item?.avatarUrl),
-    phone: item?.phone,
-    taps: Number(item?.taps ?? item?.views ?? item?.count ?? 0),
-    tag: item?.tag ?? item?.plan ?? 'basic',
-    lastSeen: item?.lastSeen ?? item?.time,
-    saved: Boolean(item?.saved),
-  }));
+  return source
+    .map((item: any) => {
+      const taps = Number(item?.taps ?? item?.views ?? item?.count ?? 0);
+      const lastSeen = String(item?.lastSeen ?? item?.time ?? item?.lastTapAt ?? item?.latestTapAt ?? item?.viewedAt ?? '').trim();
+      const saved = Boolean(item?.saved);
+
+      // Contacts tab should not be polluted by plain signups that never interacted with your card.
+      const hasInteraction = taps > 0 || Boolean(lastSeen);
+      if (!saved && !hasInteraction) {
+        return null;
+      }
+
+      return {
+        name: item?.name ?? item?.displayName ?? item?.ownerName ?? item?.firstName ?? 'Unknown',
+        slug: item?.slug ?? item?.code ?? item?.fullSlug ?? 'UNQ000',
+        avatarUrl: resolveAssetUrl(item?.avatarUrl),
+        phone: item?.phone,
+        taps,
+        tag: item?.tag ?? item?.plan ?? 'basic',
+        lastSeen,
+        saved,
+      } satisfies Contact;
+    })
+    .filter((item): item is Contact => Boolean(item));
 }
 
 function normalizeResidentSlug(value: unknown): string | null {
@@ -207,10 +224,17 @@ function Avatar({
   style: any;
   textStyle: any;
 }): React.JSX.Element {
-  const [failed, setFailed] = React.useState(false);
+  const { imageUri, retryCount, showImage, onError } = useRetryImageUri(avatarUrl);
 
-  if (avatarUrl && !failed) {
-    return <Image source={{ uri: avatarUrl }} style={style} onError={() => setFailed(true)} />;
+  if (showImage && imageUri) {
+    return (
+      <Image
+        key={`${avatarUrl}:${retryCount}`}
+        source={{ uri: imageUri }}
+        style={style}
+        onError={onError}
+      />
+    );
   }
 
   return (
@@ -222,6 +246,9 @@ function Avatar({
 
 export default function PeoplePage(): React.JSX.Element {
   const { tokens } = useThemeContext();
+  const { language } = useLanguageContext();
+  const { width } = useWindowDimensions();
+  const isUz = language === 'uz';
   const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const { safePush } = useThrottledNavigation();
   const { exportVCF, exportCSV } = useExport();
@@ -235,6 +262,58 @@ export default function PeoplePage(): React.JSX.Element {
   const [favoritesOnly, setFavoritesOnly] = React.useState(false);
 
   const [residentsSearch, setResidentsSearch] = React.useState('');
+
+  const peopleText = isUz
+    ? {
+      search: 'Qidiruv...',
+      exportVcf: 'Eksport .vcf',
+      exportCsv: 'Eksport .csv',
+      contactsCount: 'kontakt',
+      favoritesOnly: 'Sevimlilar',
+      premium: 'Premium',
+      basic: 'Asosiy',
+      taps: 'tap',
+      emptyNotFound: 'Hech kim topilmadi',
+      emptyNotFoundByQuery: '"%1" so\'rovi bo\'yicha natija topilmadi',
+      resetSearch: 'Qidiruvni tozalash',
+      noFavorites: 'Sevimlilar yo\'q',
+      noFavoritesHint: 'Kontakt yonidagi ★ ni bosing',
+      noContacts: 'Kontaktlar yo\'q',
+      noContactsHint: 'Hali hech kim vizitkangizni tap qilmagan',
+      residentSearch: 'Rezident qidirish...',
+      residentsCount: 'rezident',
+      more: 'yana',
+      noResultHint: 'Boshqa so\'rovni sinab ko\'ring',
+      topEmpty: 'Hozircha hech kim yo\'q',
+      topEmptySub: ' ',
+      score: 'Ball',
+      topPercent: 'Top',
+    }
+    : {
+      search: 'Поиск...',
+      exportVcf: 'Экспорт .vcf',
+      exportCsv: 'Экспорт .csv',
+      contactsCount: 'контактов',
+      favoritesOnly: 'Избранные',
+      premium: 'Премиум',
+      basic: 'Базовый',
+      taps: 'тапов',
+      emptyNotFound: 'Никого не нашли',
+      emptyNotFoundByQuery: 'По запросу "%1" нет результатов',
+      resetSearch: 'Сбросить поиск',
+      noFavorites: 'Нет избранных',
+      noFavoritesHint: 'Нажми ★ рядом с контактом',
+      noContacts: 'Нет контактов',
+      noContactsHint: 'Никто ещё не тапнул твою визитку',
+      residentSearch: 'Поиск резидента...',
+      residentsCount: 'резидентов',
+      more: 'ещё',
+      noResultHint: 'Попробуй другой запрос',
+      topEmpty: 'Пока никого нет',
+      topEmptySub: ' ',
+      score: 'Score',
+      topPercent: 'Top',
+    };
 
   React.useEffect(() => {
     const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
@@ -415,6 +494,11 @@ export default function PeoplePage(): React.JSX.Element {
     ],
     [tokens],
   );
+  const isSingleColumnResidents = width < 370;
+  const residentCardWrapStyle = React.useMemo(
+    () => ({ width: isSingleColumnResidents ? '100%' : '48.5%' as const }),
+    [isSingleColumnResidents],
+  );
 
   const hardContactsError = contactsQuery.isError && !contactsQuery.data;
   const hardDirectoryError = directoryQuery.isError && activeTab === 'directory' && !directoryQuery.data;
@@ -423,387 +507,398 @@ export default function PeoplePage(): React.JSX.Element {
   return (
     <ErrorBoundary>
       <AppShell title={MESSAGES.ui.screens.people} tokens={tokens}>
-      <View style={styles.container}>
-        <View style={[styles.tabsWrap, { backgroundColor: tokens.surface }]}> 
-          {[
-            ['contacts', MESSAGES.ui.people.contacts],
-            ['directory', MESSAGES.ui.people.residents],
-            ['leaderboard', MESSAGES.ui.people.elite],
-          ].map(([id, label]) => (
-            <AnimatedPressable
-              key={id}
-              onPress={() => setActiveTab(id as PeopleTab)}
-              containerStyle={styles.tabBtnContainer}
-              style={[styles.tabBtn, { backgroundColor: activeTab === id ? tokens.tabActiveBg : 'transparent' }]}
+        <View style={styles.container}>
+          <View style={[styles.tabsWrap, { backgroundColor: tokens.surface }]}>
+            {[
+              ['contacts', MESSAGES.ui.people.contacts],
+              ['directory', MESSAGES.ui.people.residents],
+              ['leaderboard', MESSAGES.ui.people.elite],
+            ].map(([id, label]) => (
+              <AnimatedPressable
+                key={id}
+                onPress={() => setActiveTab(id as PeopleTab)}
+                containerStyle={styles.tabBtnContainer}
+                style={[styles.tabBtn, { backgroundColor: activeTab === id ? tokens.tabActiveBg : 'transparent' }]}
+              >
+                <Text style={[styles.tabText, { color: activeTab === id ? tokens.tabActiveText : tokens.tabInactive }]}>{label}</Text>
+              </AnimatedPressable>
+            ))}
+          </View>
+
+          <ScreenTransition>
+            <ScrollView
+              contentContainerStyle={styles.scrollContent}
+              refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void onRefresh()} tintColor={tokens.accent} colors={[tokens.accent]} />}
             >
-              <Text style={[styles.tabText, { color: activeTab === id ? tokens.tabActiveText : tokens.tabInactive }]}>{label}</Text>
-            </AnimatedPressable>
-          ))}
-        </View>
-
-        <ScreenTransition>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void onRefresh()} tintColor={tokens.accent} colors={[tokens.accent]} />}
-        >
-          {activeTab === 'contacts' ? (
-            <View style={styles.section}>
-              {hardContactsError ? (
-                <ErrorState
-                  tokens={tokens}
-                  onRetry={() => {
-                    void queryClient.invalidateQueries({ queryKey: queryKeys.contacts });
-                  }}
-                />
-              ) : null}
-
-              {!hardContactsError ? (
-                <>
-              <View style={styles.searchRow}>
-                <View style={[styles.searchInputWrap, { backgroundColor: tokens.surface, borderColor: tokens.border }]}> 
-                  <Search size={15} strokeWidth={1.5} color={tokens.textMuted} />
-                  <TextInput
-                    value={contactsSearch}
-                    onChangeText={setContactsSearch}
-                    placeholder='Поиск...'
-                    placeholderTextColor={tokens.textMuted}
-                    style={[styles.searchInput, { color: tokens.text }]}
-                  />
-                </View>
-                <AnimatedPressable
-                  onPress={() => setFavoritesOnly((prev) => !prev)}
-                  style={[
-                    styles.starToggle,
-                    {
-                      backgroundColor: favoritesOnly ? tokens.accent : tokens.surface,
-                      borderColor: favoritesOnly ? tokens.accent : tokens.border,
-                    },
-                  ]}
-                >
-                  <Star size={16} strokeWidth={1.5} color={favoritesOnly ? tokens.accentText : tokens.text} fill={favoritesOnly ? tokens.accentText : 'none'} />
-                </AnimatedPressable>
-              </View>
-
-              <View style={styles.exportRow}>
-                <AnimatedPressable style={[styles.exportBtn, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={handleExportVCF}>
-                  <Download size={14} strokeWidth={1.5} color={tokens.text} />
-                  <Text style={[styles.exportText, { color: tokens.text }]}>Экспорт .vcf</Text>
-                </AnimatedPressable>
-                <AnimatedPressable style={[styles.exportBtn, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={handleExportCSV}>
-                  <Download size={14} strokeWidth={1.5} color={tokens.text} />
-                  <Text style={[styles.exportText, { color: tokens.text }]}>Экспорт .csv</Text>
-                </AnimatedPressable>
-              </View>
-
-              <Label color={tokens.textMuted}>{`${filteredContacts.length} контактов${favoritesOnly ? ' · Избранные' : ''}`}</Label>
-              {contactsQuery.isLoading && filteredContacts.length === 0 ? (
-                <>
-                  {[0, 1, 2].map((i) => (
-                    <View key={`contacts-sk-${i}`} style={[styles.contactCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-                      <SkeletonCircle tokens={tokens} size={42} />
-                      <View style={styles.contactBody}>
-                        <View style={styles.contactHead}>
-                          <SkeletonBlock tokens={tokens} height={12} width='52%' />
-                          <SkeletonBlock tokens={tokens} height={18} width={64} radius={6} />
-                        </View>
-                        <SkeletonBlock tokens={tokens} height={10} width='68%' />
-                      </View>
-                      <SkeletonBlock tokens={tokens} width={20} height={20} radius={10} />
-                    </View>
-                  ))}
-                </>
-              ) : null}
-
-              {filteredContacts.map((person, index) => (
-                <Animated.View key={person.slug} entering={FadeInDown.duration(220).delay(index * 50)}>
-                <View style={[styles.contactCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}> 
-                  <AnimatedPressable
-                    containerStyle={styles.contactMainWrap}
-                    style={styles.contactMain}
-                    onPress={() => handleOpenProfile(person.slug)}
-                  >
-                    <Avatar
-                      name={person.name}
-                      avatarUrl={person.avatarUrl}
-                      fallbackColor={tokens.accent}
-                      style={styles.avatar}
-                      textStyle={styles.avatarText}
+              {activeTab === 'contacts' ? (
+                <View style={styles.section}>
+                  {hardContactsError ? (
+                    <ErrorState
+                      tokens={tokens}
+                      onRetry={() => {
+                        void queryClient.invalidateQueries({ queryKey: queryKeys.contacts });
+                      }}
                     />
-                    <View style={styles.contactBody}>
-                      <View style={styles.contactHead}>
-                        <Text style={[styles.contactName, { color: tokens.text }]}>{person.name}</Text>
-                        <Pill color={person.tag === 'premium' ? tokens.amber : tokens.textMuted} bg={person.tag === 'premium' ? tokens.amberBg : tokens.surface}>
-                          {person.tag === 'premium' ? 'Премиум' : 'Базовый'}
-                        </Pill>
-                      </View>
-                      <Text style={[styles.contactMeta, { color: tokens.textMuted }]}>{`${formatSlug(person.slug)} · ${person.taps ?? 0} тапов`}</Text>
-                    </View>
-                  </AnimatedPressable>
-                  <AnimatedPressable
-                    onPress={() => handleSaveContact(person.slug)}
-                    disabled={saveMutation.isPending}
-                    style={[styles.iconOnly, { opacity: saveMutation.isPending ? 0.5 : 1 }]}
-                  >
-                    {saveMutation.isPending ? (
-                      <ActivityIndicator size='small' color={tokens.text} />
-                    ) : (
-                      <Star size={18} strokeWidth={1.5} color={person.saved ? tokens.amber : tokens.border} fill={person.saved ? tokens.amber : 'none'} />
-                    )}
-                  </AnimatedPressable>
-                </View>
-                </Animated.View>
-              ))}
-              {!contactsQuery.isLoading && filteredContacts.length === 0 ? (
-                contactsSearch.trim() ? (
-                  <EmptyState
-                    icon={Search}
-                    title='Никого не нашли'
-                    subtitle={`По запросу "${contactsSearch.trim()}" нет результатов`}
-                    tokens={tokens}
-                    action={{
-                      label: 'Сбросить поиск',
-                      onPress: () => setContactsSearch(''),
-                    }}
-                  />
-                ) : favoritesOnly ? (
-                  <EmptyState
-                    icon={Star}
-                    title='Нет избранных'
-                    subtitle='Нажми ★ рядом с контактом'
-                    tokens={tokens}
-                  />
-                ) : (
-                  <EmptyState
-                    icon={UserX}
-                    title='Нет контактов'
-                    subtitle='Никто ещё не тапнул твою визитку'
-                    tokens={tokens}
-                  />
-                )
-              ) : null}
-                </>
-              ) : null}
-            </View>
-          ) : null}
+                  ) : null}
 
-          {activeTab === 'directory' ? (
-            <View style={styles.section}>
-              {hardDirectoryError ? (
-                <ErrorState
-                  tokens={tokens}
-                  onRetry={() => {
-                    void queryClient.invalidateQueries({ queryKey: queryKeys.directory(residentsSearch.trim(), 1) });
-                  }}
-                />
-              ) : null}
-
-              {!hardDirectoryError ? (
-                <>
-              <View style={[styles.searchInputWrap, { backgroundColor: tokens.surface, borderColor: tokens.border }]}> 
-                <Search size={15} strokeWidth={1.5} color={tokens.textMuted} />
-                <TextInput
-                  value={residentsSearch}
-                  onChangeText={setResidentsSearch}
-                  placeholder='Поиск резидента...'
-                  placeholderTextColor={tokens.textMuted}
-                  style={[styles.searchInput, { color: tokens.text }]}
-                />
-              </View>
-              <Label color={tokens.textMuted}>{`${filteredResidents.length} резидентов`}</Label>
-
-              {directoryQuery.isLoading && filteredResidents.length === 0 ? (
-                <View style={styles.grid}>
-                  {[0, 1, 2, 3].map((i) => (
-                    <View key={`resident-sk-${i}`} style={[styles.residentCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-                      <SkeletonCircle tokens={tokens} size={36} />
-                      <SkeletonBlock tokens={tokens} height={11} width='82%' style={{ marginTop: 10 }} />
-                      <SkeletonBlock tokens={tokens} height={10} width='65%' />
-                      <View style={styles.residentFoot}>
-                        <SkeletonBlock tokens={tokens} height={18} width={70} radius={6} />
-                        <SkeletonBlock tokens={tokens} height={10} width={24} />
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-
-              <View style={styles.grid}>
-                {filteredResidents.map((resident, index) => {
-                  const residentSlugs = resident.slugs?.length ? resident.slugs : [resident.slug];
-                  const visibleSlugs = residentSlugs.slice(0, 3).map((slug) => formatSlug(slug));
-                  if (residentSlugs.length > 3) {
-                    visibleSlugs.push(`+${residentSlugs.length - 3} ещё`);
-                  }
-                  const slugsText = visibleSlugs.join('\n');
-
-                  return (
-                    <Animated.View
-                      key={`${resident.name}-${resident.slug}-${index}`}
-                      entering={FadeInDown.duration(220).delay(index * 40)}
-                      style={styles.residentCardWrap}
-                    >
-                      <AnimatedPressable
-                        onPress={() => handleOpenProfile(resident.slug)}
-                        style={[styles.residentCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
-                      > 
-                        <Avatar
-                          name={resident.name}
-                          avatarUrl={resident.avatarUrl}
-                          fallbackColor={tokens.accent}
-                          style={styles.residentAvatar}
-                          textStyle={styles.residentAvatarText}
-                        />
-                        <Text style={[styles.residentName, { color: tokens.text }]} numberOfLines={1}>{resident.name}</Text>
-                        {resident.city ? (
-                          <Text style={[styles.residentCity, { color: tokens.textMuted }]} numberOfLines={1}>
-                            {resident.city}
-                          </Text>
-                        ) : null}
-                        <Text style={[styles.residentSlug, { color: tokens.textMuted }]} numberOfLines={4}>
-                          {slugsText}
-                        </Text>
-                        <View style={styles.residentFoot}>
-                          <Pill color={resident.tag === 'premium' ? tokens.amber : tokens.textMuted} bg={resident.tag === 'premium' ? tokens.amberBg : tokens.surface}>
-                            {resident.tag === 'premium' ? 'Премиум' : 'Базовый'}
-                          </Pill>
-                          <Text style={[styles.residentTaps, { color: tokens.textMuted }]}>{resident.taps ?? 0}</Text>
+                  {!hardContactsError ? (
+                    <>
+                      <View style={styles.searchRow}>
+                        <View style={[styles.searchInputWrap, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                          <Search size={15} strokeWidth={1.5} color={tokens.textMuted} />
+                          <TextInput
+                            value={contactsSearch}
+                            onChangeText={setContactsSearch}
+                            placeholder={peopleText.search}
+                            placeholderTextColor={tokens.textMuted}
+                            style={[styles.searchInput, { color: tokens.text }]}
+                          />
                         </View>
-                      </AnimatedPressable>
-                    </Animated.View>
-                  );
-                })}
-              </View>
-              {!directoryQuery.isLoading && filteredResidents.length === 0 ? (
-                <EmptyState
-                  icon={Search}
-                  title='Никого не нашли'
-                  subtitle={
-                    residentsSearch.trim()
-                      ? `По запросу "${residentsSearch.trim()}" нет результатов`
-                      : 'Попробуй другой запрос'
-                  }
-                  tokens={tokens}
-                  action={
-                    residentsSearch.trim()
-                      ? {
-                          label: 'Сбросить поиск',
-                          onPress: () => setResidentsSearch(''),
-                        }
-                      : undefined
-                  }
-                />
-              ) : null}
-                </>
-              ) : null}
-            </View>
-          ) : null}
-
-          {activeTab === 'leaderboard' ? (
-            <View style={styles.section}>
-              {hardLeaderboardError ? (
-                <ErrorState
-                  tokens={tokens}
-                  onRetry={() => {
-                    void queryClient.invalidateQueries({ queryKey: queryKeys.leaderboard });
-                  }}
-                />
-              ) : null}
-
-              {!hardLeaderboardError ? (
-                <>
-              {leaderboardQuery.isLoading && board.length === 0 ? (
-                <>
-                  {[0, 1, 2].map((i) => (
-                    <View key={`board-sk-${i}`} style={[styles.rankRow, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-                      <SkeletonBlock tokens={tokens} width={28} height={18} radius={6} />
-                      <SkeletonCircle tokens={tokens} size={36} />
-                      <View style={styles.rankBody}>
-                        <SkeletonBlock tokens={tokens} height={11} width='58%' />
-                        <SkeletonBlock tokens={tokens} height={10} width='42%' />
+                        <AnimatedPressable
+                          onPress={() => setFavoritesOnly((prev) => !prev)}
+                          style={[
+                            styles.starToggle,
+                            {
+                              backgroundColor: favoritesOnly ? tokens.accent : tokens.surface,
+                              borderColor: favoritesOnly ? tokens.accent : tokens.border,
+                            },
+                          ]}
+                        >
+                          <Star size={16} strokeWidth={1.5} color={favoritesOnly ? tokens.accentText : tokens.text} fill={favoritesOnly ? tokens.accentText : 'none'} />
+                        </AnimatedPressable>
                       </View>
-                      <View style={styles.rankRight}>
-                        <SkeletonBlock tokens={tokens} height={14} width={36} />
-                        <SkeletonBlock tokens={tokens} height={10} width={30} />
+
+                      <View style={styles.exportRow}>
+                        <AnimatedPressable style={[styles.exportBtn, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={handleExportVCF}>
+                          <Download size={14} strokeWidth={1.5} color={tokens.text} />
+                          <Text style={[styles.exportText, { color: tokens.text }]}>{peopleText.exportVcf}</Text>
+                        </AnimatedPressable>
+                        <AnimatedPressable style={[styles.exportBtn, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={handleExportCSV}>
+                          <Download size={14} strokeWidth={1.5} color={tokens.text} />
+                          <Text style={[styles.exportText, { color: tokens.text }]}>{peopleText.exportCsv}</Text>
+                        </AnimatedPressable>
                       </View>
-                    </View>
-                  ))}
-                </>
+
+                      <Label color={tokens.textMuted}>{`${filteredContacts.length} ${peopleText.contactsCount}${favoritesOnly ? ` · ${peopleText.favoritesOnly}` : ''}`}</Label>
+                      {contactsQuery.isLoading && filteredContacts.length === 0 ? (
+                        <>
+                          {[0, 1, 2].map((i) => (
+                            <View key={`contacts-sk-${i}`} style={[styles.contactCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                              <SkeletonCircle tokens={tokens} size={42} />
+                              <View style={styles.contactBody}>
+                                <View style={styles.contactHead}>
+                                  <SkeletonBlock tokens={tokens} height={12} width='52%' />
+                                  <SkeletonBlock tokens={tokens} height={18} width={64} radius={6} />
+                                </View>
+                                <SkeletonBlock tokens={tokens} height={10} width='68%' />
+                              </View>
+                              <SkeletonBlock tokens={tokens} width={20} height={20} radius={10} />
+                            </View>
+                          ))}
+                        </>
+                      ) : null}
+
+                      {filteredContacts.map((person, index) => (
+                        <Animated.View key={person.slug} entering={FadeInDown.duration(220).delay(index * 50)}>
+                          <View style={[styles.contactCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                            <AnimatedPressable
+                              containerStyle={styles.contactMainWrap}
+                              style={styles.contactMain}
+                              onPress={() => handleOpenProfile(person.slug)}
+                            >
+                              <Avatar
+                                name={person.name}
+                                avatarUrl={person.avatarUrl}
+                                fallbackColor={tokens.accent}
+                                style={styles.avatar}
+                                textStyle={styles.avatarText}
+                              />
+                              <View style={styles.contactBody}>
+                                <View style={styles.contactHead}>
+                                  <Text style={[styles.contactName, { color: tokens.text }]}>{person.name}</Text>
+                                  <Pill color={person.tag === 'premium' ? tokens.amber : tokens.textMuted} bg={person.tag === 'premium' ? tokens.amberBg : tokens.surface}>
+                                    {person.tag === 'premium' ? peopleText.premium : peopleText.basic}
+                                  </Pill>
+                                </View>
+                                <Text style={[styles.contactMeta, { color: tokens.textMuted }]}>{`${formatSlug(person.slug)} · ${person.taps ?? 0} ${peopleText.taps}`}</Text>
+                              </View>
+                            </AnimatedPressable>
+                            <AnimatedPressable
+                              onPress={() => handleSaveContact(person.slug)}
+                              disabled={saveMutation.isPending}
+                              style={[styles.iconOnly, { opacity: saveMutation.isPending ? 0.5 : 1 }]}
+                            >
+                              {saveMutation.isPending ? (
+                                <ActivityIndicator size='small' color={tokens.text} />
+                              ) : (
+                                <Star size={18} strokeWidth={1.5} color={person.saved ? tokens.amber : tokens.border} fill={person.saved ? tokens.amber : 'none'} />
+                              )}
+                            </AnimatedPressable>
+                          </View>
+                        </Animated.View>
+                      ))}
+                      {!contactsQuery.isLoading && filteredContacts.length === 0 ? (
+                        contactsSearch.trim() ? (
+                          <EmptyState
+                            icon={Search}
+                            title={peopleText.emptyNotFound}
+                            subtitle={peopleText.emptyNotFoundByQuery.replace('%1', contactsSearch.trim())}
+                            tokens={tokens}
+                            action={{
+                              label: peopleText.resetSearch,
+                              onPress: () => setContactsSearch(''),
+                            }}
+                          />
+                        ) : favoritesOnly ? (
+                          <EmptyState
+                            icon={Star}
+                            title={peopleText.noFavorites}
+                            subtitle={peopleText.noFavoritesHint}
+                            tokens={tokens}
+                          />
+                        ) : (
+                          <EmptyState
+                            icon={UserX}
+                            title={peopleText.noContacts}
+                            subtitle={peopleText.noContactsHint}
+                            tokens={tokens}
+                          />
+                        )
+                      ) : null}
+                    </>
+                  ) : null}
+                </View>
               ) : null}
-              {board.map((row, index) => (
-                <AnimatedPressable
-                  key={`${row.rank}-${row.slug}`}
-                  onPress={() => handleOpenProfile(row.slug)}
-                  style={[
-                    styles.rankRow,
-                    index < 3 ? styles.rankRowTop : undefined,
-                    {
-                      backgroundColor: index < 3 ? topPalette[index].bg : tokens.surface,
-                      borderColor: index < 3 ? topPalette[index].border : tokens.border,
-                      borderWidth: index < 3 ? 1.5 : 1,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.rankPos,
-                      {
-                        color: index < 3 ? topPalette[index].text : tokens.textMuted,
-                        fontSize: index < 3 ? 20 : 18,
-                      },
-                    ]}
-                  >
-                    {index < 3 ? medals[index] : row.rank}
-                  </Text>
-                  <Avatar
-                    name={row.name}
-                    avatarUrl={row.avatarUrl}
-                    fallbackColor={tokens.accent}
-                    style={styles.rankAvatar}
-                    textStyle={styles.rankAvatarText}
-                  />
-                  <View style={styles.rankBody}>
-                    <View style={styles.rankNameRow}>
-                      <Text style={[styles.rankName, { color: tokens.text }]}>{row.name}</Text>
-                      {index < 3 ? (
-                        <View style={[styles.topBadge, { backgroundColor: topPalette[index].badgeBg, borderColor: topPalette[index].border }]}>
-                          <Text style={[styles.topBadgeText, { color: topPalette[index].text }]}>{`TOP ${index + 1}`}</Text>
+
+              {activeTab === 'directory' ? (
+                <View style={styles.section}>
+                  {hardDirectoryError ? (
+                    <ErrorState
+                      tokens={tokens}
+                      onRetry={() => {
+                        void queryClient.invalidateQueries({ queryKey: queryKeys.directory(residentsSearch.trim(), 1) });
+                      }}
+                    />
+                  ) : null}
+
+                  {!hardDirectoryError ? (
+                    <>
+                      <View style={[styles.searchInputWrap, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                        <Search size={15} strokeWidth={1.5} color={tokens.textMuted} />
+                        <TextInput
+                          value={residentsSearch}
+                          onChangeText={setResidentsSearch}
+                          placeholder={peopleText.residentSearch}
+                          placeholderTextColor={tokens.textMuted}
+                          style={[styles.searchInput, { color: tokens.text }]}
+                        />
+                      </View>
+                      <Label color={tokens.textMuted}>{`${filteredResidents.length} ${peopleText.residentsCount}`}</Label>
+
+                      {directoryQuery.isLoading && filteredResidents.length === 0 ? (
+                        <View style={styles.grid}>
+                          {[0, 1, 2, 3].map((i) => (
+                            <View key={`resident-sk-${i}`} style={[styles.residentCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                              <SkeletonCircle tokens={tokens} size={36} />
+                              <SkeletonBlock tokens={tokens} height={11} width='82%' style={{ marginTop: 10 }} />
+                              <SkeletonBlock tokens={tokens} height={10} width='65%' />
+                              <View style={styles.residentFoot}>
+                                <SkeletonBlock tokens={tokens} height={18} width={70} radius={6} />
+                                <SkeletonBlock tokens={tokens} height={10} width={24} />
+                              </View>
+                            </View>
+                          ))}
                         </View>
                       ) : null}
-                    </View>
-                    <Text style={[styles.rankSlug, { color: tokens.textMuted }]}>
-                      {row.verifiedCompany ? `${row.verifiedCompany} · ${formatSlug(row.slug)}` : formatSlug(row.slug)}
-                    </Text>
-                  </View>
-                  <View style={styles.rankRight}>
-                    <Text style={[styles.rankTaps, { color: tokens.text }]}>{row.taps}</Text>
-                    {row.delta > 0 ? (
-                      <View style={styles.rankDeltaRow}>
-                        <TrendingUp size={11} strokeWidth={1.5} color={tokens.green} />
-                        <Text style={[styles.rankDelta, { color: tokens.green }]}>{`+${row.delta}`}</Text>
+
+                      <View style={styles.grid}>
+                        {filteredResidents.map((resident, index) => {
+                          const residentSlugs = resident.slugs?.length ? resident.slugs : [resident.slug];
+                          const visibleSlugs = residentSlugs.slice(0, 3).map((slug) => formatSlug(slug));
+                          const hiddenSlugsCount = Math.max(0, residentSlugs.length - visibleSlugs.length);
+
+                          return (
+                            <Animated.View
+                              key={`${resident.name}-${resident.slug}-${index}`}
+                              entering={FadeInDown.duration(220).delay(index * 40)}
+                              style={[styles.residentCardWrap, residentCardWrapStyle]}
+                            >
+                              <AnimatedPressable
+                                onPress={() => handleOpenProfile(resident.slug)}
+                                style={[styles.residentCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+                              >
+                                <View style={styles.residentHead}>
+                                  <Avatar
+                                    name={resident.name}
+                                    avatarUrl={resident.avatarUrl}
+                                    fallbackColor={tokens.accent}
+                                    style={styles.residentAvatar}
+                                    textStyle={styles.residentAvatarText}
+                                  />
+                                  <View style={styles.residentHeadBody}>
+                                    <Text style={[styles.residentName, { color: tokens.text }]} numberOfLines={1}>{resident.name}</Text>
+                                    {resident.city ? (
+                                      <Text style={[styles.residentCity, { color: tokens.textMuted }]} numberOfLines={1}>
+                                        {resident.city}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                </View>
+
+                                <View style={styles.slugChips}>
+                                  {visibleSlugs.map((slug) => (
+                                    <View key={`${resident.slug}-${slug}`} style={[styles.slugChip, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
+                                      <Text style={[styles.slugChipText, { color: tokens.textMuted }]} numberOfLines={1}>{slug}</Text>
+                                    </View>
+                                  ))}
+                                  {hiddenSlugsCount > 0 ? (
+                                    <View style={[styles.slugChip, styles.slugChipMore, { borderColor: tokens.border, backgroundColor: `${tokens.accent}14` }]}>
+                                      <Text style={[styles.slugChipText, { color: tokens.accent }]}>{`+${hiddenSlugsCount} ${peopleText.more}`}</Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                                <View style={styles.residentFoot}>
+                                  <Pill color={resident.tag === 'premium' ? tokens.amber : tokens.textMuted} bg={resident.tag === 'premium' ? tokens.amberBg : tokens.surface}>
+                                    {resident.tag === 'premium' ? peopleText.premium : peopleText.basic}
+                                  </Pill>
+                                  <Text style={[styles.residentTaps, { color: tokens.textMuted }]}>{resident.taps ?? 0}</Text>
+                                </View>
+                              </AnimatedPressable>
+                            </Animated.View>
+                          );
+                        })}
                       </View>
-                    ) : (
-                      <Text style={[styles.rankMeta, { color: tokens.textMuted }]}>
-                        {row.score ? `Score ${row.score}` : row.topPercent !== undefined ? `Top ${row.topPercent}%` : ''}
-                      </Text>
-                    )}
-                  </View>
-                </AnimatedPressable>
-              ))}
-              {!leaderboardQuery.isLoading && board.length === 0 ? (
-                <EmptyState
-                  icon={Award}
-                  title='Пока никого нет'
-                  subtitle=' '
-                  tokens={tokens}
-                />
+                      {!directoryQuery.isLoading && filteredResidents.length === 0 ? (
+                        <EmptyState
+                          icon={Search}
+                          title={peopleText.emptyNotFound}
+                          subtitle={
+                            residentsSearch.trim()
+                              ? peopleText.emptyNotFoundByQuery.replace('%1', residentsSearch.trim())
+                              : peopleText.noResultHint
+                          }
+                          tokens={tokens}
+                          action={
+                            residentsSearch.trim()
+                              ? {
+                                label: peopleText.resetSearch,
+                                onPress: () => setResidentsSearch(''),
+                              }
+                              : undefined
+                          }
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+                </View>
               ) : null}
-                </>
+
+              {activeTab === 'leaderboard' ? (
+                <View style={styles.section}>
+                  {hardLeaderboardError ? (
+                    <ErrorState
+                      tokens={tokens}
+                      onRetry={() => {
+                        void queryClient.invalidateQueries({ queryKey: queryKeys.leaderboard });
+                      }}
+                    />
+                  ) : null}
+
+                  {!hardLeaderboardError ? (
+                    <>
+                      {leaderboardQuery.isLoading && board.length === 0 ? (
+                        <>
+                          {[0, 1, 2].map((i) => (
+                            <View key={`board-sk-${i}`} style={[styles.rankRow, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                              <SkeletonBlock tokens={tokens} width={28} height={18} radius={6} />
+                              <SkeletonCircle tokens={tokens} size={36} />
+                              <View style={styles.rankBody}>
+                                <SkeletonBlock tokens={tokens} height={11} width='58%' />
+                                <SkeletonBlock tokens={tokens} height={10} width='42%' />
+                              </View>
+                              <View style={styles.rankRight}>
+                                <SkeletonBlock tokens={tokens} height={14} width={36} />
+                                <SkeletonBlock tokens={tokens} height={10} width={30} />
+                              </View>
+                            </View>
+                          ))}
+                        </>
+                      ) : null}
+                      {board.map((row, index) => (
+                        <AnimatedPressable
+                          key={`${row.rank}-${row.slug}`}
+                          onPress={() => handleOpenProfile(row.slug)}
+                          style={[
+                            styles.rankRow,
+                            index < 3 ? styles.rankRowTop : undefined,
+                            {
+                              backgroundColor: index < 3 ? topPalette[index].bg : tokens.surface,
+                              borderColor: index < 3 ? topPalette[index].border : tokens.border,
+                              borderWidth: index < 3 ? 1.5 : 1,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.rankPos,
+                              {
+                                color: index < 3 ? topPalette[index].text : tokens.textMuted,
+                                fontSize: index < 3 ? 20 : 18,
+                              },
+                            ]}
+                          >
+                            {index < 3 ? medals[index] : row.rank}
+                          </Text>
+                          <Avatar
+                            name={row.name}
+                            avatarUrl={row.avatarUrl}
+                            fallbackColor={tokens.accent}
+                            style={styles.rankAvatar}
+                            textStyle={styles.rankAvatarText}
+                          />
+                          <View style={styles.rankBody}>
+                            <View style={styles.rankNameRow}>
+                              <Text style={[styles.rankName, { color: tokens.text }]}>{row.name}</Text>
+                              {index < 3 ? (
+                                <View style={[styles.topBadge, { backgroundColor: topPalette[index].badgeBg, borderColor: topPalette[index].border }]}>
+                                  <Text style={[styles.topBadgeText, { color: topPalette[index].text }]}>{`TOP ${index + 1}`}</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            <Text style={[styles.rankSlug, { color: tokens.textMuted }]}>
+                              {row.verifiedCompany ? `${row.verifiedCompany} · ${formatSlug(row.slug)}` : formatSlug(row.slug)}
+                            </Text>
+                          </View>
+                          <View style={styles.rankRight}>
+                            <Text style={[styles.rankTaps, { color: tokens.text }]}>{row.taps}</Text>
+                            {row.delta > 0 ? (
+                              <View style={styles.rankDeltaRow}>
+                                <TrendingUp size={11} strokeWidth={1.5} color={tokens.green} />
+                                <Text style={[styles.rankDelta, { color: tokens.green }]}>{`+${row.delta}`}</Text>
+                              </View>
+                            ) : (
+                              <Text style={[styles.rankMeta, { color: tokens.textMuted }]}>
+                                {row.score ? `${peopleText.score} ${row.score}` : row.topPercent !== undefined ? `${peopleText.topPercent} ${row.topPercent}%` : ''}
+                              </Text>
+                            )}
+                          </View>
+                        </AnimatedPressable>
+                      ))}
+                      {!leaderboardQuery.isLoading && board.length === 0 ? (
+                        <EmptyState
+                          icon={Award}
+                          title={peopleText.topEmpty}
+                          subtitle={peopleText.topEmptySub}
+                          tokens={tokens}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+                </View>
               ) : null}
-            </View>
-          ) : null}
-        </ScrollView>
-        </ScreenTransition>
-      </View>
+            </ScrollView>
+          </ScreenTransition>
+        </View>
       </AppShell>
     </ErrorBoundary>
   );
@@ -954,7 +1049,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     padding: 13,
-    minHeight: 210,
+    gap: 10,
+  },
+  residentHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  residentHeadBody: {
+    flex: 1,
+    minWidth: 0,
   },
   residentAvatar: {
     width: 36,
@@ -962,7 +1066,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
   },
   residentAvatarText: {
     fontSize: 14,
@@ -971,19 +1074,30 @@ const styles = StyleSheet.create({
   residentName: {
     fontSize: 13,
     fontFamily: 'Inter_600SemiBold',
-    marginBottom: 2,
   },
   residentCity: {
     fontSize: 10,
     fontFamily: 'Inter_400Regular',
-    marginBottom: 2,
   },
-  residentSlug: {
+  slugChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  slugChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    minHeight: 24,
+    justifyContent: 'center',
+    maxWidth: '100%',
+  },
+  slugChipMore: {
+    paddingHorizontal: 10,
+  },
+  slugChipText: {
     fontSize: 11,
-    fontFamily: 'Inter_400Regular',
-    lineHeight: 15,
-    minHeight: 60,
-    marginBottom: 8,
+    fontFamily: 'Inter_500Medium',
   },
   residentFoot: {
     flexDirection: 'row',

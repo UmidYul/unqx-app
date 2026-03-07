@@ -27,7 +27,8 @@ function toErrorMessage(error: unknown): string {
   return 'NFC operation failed';
 }
 
-const NFC_UNSUPPORTED_ERROR = 'NFC недоступен на этом устройстве';
+export const NFC_UNSUPPORTED_ERROR = 'NFC недоступен на этом устройстве';
+export const NFC_PROTECTED_TAG_ERROR = 'NFC_TAG_PROTECTED';
 
 function parseTag(rawTag: any): NFCTag {
   const records = rawTag?.ndefMessage ?? [];
@@ -173,6 +174,12 @@ export function useNFC(): UseNfcResult {
 
       try {
         await withNdefTag(async (rawTag) => {
+          const parsed = parseTag(rawTag);
+          if (parsed.isLocked) {
+            setTag(parsed);
+            throw new Error(NFC_PROTECTED_TAG_ERROR);
+          }
+
           const message = Ndef.encodeMessage([Ndef.uriRecord(url)]);
 
           if (!message) {
@@ -181,7 +188,6 @@ export function useNFC(): UseNfcResult {
 
           await NfcManager.ndefHandler.writeNdefMessage(message);
 
-          const parsed = parseTag(rawTag);
           setTag({ ...parsed, url });
           setState('written');
           await nfcApi.write({ url, uid: parsed.uid }).catch(() => undefined);

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "unqx-app",
+    "name": "UNQX",
     "slug": "unqx-app",
     "scheme": "unqxapp",
     "version": "1.0.0",
@@ -13,24 +13,47 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "bundleIdentifier": "com.anonymous.unqxapp",
-      "supportsTablet": true,
+      "bundleIdentifier": "uz.unqx.app",
+      "supportsTablet": false,
+      "buildNumber": "1",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Для быстрого входа в UNQX"
+        "ITSAppUsesNonExemptEncryption": false,
+        "NFCReaderUsageDescription": "UNQX использует NFC для чтения меток других пользователей, записи вашей ссылки unqx.uz/SLUG и проверки состояния тега.",
+        "NSCameraUsageDescription": "Камера нужна только для сканирования QR-кодов цифровых визиток UNQX.",
+        "NSPhotoLibraryUsageDescription": "Доступ к фото нужен, чтобы выбрать и загрузить аватар вашей визитки.",
+        "NSPhotoLibraryAddUsageDescription": "UNQX сохраняет ваш фирменный QR-код в галерею для офлайн-обмена.",
+        "NSFaceIDUsageDescription": "Face ID используется для быстрой и безопасной разблокировки вашего профиля UNQX.",
+        "NSUserNotificationsUsageDescription": "UNQX отправляет уведомления о новых тапах визитки и обновлениях статуса заказа.",
+        "UNQXPrivacyPolicyURL": "https://unqx.uz/privacy",
+        "UNQXTermsOfServiceURL": "https://unqx.uz/terms"
+      },
+      "entitlements": {
+        "com.apple.developer.nfc.readersession.formats": [
+          "NDEF"
+        ]
       }
     },
     "android": {
+      "icon": "./assets/brand/title.png",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/brand/title.png",
+        "monochromeImage": "./assets/brand/title-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.NFC"
+        "android.permission.NFC",
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ],
-      "package": "com.anonymous.unqxapp"
+      "googleServicesFile": "./google-services.json",
+      "versionCode": 1,
+      "package": "uz.unqx.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -39,6 +62,7 @@
       "expo-router",
       "react-native-nfc-manager",
       "expo-secure-store",
+      "expo-local-authentication",
       "expo-notifications",
       [
         "@sentry/react-native/expo",
@@ -49,10 +73,16 @@
       ]
     ],
     "extra": {
+      "legal": {
+        "privacyPolicyUrl": "https://unqx.uz/privacy",
+        "termsOfServiceUrl": "https://unqx.uz/terms",
+        "refundPolicyUrl": "https://unqx.uz/refund"
+      },
       "router": {},
       "eas": {
         "projectId": "6452d5a7-a420-40da-99ac-dd3b97e86016"
       }
-    }
+    },
+    "owner": "umidyul"
   }
 }

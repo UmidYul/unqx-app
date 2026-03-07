@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { TrendingUp } from 'lucide-react-native';
@@ -22,7 +22,9 @@ import { markPushTrigger } from '@/lib/pushPrompt';
 import { queryKeys } from '@/lib/queryKeys';
 import { fetchAnalyticsDashboardLike } from '@/services/mobileApi';
 import { SourceStat } from '@/types';
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThemeContext } from '@/theme/ThemeProvider';
+import { getUzbekistanWeekday } from '@/theme/tokens';
 import { resolveSource } from '@/utils/sourceConfig';
 
 interface AnalyticsPayload {
@@ -38,6 +40,52 @@ interface CityStat {
   city: string;
   taps: number;
   percent: number;
+}
+
+function localizeCityName(cityRaw: string, isUz: boolean): string {
+  const city = cityRaw.trim();
+  if (!isUz) {
+    return city;
+  }
+
+  const map: Record<string, string> = {
+    tashkent: 'Toshkent',
+    ташкент: 'Toshkent',
+    samarkand: 'Samarqand',
+    самарканд: 'Samarqand',
+    bukhara: 'Buxoro',
+    бухара: 'Buxoro',
+    andijan: 'Andijon',
+    андижан: 'Andijon',
+    fergana: "Farg\'ona",
+    фергана: "Farg\'ona",
+    namangan: 'Namangan',
+    наманган: 'Namangan',
+    nukus: 'Nukus',
+    нукус: 'Nukus',
+    qarshi: 'Qarshi',
+    карши: 'Qarshi',
+    urgench: 'Urganch',
+    ургенч: 'Urganch',
+    navoiy: 'Navoiy',
+    навои: 'Navoiy',
+    jizzakh: 'Jizzax',
+    джизак: 'Jizzax',
+    gulistan: 'Guliston',
+    гулистан: 'Guliston',
+    termiz: 'Termiz',
+    термез: 'Termiz',
+    kokand: "Qo\'qon",
+    коканд: "Qo\'qon",
+    chirchik: 'Chirchiq',
+    чирчик: 'Chirchiq',
+    angren: 'Angren',
+    ангрен: 'Angren',
+    unknown: "Noma\'lum",
+    неизвестно: "Noma\'lum",
+  };
+
+  return map[city.toLowerCase()] ?? city;
 }
 
 function buildCityStats(points: Array<{ city: string; value?: number }>, totalTaps: number): CityStat[] {
@@ -133,6 +181,31 @@ function AnimatedBar({
 export default function AnalyticsPage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const { tokens } = useThemeContext();
+  const { language } = useLanguageContext();
+  const isUz = language === 'uz';
+  const analyticsText = isUz
+    ? {
+      weekDaysSundayFirst: ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sha'],
+      retry: 'Qayta urinish',
+      taps30: '30 kunlik taplar',
+      monthGrowth: "o'tgan oyga nisbatan",
+      thisWeek: 'Bu hafta',
+      cities: 'Shaharlar',
+      noCities: "Hozircha tapli shaharlar yo'q",
+      sources: 'Manbalar',
+      noSources: "Hozircha manbalar bo'yicha ma'lumot yo'q",
+    }
+    : {
+      weekDaysSundayFirst: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+      retry: 'Повторить',
+      taps30: 'Тапов за 30 дней',
+      monthGrowth: 'к прошлому месяцу',
+      thisWeek: 'Эта неделя',
+      cities: 'Города',
+      noCities: 'Пока нет городов с тапами',
+      sources: 'Источники',
+      noSources: 'Пока нет данных по источникам',
+    };
   const [animatedTotal, setAnimatedTotal] = React.useState(0);
   const query = useQuery({
     queryKey: queryKeys.analytics,
@@ -151,7 +224,22 @@ export default function AnalyticsPage(): React.JSX.Element {
   const cityStats = React.useMemo(() => buildCityStats(analytics.geo, analytics.totalTaps), [analytics.geo, analytics.totalTaps]);
   const cityMax = React.useMemo(() => Math.max(...cityStats.map((item) => item.taps), 1), [cityStats]);
   const weekMax = Math.max(...analytics.weekTaps, 1);
-  const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+  const isDark = tokens.text === '#f5f5f5';
+  const weekTrackColor = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(17,17,17,0.10)';
+  const cityTrackColor = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(17,17,17,0.12)';
+  const cityFillColor = isDark ? 'rgba(232,223,200,0.95)' : tokens.accent;
+  const days = React.useMemo(() => {
+    const todayDayIndex = getUzbekistanWeekday();
+    return Array.from({ length: 7 }, (_, index) => {
+      const offset = 6 - index;
+      const dayIndex = (todayDayIndex - offset + 7) % 7;
+      return {
+        label: analyticsText.weekDaysSundayFirst[dayIndex],
+        dayIndex,
+      };
+    });
+  }, [analyticsText.weekDaysSundayFirst]);
+  const todayBarIndex = 6;
   const growthLabel = `${analytics.growth > 0 ? '+' : ''}${analytics.growth}%`;
 
   React.useEffect(() => {
@@ -198,7 +286,7 @@ export default function AnalyticsPage(): React.JSX.Element {
                     onPress={() => void queryClient.invalidateQueries({ queryKey: queryKeys.analytics })}
                   >
                     <Text style={[styles.errorText, { color: tokens.red }]}>{MESSAGES.query.analyticsCacheUpdateFailed}</Text>
-                    <Text style={[styles.errorRetry, { color: tokens.text }]}>Повторить</Text>
+                    <Text style={[styles.errorRetry, { color: tokens.text }]}>{analyticsText.retry}</Text>
                   </Pressable>
                 ) : null}
 
@@ -210,12 +298,12 @@ export default function AnalyticsPage(): React.JSX.Element {
                 ) : null}
 
                 <View style={[styles.kpiCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
-                  <Label color={tokens.textMuted}>Тапов за 30 дней</Label>
+                  <Label color={tokens.textMuted}>{analyticsText.taps30}</Label>
                   <View style={styles.kpiRow}>
                     <View>
                       <Text style={[styles.kpiValue, { color: tokens.text }]}>{animatedTotal}</Text>
                       <Text style={[styles.kpiGrowth, { color: analytics.growth >= 0 ? tokens.green : tokens.red }]}>
-                        {`${analytics.growth >= 0 ? '↑' : '↓'} ${growthLabel} к прошлому месяцу`}
+                        {`${analytics.growth >= 0 ? '↑' : '↓'} ${growthLabel} ${analyticsText.monthGrowth}`}
                       </Text>
                     </View>
                     <TrendingUp size={18} strokeWidth={1.5} color={analytics.growth >= 0 ? tokens.green : tokens.red} />
@@ -224,39 +312,44 @@ export default function AnalyticsPage(): React.JSX.Element {
                 </View>
 
                 <View style={[styles.weekCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
-                  <Label color={tokens.textMuted} style={styles.weekLabel}>Эта неделя</Label>
+                  <Label color={tokens.textMuted} style={styles.weekLabel}>{analyticsText.thisWeek}</Label>
                   <View style={styles.weekRow}>
                     {analytics.weekTaps.map((v, i) => (
                       <View key={`w-${i}`} style={styles.weekCol}>
-                        <Text style={[styles.weekNum, { color: tokens.textMuted }]}>{v}</Text>
-                        <View style={[styles.weekTrack, { backgroundColor: i === 4 ? tokens.accent : tokens.border }]}>
-                          <AnimatedBar ratio={Math.max(0.06, v / weekMax)} delay={i * 70} color={i === 4 ? tokens.accent : tokens.borderStrong} />
+                        <Text style={[styles.weekNum, { color: isDark ? 'rgba(255,255,255,0.72)' : tokens.textSub }]}>{v}</Text>
+                        <View style={[styles.weekTrack, { backgroundColor: weekTrackColor }]}>
+                          <AnimatedBar
+                            ratio={v <= 0 ? 0 : Math.max(0.06, v / weekMax)}
+                            delay={i * 70}
+                            color={i === todayBarIndex || days[i]?.dayIndex === 5 ? tokens.accent : (isDark ? 'rgba(255,255,255,0.86)' : tokens.borderStrong)}
+                          />
                         </View>
-                        <Text style={[styles.weekDay, { color: i === 4 ? tokens.text : tokens.textMuted }]}>{days[i]}</Text>
+                        <Text style={[styles.weekDay, { color: i === todayBarIndex ? tokens.text : (isDark ? 'rgba(255,255,255,0.62)' : tokens.textMuted) }]}>{days[i]?.label ?? ''}</Text>
                       </View>
                     ))}
                   </View>
                 </View>
 
-                <Label color={tokens.textMuted}>Города</Label>
+                <Label color={isDark ? 'rgba(255,255,255,0.52)' : tokens.textMuted}>{analyticsText.cities}</Label>
                 {cityStats.length > 0 ? cityStats.map((item, index) => {
                   const fillRatio = Math.max(0.08, item.taps / cityMax);
+                  const localizedCityName = localizeCityName(item.city, isUz);
                   return (
                     <View key={`${item.city}-${index}`} style={[styles.cityRow, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
                       <View style={styles.cityHeader}>
-                        <Text style={[styles.cityName, { color: tokens.text }]} numberOfLines={1}>{item.city}</Text>
+                        <Text style={[styles.cityName, { color: tokens.text }]} numberOfLines={1}>{localizedCityName}</Text>
                         <Text style={[styles.cityMeta, { color: tokens.textMuted }]}>{`${item.taps} (${item.percent}%)`}</Text>
                       </View>
-                      <View style={[styles.cityTrack, { backgroundColor: tokens.border }]}>
-                        <View style={[styles.cityFill, { backgroundColor: tokens.accent, width: `${Math.round(fillRatio * 100)}%` }]} />
+                      <View style={[styles.cityTrack, { backgroundColor: cityTrackColor }]}>
+                        <View style={[styles.cityFill, { backgroundColor: cityFillColor, width: `${Math.round(fillRatio * 100)}%` }]} />
                       </View>
                     </View>
                   );
                 }) : (
-                  <Text style={[styles.loadingText, { color: tokens.textMuted }]}>Пока нет городов с тапами</Text>
+                  <Text style={[styles.loadingText, { color: tokens.textMuted }]}>{analyticsText.noCities}</Text>
                 )}
 
-                <Label color={tokens.textMuted}>Источники</Label>
+                <Label color={isDark ? 'rgba(255,255,255,0.52)' : tokens.textMuted}>{analyticsText.sources}</Label>
                 {analytics.sources.length > 0 ? analytics.sources.map((item, index) => (
                   <SourceRow
                     key={`${item.source}-${index}`}
@@ -267,7 +360,7 @@ export default function AnalyticsPage(): React.JSX.Element {
                     tokens={tokens}
                   />
                 )) : (
-                  <Text style={[styles.loadingText, { color: tokens.textMuted }]}>Пока нет данных по источникам</Text>
+                  <Text style={[styles.loadingText, { color: tokens.textMuted }]}>{analyticsText.noSources}</Text>
                 )}
               </>
             ) : null}
@@ -346,7 +439,7 @@ const styles = StyleSheet.create({
   },
   weekNum: {
     fontSize: 10,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
   },
   weekTrack: {
     width: '100%',
@@ -397,3 +490,4 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 });
+

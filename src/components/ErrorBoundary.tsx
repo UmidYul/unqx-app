@@ -20,7 +20,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    console.error('ErrorBoundary caught:', error, info);
+    if (__DEV__) {
+      console.error('ErrorBoundary caught:', error, info);
+    }
     captureSentryException(error, {
       contexts: {
         react: {

@@ -10,6 +10,8 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { SkeletonBlock } from '@/components/ui/skeleton';
+import { APP_DISPLAY_NAME, getBrandLogoSource } from '@/lib/brandAssets';
+import { useThemeContext } from '@/theme/ThemeProvider';
 import { ThemeTokens } from '@/types';
 
 interface BootLoaderProps {
@@ -17,6 +19,8 @@ interface BootLoaderProps {
 }
 
 export function BootLoader({ tokens }: BootLoaderProps): React.JSX.Element {
+  const { theme } = useThemeContext();
+  const isDark = theme === 'dark';
   const pulse = useSharedValue(0);
 
   React.useEffect(() => {
@@ -52,11 +56,11 @@ export function BootLoader({ tokens }: BootLoaderProps): React.JSX.Element {
       <View style={styles.centerWrap}>
         <Animated.View style={[styles.ring, { backgroundColor: `${tokens.accent}20` }, ringStyle]} />
         <Animated.View style={[styles.logoWrap, logoStyle]}>
-          <Image source={require('../../../assets/icon.png')} style={styles.logo} resizeMode='contain' />
+          <Image source={getBrandLogoSource(isDark)} style={styles.logo} resizeMode='contain' />
         </Animated.View>
       </View>
 
-      <Text style={[styles.title, { color: tokens.text }]}>UNQX</Text>
+      <Text style={[styles.title, { color: tokens.text }]}>{APP_DISPLAY_NAME}</Text>
       <View style={styles.skeletonRow}>
         <SkeletonBlock tokens={tokens} width={124} height={8} radius={6} />
         <SkeletonBlock tokens={tokens} width={86} height={8} radius={6} />

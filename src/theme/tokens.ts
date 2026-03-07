@@ -61,6 +61,11 @@ export function getUzbekistanHour(date: Date = new Date()): number {
   return (date.getUTCHours() + UZBEKISTAN_UTC_OFFSET_HOURS) % 24;
 }
 
+export function getUzbekistanWeekday(date: Date = new Date()): number {
+  const uzbDate = new Date(date.getTime() + UZBEKISTAN_UTC_OFFSET_HOURS * 60 * 60 * 1000);
+  return uzbDate.getUTCDay();
+}
+
 export function resolveThemeByHour(hour: number): ThemeMode {
   if (hour >= AUTO_THEME_HOURS.darkStart || hour < AUTO_THEME_HOURS.darkEnd) {
     return 'dark';

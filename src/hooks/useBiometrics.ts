@@ -5,6 +5,9 @@ import * as LocalAuthentication from 'expo-local-authentication';
 
 const BIOMETRICS_ENABLED_KEY = 'biometrics_enabled';
 const BIOMETRICS_ASKED_KEY = 'biometrics_asked';
+const BIOMETRIC_LOCK_TIMEOUT_MS_KEY = 'biometric_lock_timeout_ms';
+
+export const DEFAULT_BIOMETRIC_LOCK_TIMEOUT_MS = 2000;
 
 export type BiometricType = 'Face ID' | 'Touch ID' | 'Fingerprint' | null;
 
@@ -51,6 +54,8 @@ export function useBiometrics(): {
   setBiometricsEnabled: (enabled: boolean) => Promise<void>;
   getBiometricsAsked: () => Promise<boolean>;
   setBiometricsAsked: (asked: boolean) => Promise<void>;
+  getBiometricLockTimeoutMs: () => Promise<number>;
+  setBiometricLockTimeoutMs: (timeoutMs: number) => Promise<void>;
 } {
   const isAvailable = useCallback(async () => {
     try {
@@ -96,6 +101,30 @@ export function useBiometrics(): {
   const getBiometricsAsked = useCallback(async () => readBoolean(BIOMETRICS_ASKED_KEY, false), []);
   const setBiometricsAsked = useCallback(async (asked: boolean) => writeBoolean(BIOMETRICS_ASKED_KEY, asked), []);
 
+  const getBiometricLockTimeoutMs = useCallback(async (): Promise<number> => {
+    try {
+      const raw = await AsyncStorage.getItem(BIOMETRIC_LOCK_TIMEOUT_MS_KEY);
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return DEFAULT_BIOMETRIC_LOCK_TIMEOUT_MS;
+      }
+      return Math.round(parsed);
+    } catch {
+      return DEFAULT_BIOMETRIC_LOCK_TIMEOUT_MS;
+    }
+  }, []);
+
+  const setBiometricLockTimeoutMs = useCallback(async (timeoutMs: number): Promise<void> => {
+    const normalized = Number.isFinite(timeoutMs) && timeoutMs >= 0
+      ? Math.round(timeoutMs)
+      : DEFAULT_BIOMETRIC_LOCK_TIMEOUT_MS;
+    try {
+      await AsyncStorage.setItem(BIOMETRIC_LOCK_TIMEOUT_MS_KEY, String(normalized));
+    } catch {
+      // noop
+    }
+  }, []);
+
   return {
     isAvailable,
     isEnrolled,
@@ -105,5 +134,7 @@ export function useBiometrics(): {
     setBiometricsEnabled,
     getBiometricsAsked,
     setBiometricsAsked,
+    getBiometricLockTimeoutMs,
+    setBiometricLockTimeoutMs,
   };
 }

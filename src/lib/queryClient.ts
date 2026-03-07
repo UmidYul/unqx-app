@@ -68,3 +68,11 @@ export const queryPersister = createAsyncStoragePersister({
 });
 
 export const queryPersistMaxAge = DAY_MS;
+
+export async function clearPersistedQueryCache(): Promise<void> {
+  // Reset active cache first to avoid rendering stale user-scoped data.
+  queryClient.clear();
+
+  // Then remove persisted snapshot to prevent hydration of previous account data.
+  await queryPersister.removeClient();
+}

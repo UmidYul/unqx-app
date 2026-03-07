@@ -38,7 +38,7 @@ export async function getPushPromptState(): Promise<{
   }
 
   return {
-    shouldPrompt: nfcTrigger === '1' || analyticsTrigger === '1',
+    shouldPrompt: true,
     permissionRequested,
   };
 }

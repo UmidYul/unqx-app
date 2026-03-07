@@ -359,82 +359,24 @@ export interface NfcLockPayload {
   uid?: string;
 }
 
-type NfcHistoryType = 'read' | 'write' | 'verify' | 'lock';
-
-interface LocalNfcHistoryItem {
-  id: string;
-  slug: string;
-  uid?: string;
-  type: NfcHistoryType;
-  timestamp: string;
-}
-
-interface LocalNfcTagItem {
-  uid: string;
-  name: string;
-  linkedSlug?: string;
-  status?: string;
-  updatedAt: string;
-}
-
-const NFC_HISTORY_KEY = 'unqx.nfc.history.v1';
-const NFC_TAGS_KEY = 'unqx.nfc.tags.v1';
-
-async function readLocalArray<T>(key: string): Promise<T[]> {
-  const raw = await storageGetItem(key);
-  if (!raw) {
-    return [];
+function shouldTryNextDeleteVariant(error: unknown): boolean {
+  if (!(error instanceof ApiError)) {
+    return false;
   }
 
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeLocalArray<T>(key: string, items: T[]): Promise<void> {
-  await storageSetItem(key, JSON.stringify(items));
-}
-
-async function appendLocalHistory(item: Omit<LocalNfcHistoryItem, 'id' | 'timestamp'>): Promise<void> {
-  const current = await readLocalArray<LocalNfcHistoryItem>(NFC_HISTORY_KEY);
-  const next: LocalNfcHistoryItem = {
-    id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    slug: item.slug,
-    uid: item.uid,
-    type: item.type,
-    timestamp: new Date().toISOString(),
-  };
-
-  const merged = [next, ...current].slice(0, 80);
-  await writeLocalArray(NFC_HISTORY_KEY, merged);
-}
-
-async function upsertLocalTag(uid?: string, linkedSlug?: string): Promise<void> {
-  const cleanUid = String(uid ?? '').trim();
-  if (!cleanUid) {
-    return;
+  // Auth/permission failures should fail fast.
+  if (error.status === 401 || error.status === 403) {
+    return false;
   }
 
-  const current = await readLocalArray<LocalNfcTagItem>(NFC_TAGS_KEY);
-  const existing = current.find((item) => item.uid === cleanUid);
+  // For delete, backends can vary by method/path/payload; try next variant.
+  return true;
+}
 
-  if (existing) {
-    existing.linkedSlug = linkedSlug ?? existing.linkedSlug;
-    existing.updatedAt = new Date().toISOString();
-  } else {
-    current.unshift({
-      uid: cleanUid,
-      name: `Tag ${cleanUid.slice(-4).toUpperCase()}`,
-      linkedSlug,
-      status: 'active',
-      updatedAt: new Date().toISOString(),
-    });
-  }
-
-  await writeLocalArray(NFC_TAGS_KEY, current.slice(0, 40));
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function logCardView(slug: string, source: string): Promise<void> {
@@ -445,11 +387,9 @@ async function logCardView(slug: string, source: string): Promise<void> {
 
 export const nfcApi = {
   scan: async (payload: NfcScanPayload) => {
-    const slug = extractSlug(payload.url ?? '') ?? 'UNQ000';
-    await appendLocalHistory({ slug, uid: payload.uid, type: 'read' });
-    await upsertLocalTag(payload.uid, slug !== 'UNQ000' ? slug : undefined);
-    await apiClient.post('/nfc/scan', { ...payload, recordTap: false }).catch(() => undefined);
-    if (slug !== 'UNQ000') {
+    const slug = extractSlug(payload.url ?? '');
+    await apiClient.post('/nfc/scan', { ...payload, recordTap: false });
+    if (slug) {
       await apiClient.post('/nfc/tap', { ownerSlug: slug, source: 'nfc' }).catch(async () => {
         await logCardView(slug, 'nfc');
       });
@@ -457,72 +397,65 @@ export const nfcApi = {
     return { ok: true };
   },
   write: async (payload: NfcWritePayload) => {
-    const slug = extractSlug(payload.url) ?? 'UNQ000';
-    await appendLocalHistory({ slug, uid: payload.uid, type: 'write' });
-    await upsertLocalTag(payload.uid, slug !== 'UNQ000' ? slug : undefined);
-    await apiClient
-      .post('/nfc/write', payload)
-      .catch(async () => {
-        if (slug !== 'UNQ000') {
-          await logCardView(slug, 'nfc');
-        }
-      });
+    const slug = extractSlug(payload.url);
+    await apiClient.post('/nfc/write', payload).catch(async () => {
+      if (slug) {
+        await logCardView(slug, 'nfc');
+      }
+      throw new ApiError('Failed to write NFC data', 0, 'NFC_WRITE_FAILED');
+    });
     return { ok: true };
   },
   lock: async (payload: NfcLockPayload) => {
-    await appendLocalHistory({ slug: 'UNQ000', uid: payload.uid, type: 'lock' });
-    await upsertLocalTag(payload.uid, undefined);
-    await apiClient.post('/nfc/lock', payload).catch(() => undefined);
+    await apiClient.post('/nfc/lock', payload);
     return { ok: true };
   },
   history: async () => {
-    try {
-      const server = await apiClient.get<{ items?: Array<any> }>('/nfc/history');
-      const normalized = Array.isArray(server?.items)
-        ? server.items.map((item: any, index: number) => ({
-            id: String(item?.id ?? `h-${index}`),
-            slug: extractSlug(item?.slug ?? item?.url ?? '') ?? String(item?.slug ?? 'UNQ000'),
-            uid: item?.uid,
-            type:
-              item?.type === 'write' || item?.type === 'verify' || item?.type === 'lock' || item?.type === 'read'
-                ? item.type
-                : 'read',
-            timestamp: String(item?.timestamp ?? item?.createdAt ?? new Date().toISOString()),
-          }))
-        : [];
-      await writeLocalArray(NFC_HISTORY_KEY, normalized.slice(0, 100));
-      return { items: normalized };
-    } catch {
-      // fallback below
-    }
+    const server = await apiClient.get<{ items?: Array<any> }>('/nfc/history');
+    const normalized = Array.isArray(server?.items)
+      ? server.items
+        .map((item: any, index: number) => {
+          const byUrl = extractSlug(item?.url ?? '');
+          const bySlug = extractSlug(item?.slug ?? '');
+          const looksLikePlaceholderSlug = bySlug === 'UNQ000' && !byUrl;
+          const slug = looksLikePlaceholderSlug ? '' : byUrl ?? bySlug ?? '';
+          const type = String(item?.type ?? '').toLowerCase();
+          const safeType = type === 'write' || type === 'verify' || type === 'lock' || type === 'read' ? type : 'read';
+          const timestamp = String(item?.timestamp ?? item?.createdAt ?? '');
 
-    const items = await readLocalArray<LocalNfcHistoryItem>(NFC_HISTORY_KEY);
-    return {
-      items,
-    };
+          return {
+            id: String(item?.id ?? `h-${index}`),
+            slug,
+            uid: item?.uid ? String(item.uid) : undefined,
+            type: safeType,
+            timestamp,
+          };
+        })
+        .filter((item: any) => Boolean(item.slug || item.uid || item.timestamp))
+      : [];
+    return { items: normalized };
   },
   tags: async () => {
-    try {
-      const server = await apiClient.get<{ items?: Array<any> }>('/nfc/tags');
-      const normalized = Array.isArray(server?.items)
-        ? server.items.map((item: any) => ({
-            uid: String(item?.uid ?? ''),
-            name: String(item?.name ?? 'Метка'),
-            linkedSlug: extractSlug(item?.linkedSlug ?? '') ?? item?.linkedSlug ?? undefined,
-            status: String(item?.status ?? 'ok'),
-            updatedAt: String(item?.updatedAt ?? item?.lastTapAt ?? new Date().toISOString()),
-          }))
-        : [];
-      await writeLocalArray(NFC_TAGS_KEY, normalized.slice(0, 100));
-      return { items: normalized };
-    } catch {
-      // fallback below
-    }
+    const server = await apiClient.get<{ items?: Array<any> }>('/nfc/tags');
+    const normalized = Array.isArray(server?.items)
+      ? server.items
+        .map((item: any) => {
+          const uid = String(item?.uid ?? '').trim();
+          const rawName = String(item?.name ?? '').trim();
+          const looksLikePlaceholderName = rawName.toLowerCase() === 'метка' || rawName.toLowerCase() === 'tag';
+          const name = !rawName || looksLikePlaceholderName ? uid : rawName;
 
-    const items = await readLocalArray<LocalNfcTagItem>(NFC_TAGS_KEY);
-    return {
-      items,
-    };
+          return {
+            uid,
+            name,
+            linkedSlug: extractSlug(item?.linkedSlug ?? '') ?? item?.linkedSlug ?? undefined,
+            status: item?.status ? String(item.status) : undefined,
+            updatedAt: String(item?.updatedAt ?? item?.lastTapAt ?? ''),
+          };
+        })
+        .filter((item: any) => Boolean(item.uid))
+      : [];
+    return { items: normalized };
   },
   renameTag: async (uid: string, name: string) => {
     const cleanUid = String(uid).trim();
@@ -531,24 +464,67 @@ export const nfcApi = {
       throw new ApiError('Tag uid and name are required', 400, 'VALIDATION_ERROR');
     }
 
-    const current = await readLocalArray<LocalNfcTagItem>(NFC_TAGS_KEY);
-    const next = current.map((item) => (item.uid === cleanUid ? { ...item, name: cleanName } : item));
-    await writeLocalArray(NFC_TAGS_KEY, next);
-    await apiClient.patch(`/nfc/tags/${encodeURIComponent(cleanUid)}`, { name: cleanName }).catch(() => undefined);
+    await apiClient.patch(`/nfc/tags/${encodeURIComponent(cleanUid)}`, { name: cleanName });
     return { ok: true };
   },
+  deleteTag: async (uid: string) => {
+    const cleanUid = String(uid).trim();
+    if (!cleanUid) {
+      throw new ApiError('Tag uid is required', 400, 'VALIDATION_ERROR');
+    }
+
+    const encodedUid = encodeURIComponent(cleanUid);
+    const deleteVariants: Array<() => Promise<unknown>> = [
+      () => apiClient.delete(`/nfc/tags/${encodedUid}`),
+      () => apiClient.delete(`/nfc/tags/${encodedUid}/delete`),
+      () => apiClient.post(`/nfc/tags/${encodedUid}/delete`, {}),
+      () => apiClient.post('/nfc/tags/delete', { uid: cleanUid }),
+      () => apiClient.delete('/nfc/tags', { query: { uid: cleanUid } }),
+    ];
+
+    let lastError: unknown = null;
+    for (const runVariant of deleteVariants) {
+      try {
+        await runVariant();
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (!shouldTryNextDeleteVariant(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (lastError) {
+      if (lastError instanceof Error) {
+        throw lastError;
+      }
+      throw new ApiError('Failed to delete tag', 500, 'NFC_TAG_DELETE_FAILED');
+    }
+
+    // Confirm eventual consistency: some backends apply deletion asynchronously.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const latest = await nfcApi.tags().catch(() => ({ items: [] as Array<{ uid: string }> }));
+      const stillExists = Array.isArray(latest?.items)
+        ? latest.items.some((item: any) => String(item?.uid ?? '') === cleanUid)
+        : false;
+
+      if (!stillExists) {
+        return { ok: true };
+      }
+
+      await wait(220 * (attempt + 1));
+    }
+
+    throw new ApiError('Tag deletion was not confirmed', 409, 'NFC_TAG_DELETE_NOT_CONFIRMED');
+  },
   clearLocalData: async () => {
-    await storageDeleteItem(NFC_HISTORY_KEY);
-    await storageDeleteItem(NFC_TAGS_KEY);
+    // Kept for backward compatibility. NFC no longer stores local cache.
     return { ok: true };
   },
   markVerified: async (payload: { uid?: string; url?: string }) => {
-    const slug = extractSlug(payload.url ?? '') ?? 'UNQ000';
-    await appendLocalHistory({ slug, uid: payload.uid, type: 'verify' });
-    if (payload.uid) {
-      await upsertLocalTag(payload.uid, slug !== 'UNQ000' ? slug : undefined);
-    }
-    await apiClient.post('/nfc/verify', payload).catch(() => undefined);
+    await apiClient.post('/nfc/verify', payload);
     return { ok: true };
   },
 };

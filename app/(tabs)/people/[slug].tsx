@@ -1,4 +1,5 @@
 import React from 'react';
+import * as Clipboard from 'expo-clipboard';
 import {
   ActivityIndicator,
   Image,
@@ -9,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Mail, Phone, Star, UserCheck, UserPlus } from 'lucide-react-native';
+import { Globe, Hash, Mail, MapPin, Phone, Star, UserCheck, UserPlus } from 'lucide-react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -22,12 +23,16 @@ import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 import { SkeletonBlock, SkeletonCircle } from '@/components/ui/skeleton';
 import { Label, Pill } from '@/components/ui/shared';
 import { MESSAGES } from '@/constants/messages';
+import { useExport } from '@/hooks/useExport';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { queryKeys } from '@/lib/queryKeys';
 import { fetchResidentProfileLike, saveContactLike, subscribeContactLike } from '@/services/mobileApi';
 import { ResidentProfile } from '@/types';
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { formatSlug } from '@/utils/avatar';
+import { getPreferredTelegramUrl } from '@/utils/links';
 import { toast } from '@/utils/toast';
 
 function normalizeResidentSlug(value: unknown): string {
@@ -42,11 +47,114 @@ function initial(name: string): string {
   return (name || 'U').charAt(0).toUpperCase();
 }
 
+function normalizeAddress(value?: string): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    return '';
+  }
+  if (/^\d+$/.test(raw)) {
+    return '';
+  }
+  return raw;
+}
+
+function isCallButton(label: string, icon?: string): boolean {
+  const normalizedLabel = String(label ?? '').trim().toLowerCase();
+  const normalizedIcon = String(icon ?? '').trim().toLowerCase();
+  if (normalizedIcon === 'phone') {
+    return true;
+  }
+  return ['позвон', 'звон', 'call', 'phone', 'telefon', 'телефон'].some((token) => normalizedLabel.includes(token));
+}
+
+function isCopyCardButton(label: string): boolean {
+  const normalizedLabel = String(label ?? '').trim().toLowerCase();
+  return ['карта', 'card', 'karta'].some((token) => normalizedLabel.includes(token));
+}
+
+function toDialUrl(raw: string): string | null {
+  const value = String(raw ?? '').trim();
+  if (!value) {
+    return null;
+  }
+  if (/^tel:/i.test(value)) {
+    return value;
+  }
+
+  const normalized = value.replace(/[^\d+]/g, '');
+  if (!/^\+?\d{7,15}$/.test(normalized)) {
+    return null;
+  }
+
+  return `tel:${normalized}`;
+}
+
 export default function ResidentProfilePage(): React.JSX.Element {
   const { tokens } = useThemeContext();
+  const { language } = useLanguageContext();
+  const isUz = language === 'uz';
   const { isOnline } = useNetworkStatus({ invalidateOnReconnect: false });
   const { slug } = useLocalSearchParams<{ slug?: string | string[] }>();
   const queryClient = useQueryClient();
+  const { exportVCF } = useExport();
+
+  const profileText = isUz
+    ? {
+      title: 'Profil',
+      invalidSlug: 'Foydalanuvchi slugi noto\'g\'ri',
+      loadFailed: 'Foydalanuvchi profilini yuklab bo\'lmadi',
+      premium: 'Premium',
+      basic: 'Asosiy',
+      taps: 'tap',
+      inFavorites: 'Sevimlida',
+      toFavorites: 'Sevimliga',
+      inContacts: 'Kontaktlarda',
+      toContacts: 'Kontaktlarga',
+      summary: 'Qisqacha',
+      noSummary: 'Foydalanuvchi hali qisqacha ma\'lumot qo\'shmagan',
+      contacts: 'Kontaktlar',
+      links: 'Havolalar',
+      saveVcf: 'Kontaktni saqlash',
+      openCard: 'Vizitkani ochish',
+      cardDetails: 'Vizitka ma\'lumotlari',
+      slugPrice: 'Slug narxi',
+      views: 'ko\'rishlar',
+      openLinkFailed: 'Havolani ochib bo\'lmadi',
+      openPhoneFailed: 'Telefon raqamini ochib bo\'lmadi',
+      openCardFailed: 'Vizitkani ochib bo\'lmadi',
+      cardCopied: 'Karta nusxalandi',
+      copyCardFailed: 'Kartani nusxalab bo\'lmadi',
+      addedToContacts: 'Kontaktlarga qo\'shildi',
+      removedFromContacts: 'Kontaktlardan olib tashlandi',
+    }
+    : {
+      title: 'Профиль',
+      invalidSlug: 'Некорректный slug пользователя',
+      loadFailed: 'Не удалось загрузить профиль пользователя',
+      premium: 'Премиум',
+      basic: 'Базовый',
+      taps: 'тапов',
+      inFavorites: 'В избранном',
+      toFavorites: 'В избранное',
+      inContacts: 'В контактах',
+      toContacts: 'В контакты',
+      summary: 'О себе',
+      noSummary: 'Пользователь пока не добавил резюме',
+      contacts: 'Контакты',
+      links: 'Ссылки',
+      saveVcf: 'Скачать контакт',
+      openCard: 'Открыть визитку',
+      cardDetails: 'Данные визитки',
+      slugPrice: 'Цена slug',
+      views: 'просмотров',
+      openLinkFailed: 'Не удалось открыть ссылку',
+      openPhoneFailed: 'Не удалось открыть номер телефона',
+      openCardFailed: 'Не удалось открыть визитку',
+      cardCopied: 'Карта скопирована',
+      copyCardFailed: 'Не удалось скопировать карту',
+      addedToContacts: 'Добавлено в контакты',
+      removedFromContacts: 'Удалено из контактов',
+    };
 
   const normalizedSlug = React.useMemo(() => {
     const value = Array.isArray(slug) ? slug[0] : slug;
@@ -60,7 +168,8 @@ export default function ResidentProfilePage(): React.JSX.Element {
   });
 
   const profile = profileQuery.data;
-  const displaySlugs = profile?.slugs?.length ? profile.slugs : normalizedSlug ? [normalizedSlug] : [];
+  const avatarImage = useRetryImageUri(profile?.avatarUrl);
+  const contactAddress = React.useMemo(() => normalizeAddress(profile?.address ?? profile?.city), [profile?.address, profile?.city]);
 
   const saveMutation = useMutation({
     networkMode: 'offlineFirst',
@@ -109,7 +218,7 @@ export default function ResidentProfilePage(): React.JSX.Element {
       toast.error(MESSAGES.toast.subscribeFailed);
     },
     onSuccess: (_data, _variables, context) => {
-      toast.success(context?.nextSubscribed ? 'Добавлено в контакты' : 'Удалено из контактов');
+      toast.success(context?.nextSubscribed ? profileText.addedToContacts : profileText.removedFromContacts);
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.residentProfile(normalizedSlug) });
@@ -121,6 +230,78 @@ export default function ResidentProfilePage(): React.JSX.Element {
   const onRefresh = React.useCallback(async () => {
     await profileQuery.refetch();
   }, [profileQuery]);
+
+  const handleExportProfileVcf = React.useCallback(() => {
+    if (!profile) {
+      return;
+    }
+
+    void exportVCF([
+      {
+        name: profile.name,
+        slug: profile.slug,
+        phone: profile.phone,
+        email: profile.email,
+        company: profile.role || profile.city,
+      },
+    ]);
+  }, [exportVCF, profile]);
+
+  const handleOpenCard = React.useCallback(() => {
+    if (!profile?.slug) {
+      return;
+    }
+
+    void Linking.openURL(`https://unqx.uz/${profile.slug}`).catch(() => {
+      toast.error(profileText.openCardFailed);
+    });
+  }, [profile?.slug, profileText.openCardFailed]);
+
+  const handleOpenButtonUrl = React.useCallback(async (button: { label: string; url: string; icon?: string }) => {
+    const rawUrl = String(button.url ?? '').trim();
+    if (!rawUrl) {
+      toast.error(profileText.openLinkFailed);
+      return;
+    }
+
+    if (isCopyCardButton(button.label) || /^copy:/i.test(rawUrl)) {
+      const valueToCopy = rawUrl.replace(/^copy:/i, '').trim();
+      try {
+        await Clipboard.setStringAsync(valueToCopy || rawUrl);
+        toast.success(profileText.cardCopied);
+      } catch {
+        toast.error(profileText.copyCardFailed);
+      }
+      return;
+    }
+
+    if (isCallButton(button.label, button.icon)) {
+      const dialUrl = toDialUrl(rawUrl);
+      if (!dialUrl) {
+        toast.error(profileText.openPhoneFailed);
+        return;
+      }
+      try {
+        await Linking.openURL(dialUrl);
+      } catch {
+        toast.error(profileText.openPhoneFailed);
+      }
+      return;
+    }
+
+    const telegramAppUrl = getPreferredTelegramUrl(rawUrl);
+
+    try {
+      if (telegramAppUrl) {
+        const canOpenTelegram = await Linking.canOpenURL(telegramAppUrl);
+        await Linking.openURL(canOpenTelegram ? telegramAppUrl : rawUrl);
+        return;
+      }
+      await Linking.openURL(rawUrl);
+    } catch {
+      toast.error(profileText.openLinkFailed);
+    }
+  }, [profileText.cardCopied, profileText.copyCardFailed, profileText.openLinkFailed, profileText.openPhoneFailed]);
 
   const handleToggleSaved = React.useCallback(() => {
     if (!normalizedSlug) {
@@ -147,10 +328,10 @@ export default function ResidentProfilePage(): React.JSX.Element {
   if (!normalizedSlug) {
     return (
       <ErrorBoundary>
-        <AppShell title='Профиль' tokens={tokens}>
+        <AppShell title={profileText.title} tokens={tokens}>
           <ErrorState
             tokens={tokens}
-            text='Некорректный slug пользователя'
+            text={profileText.invalidSlug}
             onRetry={() => {
               void profileQuery.refetch();
             }}
@@ -162,7 +343,7 @@ export default function ResidentProfilePage(): React.JSX.Element {
 
   if (profileQuery.isLoading && !profile) {
     return (
-      <AppShell title='Профиль' tokens={tokens}>
+      <AppShell title={profileText.title} tokens={tokens}>
         <View style={styles.skeletonWrap}>
           <View style={[styles.heroCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
             <SkeletonCircle tokens={tokens} size={64} />
@@ -189,10 +370,10 @@ export default function ResidentProfilePage(): React.JSX.Element {
   if (profileQuery.isError || !profile) {
     return (
       <ErrorBoundary>
-        <AppShell title='Профиль' tokens={tokens}>
+        <AppShell title={profileText.title} tokens={tokens}>
           <ErrorState
             tokens={tokens}
-            text='Не удалось загрузить профиль пользователя'
+            text={profileText.loadFailed}
             onRetry={() => {
               void profileQuery.refetch();
             }}
@@ -204,7 +385,7 @@ export default function ResidentProfilePage(): React.JSX.Element {
 
   return (
     <ErrorBoundary>
-      <AppShell title='Профиль' tokens={tokens}>
+      <AppShell title={profileText.title} tokens={tokens}>
         <ScreenTransition>
           <ScrollView
             contentContainerStyle={styles.content}
@@ -218,30 +399,91 @@ export default function ResidentProfilePage(): React.JSX.Element {
             }
           >
             <View style={[styles.heroCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-              {profile.avatarUrl ? (
-                <Image source={{ uri: profile.avatarUrl }} style={styles.avatarImage} />
-              ) : (
-                <View style={[styles.avatar, { backgroundColor: `${tokens.accent}1F` }]}>
-                  <Text style={[styles.avatarText, { color: tokens.accent }]}>{initial(profile.name)}</Text>
-                </View>
-              )}
+              <View style={styles.brandingRow}>
+                <Text style={[styles.brandName, { color: tokens.text }]}>UNQX</Text>
+                <Text style={[styles.brandPowered, { color: tokens.textMuted }]}>POWERED BY SCXR</Text>
+              </View>
+              <View style={styles.heroAvatarWrap}>
+                {avatarImage.showImage && avatarImage.imageUri ? (
+                  <Image
+                    key={`${profile.avatarUrl}:${avatarImage.retryCount}`}
+                    source={{ uri: avatarImage.imageUri }}
+                    style={styles.avatarImage}
+                    onError={avatarImage.onError}
+                  />
+                ) : (
+                  <View style={[styles.avatar, { backgroundColor: `${tokens.accent}1F` }]}>
+                    <Text style={[styles.avatarText, { color: tokens.accent }]}>{initial(profile.name)}</Text>
+                  </View>
+                )}
+              </View>
               <View style={styles.heroBody}>
                 <Text style={[styles.name, { color: tokens.text }]}>{profile.name}</Text>
+                {profile.role ? <Text style={[styles.roleText, { color: tokens.text }]}>{profile.role}</Text> : null}
                 <Text style={[styles.slug, { color: tokens.textMuted }]}>
-                  unqx.uz/<Text style={styles.slugStrong}>{formatSlug(profile.slug)}</Text>
+                  <Text style={styles.slugStrong}>{formatSlug(profile.slug)}</Text>
                 </Text>
                 <View style={styles.pillRow}>
                   <Pill
                     color={profile.tag === 'premium' ? tokens.amber : tokens.textMuted}
                     bg={profile.tag === 'premium' ? tokens.amberBg : tokens.inputBg}
                   >
-                    {profile.tag === 'premium' ? 'Премиум' : 'Базовый'}
+                    {profile.tag === 'premium' ? profileText.premium : profileText.basic}
                   </Pill>
-                  <Pill color={tokens.textMuted} bg={tokens.inputBg}>{`${profile.taps ?? 0} тапов`}</Pill>
+                  <Pill color={tokens.textMuted} bg={tokens.inputBg}>{`${profile.taps ?? 0} ${profileText.taps}`}</Pill>
                 </View>
                 {profile.city ? <Text style={[styles.meta, { color: tokens.textMuted }]}>{profile.city}</Text> : null}
-                {profile.role ? <Text style={[styles.meta, { color: tokens.text }]}>{profile.role}</Text> : null}
+                {typeof profile.slugPrice === 'number' && Number.isFinite(profile.slugPrice) ? (
+                  <View style={styles.hashRow}>
+                    <Hash size={13} strokeWidth={1.7} color={tokens.textMuted} />
+                    <Text style={[styles.hashText, { color: tokens.textMuted }]}>
+                      {`${profileText.slugPrice} ${profile.slugPrice.toLocaleString(isUz ? 'uz-UZ' : 'ru-RU')} сум`}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
+              <View style={[styles.heroMetaRow, { borderTopColor: tokens.border }]}>
+                <Text style={[styles.heroMetaText, { color: tokens.textMuted }]}>{`© ${profile.taps ?? 0} ${profileText.views} • UNQX`}</Text>
+              </View>
+            </View>
+
+            {Array.isArray(profile.buttons) && profile.buttons.length > 0 ? (
+              <>
+                <Label color={tokens.textMuted}>{profileText.links}</Label>
+                <View style={styles.linksGrid}>
+                  {profile.buttons.map((button, index) => (
+                    <Animated.View key={`${button.label}-${button.url}-${index}`} entering={FadeInDown.duration(180).delay(index * 35)} style={styles.linkChipWrap}>
+                      <AnimatedPressable
+                        style={[styles.linkChip, { borderColor: tokens.border, backgroundColor: tokens.surface }]}
+                        onPress={() => {
+                          void handleOpenButtonUrl(button);
+                        }}
+                      >
+                        <Text style={[styles.linkChipLabel, { color: tokens.text }]} numberOfLines={1}>{button.label}</Text>
+                      </AnimatedPressable>
+                    </Animated.View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+
+            <View style={styles.actionRow}>
+              <AnimatedPressable
+                containerStyle={styles.actionHalf}
+                style={[styles.actionButton, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+                onPress={handleExportProfileVcf}
+              >
+                <Text style={[styles.actionText, { color: tokens.text }]}>{profileText.saveVcf}</Text>
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                containerStyle={styles.actionHalf}
+                style={[styles.actionButton, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+                onPress={handleOpenCard}
+              >
+                <Globe size={16} strokeWidth={1.5} color={tokens.text} />
+                <Text style={[styles.actionText, { color: tokens.text }]}>{profileText.openCard}</Text>
+              </AnimatedPressable>
             </View>
 
             <View style={styles.actionRow}>
@@ -269,7 +511,7 @@ export default function ResidentProfilePage(): React.JSX.Element {
                       fill={profile.saved ? tokens.amber : 'none'}
                     />
                     <Text style={[styles.actionText, { color: tokens.text }]}>
-                      {profile.saved ? 'В избранном' : 'В избранное'}
+                      {profile.saved ? profileText.inFavorites : profileText.toFavorites}
                     </Text>
                   </>
                 )}
@@ -298,36 +540,30 @@ export default function ResidentProfilePage(): React.JSX.Element {
                       <UserPlus size={16} strokeWidth={1.5} color={tokens.text} />
                     )}
                     <Text style={[styles.actionText, { color: tokens.text }]}>
-                      {profile.subscribed ? 'В контактах' : 'В контакты'}
+                      {profile.subscribed ? profileText.inContacts : profileText.toContacts}
                     </Text>
                   </>
                 )}
               </AnimatedPressable>
             </View>
 
-            <Label color={tokens.textMuted}>UNQ пользователя</Label>
-            <View style={[styles.block, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-              {displaySlugs.map((item, index) => (
-                <Text
-                  key={`${item}-${index}`}
-                  style={[styles.slugLine, { color: tokens.text }]}
-                >
-                  {formatSlug(item)}
-                </Text>
-              ))}
-            </View>
-
-            <Label color={tokens.textMuted}>Резюме</Label>
+            <Label color={tokens.textMuted}>{profileText.summary}</Label>
             <View style={[styles.block, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
               <Text style={[styles.bio, { color: profile.bio ? tokens.text : tokens.textMuted }]}>
-                {profile.bio || 'Пользователь пока не добавил резюме'}
+                {profile.bio || profileText.noSummary}
               </Text>
             </View>
 
-            {profile.email || profile.phone ? (
+            {contactAddress || profile.email || profile.phone ? (
               <>
-                <Label color={tokens.textMuted}>Контакты</Label>
+                <Label color={tokens.textMuted}>{profileText.contacts}</Label>
                 <View style={[styles.block, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                  {contactAddress ? (
+                    <View style={styles.infoRow}>
+                      <MapPin size={14} strokeWidth={1.5} color={tokens.textMuted} />
+                      <Text style={[styles.infoText, { color: tokens.text }]}>{contactAddress}</Text>
+                    </View>
+                  ) : null}
                   {profile.email ? (
                     <View style={styles.infoRow}>
                       <Mail size={14} strokeWidth={1.5} color={tokens.textMuted} />
@@ -340,29 +576,6 @@ export default function ResidentProfilePage(): React.JSX.Element {
                       <Text style={[styles.infoText, { color: tokens.text }]}>{profile.phone}</Text>
                     </View>
                   ) : null}
-                </View>
-              </>
-            ) : null}
-
-            {Array.isArray(profile.buttons) && profile.buttons.length > 0 ? (
-              <>
-                <Label color={tokens.textMuted}>Ссылки</Label>
-                <View style={[styles.block, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-                  {profile.buttons.map((button, index) => (
-                    <Animated.View key={`${button.label}-${button.url}-${index}`} entering={FadeInDown.duration(180).delay(index * 35)}>
-                      <AnimatedPressable
-                        style={[styles.linkButton, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}
-                        onPress={() => {
-                          void Linking.openURL(button.url).catch(() => {
-                            toast.error('Не удалось открыть ссылку');
-                          });
-                        }}
-                      >
-                        <Text style={[styles.linkLabel, { color: tokens.text }]} numberOfLines={1}>{button.label}</Text>
-                        <Text style={[styles.linkUrl, { color: tokens.textMuted }]} numberOfLines={1}>{button.url}</Text>
-                      </AnimatedPressable>
-                    </Animated.View>
-                  ))}
                 </View>
               </>
             ) : null}
@@ -402,53 +615,130 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
-    flexDirection: 'row',
+    borderRadius: 18,
+    padding: 18,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
     gap: 14,
   },
+  brandingRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  brandName: {
+    fontSize: 13,
+    letterSpacing: 1.8,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  brandPowered: {
+    fontSize: 10,
+    letterSpacing: 0.9,
+    fontFamily: 'Inter_500Medium',
+  },
+  heroAvatarWrap: {
+    width: '100%',
+    alignItems: 'center',
+  },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
   },
   avatarText: {
-    fontSize: 24,
+    fontSize: 30,
     fontFamily: 'Inter_600SemiBold',
   },
   heroBody: {
+    width: '100%',
     flex: 1,
+    alignItems: 'center',
   },
   name: {
-    fontSize: 18,
+    textAlign: 'center',
+    fontSize: 24,
     fontFamily: 'Inter_600SemiBold',
   },
+  roleText: {
+    marginTop: 4,
+    textAlign: 'center',
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+  },
   slug: {
-    marginTop: 2,
-    fontSize: 12,
+    marginTop: 5,
+    textAlign: 'center',
+    fontSize: 13,
     fontFamily: 'Inter_400Regular',
   },
   slugStrong: {
     fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 0.9,
+    letterSpacing: 1.1,
   },
   pillRow: {
-    marginTop: 7,
+    marginTop: 10,
     flexDirection: 'row',
     gap: 6,
     flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   meta: {
     marginTop: 5,
+    textAlign: 'center',
     fontSize: 12,
     fontFamily: 'Inter_400Regular',
+  },
+  hashRow: {
+    marginTop: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  hashText: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+  },
+  heroMetaRow: {
+    width: '100%',
+    borderTopWidth: 1,
+    paddingTop: 10,
+    marginTop: 2,
+    alignItems: 'center',
+  },
+  heroMetaText: {
+    fontSize: 11,
+    letterSpacing: 0.3,
+    fontFamily: 'Inter_500Medium',
+  },
+  linksGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  linkChipWrap: {
+    maxWidth: '48%',
+    minWidth: '31%',
+  },
+  linkChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minHeight: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  linkChipLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    textTransform: 'uppercase',
   },
   actionRow: {
     flexDirection: 'row',
@@ -460,13 +750,20 @@ const styles = StyleSheet.create({
   actionButton: {
     width: '100%',
     minHeight: 48,
-    borderRadius: 12,
+    borderRadius: 999,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     paddingHorizontal: 10,
+  },
+  primaryAction: {
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2,
   },
   actionText: {
     fontSize: 13,
@@ -494,21 +791,6 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-  },
-  linkButton: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  linkLabel: {
-    fontSize: 13,
-    fontFamily: 'Inter_500Medium',
-  },
-  linkUrl: {
-    marginTop: 2,
-    fontSize: 11,
     fontFamily: 'Inter_400Regular',
   },
 });

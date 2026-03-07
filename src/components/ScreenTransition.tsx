@@ -1,9 +1,12 @@
 import React from 'react';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn } from 'react-native-reanimated';
 
 export function ScreenTransition({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <Animated.View entering={FadeInDown.duration(220).springify().damping(18).stiffness(180)} style={{ flex: 1 }}>
+    <Animated.View
+      entering={FadeIn.duration(220).easing(Easing.out(Easing.cubic))}
+      style={{ flex: 1 }}
+    >
       {children}
     </Animated.View>
   );

@@ -22,12 +22,50 @@ async function registerForPushNotifications(Notifications: typeof import('expo-n
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
-  if (existingStatus !== 'granted') {
+  // Ask only once when permission state is undecided. Re-requesting after explicit deny
+  // creates a bad UX where users can see the prompt repeatedly on app opens.
+  if (existingStatus === 'undetermined') {
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
   }
 
   if (finalStatus !== 'granted') {
+    return null;
+  }
+
+  const token = await Notifications.getExpoPushTokenAsync({
+    projectId: resolveProjectId(),
+  });
+  return token.data;
+}
+
+async function getNativePushToken(Notifications: typeof import('expo-notifications')): Promise<string | null> {
+  if (!Device.isDevice) {
+    return null;
+  }
+
+  try {
+    const nativeToken = await Notifications.getDevicePushTokenAsync();
+    const raw = nativeToken?.data;
+    if (typeof raw === 'string') {
+      return raw;
+    }
+    if (raw === null || raw === undefined) {
+      return null;
+    }
+    return JSON.stringify(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function getExistingPushToken(Notifications: typeof import('expo-notifications')): Promise<string | null> {
+  if (!Device.isDevice) {
+    return null;
+  }
+
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== 'granted') {
     return null;
   }
 
@@ -44,7 +82,6 @@ export async function requestPushPermission(): Promise<string | null> {
     return null;
   }
 
-  await markPushPermissionRequested();
   const Notifications = await import('expo-notifications');
 
   if (Platform.OS === 'android') {
@@ -56,7 +93,9 @@ export async function requestPushPermission(): Promise<string | null> {
     });
   }
 
-  return registerForPushNotifications(Notifications);
+  const token = await registerForPushNotifications(Notifications);
+  await markPushPermissionRequested();
+  return token;
 }
 
 interface PushPayload {
@@ -65,6 +104,7 @@ interface PushPayload {
 
 export function usePushNotifications(): {
   token: string | null;
+  nativeToken: string | null;
   promptVisible: boolean;
   requestPermissionFromPrompt: () => Promise<void>;
   dismissPrompt: () => Promise<void>;
@@ -74,12 +114,42 @@ export function usePushNotifications(): {
   const isExpoGo =
     (Constants as any)?.executionEnvironment === 'storeClient' || (Constants as any)?.appOwnership === 'expo';
   const [token, setToken] = React.useState<string | null>(null);
+  const [nativeToken, setNativeToken] = React.useState<string | null>(null);
   const [promptVisible, setPromptVisible] = React.useState(false);
 
+  const refreshTokens = React.useCallback(async (): Promise<void> => {
+    if (isExpoGo) {
+      return;
+    }
+
+    const Notifications = await import('expo-notifications');
+    const [expoToken, nativeDeviceToken] = await Promise.all([
+      getExistingPushToken(Notifications),
+      getNativePushToken(Notifications),
+    ]);
+
+    setToken((prev) => (prev === expoToken ? prev : expoToken));
+    setNativeToken((prev) => (prev === nativeDeviceToken ? prev : nativeDeviceToken));
+  }, [isExpoGo]);
+
   const evaluatePromptVisibility = React.useCallback(async () => {
+    if (isExpoGo) {
+      setPromptVisible(false);
+      return;
+    }
+
+    const Notifications = await import('expo-notifications');
+    const permissions = await Notifications.getPermissionsAsync().catch(() => null);
+    const status = permissions?.status;
+    if (status && status !== 'undetermined') {
+      setPromptVisible(false);
+      await markPushPermissionRequested();
+      return;
+    }
+
     const state = await getPushPromptState();
     setPromptVisible(state.shouldPrompt && !state.permissionRequested);
-  }, []);
+  }, [isExpoGo]);
 
   const requestPermissionFromPrompt = React.useCallback(async () => {
     if (isExpoGo) {
@@ -88,11 +158,15 @@ export function usePushNotifications(): {
     }
 
     setPromptVisible(false);
-    await markPushPermissionRequested();
     const Notifications = await import('expo-notifications');
     const nextToken = await registerForPushNotifications(Notifications);
+    const nextNativeToken = await getNativePushToken(Notifications);
+    await markPushPermissionRequested();
     if (nextToken) {
       setToken(nextToken);
+    }
+    if (nextNativeToken) {
+      setNativeToken(nextNativeToken);
     }
   }, [isExpoGo]);
 
@@ -128,6 +202,13 @@ export function usePushNotifications(): {
   }, [isExpoGo]);
 
   React.useEffect(() => {
+    if (isExpoGo) {
+      return;
+    }
+    void refreshTokens().catch(() => undefined);
+  }, [isExpoGo, refreshTokens]);
+
+  React.useEffect(() => {
     let receivedSubscription: { remove: () => void } | null = null;
     let responseSubscription: { remove: () => void } | null = null;
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
@@ -136,6 +217,7 @@ export function usePushNotifications(): {
           void import('expo-notifications')
             .then((Notifications) => Notifications.setBadgeCountAsync(0))
             .catch(() => undefined);
+          void refreshTokens().catch(() => undefined);
           void evaluatePromptVisibility();
         }
       }
@@ -181,10 +263,11 @@ export function usePushNotifications(): {
       responseSubscription?.remove();
       appStateSubscription.remove();
     };
-  }, [evaluatePromptVisibility, isExpoGo, queryClient, safePush]);
+  }, [evaluatePromptVisibility, isExpoGo, queryClient, refreshTokens, safePush]);
 
   return {
     token,
+    nativeToken,
     promptVisible,
     requestPermissionFromPrompt,
     dismissPrompt,

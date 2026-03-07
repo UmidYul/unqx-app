@@ -3,7 +3,8 @@ import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Tex
 import { Camera, Plus, Trash2 } from 'lucide-react-native';
 
 import { ProfileCard, ThemeTokens } from '@/types';
-import { BUTTON_ICONS } from '@/components/profile/buttonIcons';
+import { BUTTON_ICONS, inferButtonIcon, normalizeButtonIconKey } from '@/components/profile/buttonIcons';
+import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { runThrottled } from '@/utils/navigation';
 
 interface CardEditorProps {
@@ -18,8 +19,17 @@ interface CardEditorProps {
 
 const MAX_BUTTONS = 6;
 
+const THEME_OPTIONS: Array<{ id: ProfileCard['theme']; label: string; swatch: string }> = [
+  { id: 'default_dark', label: 'Default Dark', swatch: '#0a0a0a' },
+  { id: 'arctic', label: 'Arctic', swatch: '#f0f5f9' },
+  { id: 'linen', label: 'Linen', swatch: '#f2ede6' },
+  { id: 'marble', label: 'Marble', swatch: '#ffffff' },
+  { id: 'forest', label: 'Forest', swatch: '#0e2010' },
+];
+
 export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, onSave }: CardEditorProps): React.JSX.Element {
   const [local, setLocal] = React.useState<ProfileCard>(card);
+  const avatarImage = useRetryImageUri(local.avatarUrl);
   const isDirty = React.useMemo(() => JSON.stringify(local) !== JSON.stringify(card), [card, local]);
 
   React.useEffect(() => {
@@ -35,7 +45,25 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
   const updateButton = (index: number, patch: Partial<ProfileCard['buttons'][number]>) => {
     setLocal((prev) => ({
       ...prev,
-      buttons: prev.buttons.map((button, i) => (i === index ? { ...button, ...patch } : button)),
+      buttons: prev.buttons.map((button, i) => {
+        if (i !== index) {
+          return button;
+        }
+
+        const next = { ...button, ...patch };
+        if (Object.prototype.hasOwnProperty.call(patch, 'icon')) {
+          return { ...next, icon: normalizeButtonIconKey(String(next.icon || 'other')) };
+        }
+
+        return {
+          ...next,
+          icon: inferButtonIcon({
+            label: next.label,
+            url: next.url,
+            currentIcon: next.icon,
+          }),
+        };
+      }),
     }));
   };
 
@@ -54,15 +82,15 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
 
       return {
         ...prev,
-        buttons: [...prev.buttons, { icon: 'globe', label: '', url: '' }],
+        buttons: [...prev.buttons, { icon: 'website', label: '', url: '' }],
       };
     });
   };
 
   return (
     <Modal visible={visible} animationType='slide' onRequestClose={onClose}>
-      <View style={[styles.root, { backgroundColor: tokens.phoneBg }]}> 
-        <View style={[styles.header, { borderBottomColor: tokens.border }]}> 
+      <View style={[styles.root, { backgroundColor: tokens.phoneBg }]}>
+        <View style={[styles.header, { borderBottomColor: tokens.border }]}>
           <Pressable onPress={() => runThrottled(onClose)}>
             <Text style={[styles.headerAction, { color: tokens.textMuted }]}>← Назад</Text>
           </Pressable>
@@ -75,12 +103,17 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.avatarBlock}>
             <View style={[styles.avatar, { backgroundColor: `${tokens.accent}14` }]}>
-              {local.avatarUrl ? (
-                <Image source={{ uri: local.avatarUrl }} style={styles.avatarImage} />
+              {avatarImage.showImage && avatarImage.imageUri ? (
+                <Image
+                  key={`${local.avatarUrl}:${avatarImage.retryCount}`}
+                  source={{ uri: avatarImage.imageUri }}
+                  style={styles.avatarImage}
+                  onError={avatarImage.onError}
+                />
               ) : (
                 <Text style={[styles.avatarText, { color: tokens.accent }]}>{local.name[0] || 'A'}</Text>
               )}
-              <View style={[styles.avatarPlus, { backgroundColor: tokens.accent }]}> 
+              <View style={[styles.avatarPlus, { backgroundColor: tokens.accent }]}>
                 <Camera size={12} strokeWidth={1.5} color={tokens.accentText} />
               </View>
             </View>
@@ -111,24 +144,23 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
 
           <View style={styles.block}>
             <Text style={[styles.blockLabel, { color: tokens.textMuted }]}>Тема визитки</Text>
-            <View style={styles.themeRow}>
-              {[
-                ['light', 'Светлая'],
-                ['dark', 'Тёмная'],
-                ['gradient', 'Градиент'],
-              ].map(([id, label]) => (
+            <View style={styles.themeGrid}>
+              {THEME_OPTIONS.map((option) => (
                 <Pressable
-                  key={id}
-                  onPress={() => updateField('theme', id as ProfileCard['theme'])}
+                  key={option.id}
+                  onPress={() => updateField('theme', option.id)}
                   style={[
                     styles.themeBtn,
                     {
-                      borderColor: local.theme === id ? tokens.borderStrong : tokens.border,
-                      backgroundColor: local.theme === id ? tokens.surface : 'transparent',
+                      borderColor: local.theme === option.id ? tokens.borderStrong : tokens.border,
+                      backgroundColor: local.theme === option.id ? tokens.surface : tokens.inputBg,
                     },
                   ]}
                 >
-                  <Text style={[styles.themeText, { color: local.theme === id ? tokens.text : tokens.textMuted }]}>{label}</Text>
+                  <View style={[styles.themeSwatch, { backgroundColor: option.swatch, borderColor: tokens.border }]} />
+                  <Text style={[styles.themeText, { color: local.theme === option.id ? tokens.text : tokens.textMuted }]} numberOfLines={1}>
+                    {option.label}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -294,21 +326,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter_400Regular',
   },
-  themeRow: {
+  themeGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   themeBtn: {
-    flex: 1,
-    minHeight: 40,
+    width: '48%',
+    minHeight: 44,
     borderRadius: 10,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+  },
+  themeSwatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1,
   },
   themeText: {
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
+    textAlignVertical: 'center',
   },
   buttonsHead: {
     flexDirection: 'row',

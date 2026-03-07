@@ -1,9 +1,10 @@
 import React from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArrowLeft, Check, Pencil } from 'lucide-react-native';
 
 import { SkeletonBlock } from '@/components/ui/skeleton';
 import { Label, Pill, Row } from '@/components/ui/shared';
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { NFCHistoryItem, ThemeTokens, WristbandOrder, WristbandStatus } from '@/types';
 import { runThrottled } from '@/utils/navigation';
 
@@ -22,15 +23,71 @@ interface WristbandPageProps {
   tags: WristbandTag[];
   history: NFCHistoryItem[];
   loading: boolean;
+  orders: WristbandOrder[];
+  selectedOrderId?: string | null;
   orderStatus: WristbandOrder | null;
+  autoOpenOrderId?: string | null;
+  onAutoOpenHandled?: () => void;
   onRenameTag: (uid: string, name: string) => void;
+  onDeleteTag: (uid: string) => void;
   onCreateOrder: (payload: { address: string; quantity: number }) => void;
   onTrackOrder: (orderId: string) => void;
   renamePending: boolean;
+  deletePendingUid?: string | null;
   orderPending: boolean;
 }
 
-type OrderStep = null | 'form' | 'tracking';
+type OrderStep = null | 'form' | 'orders' | 'tracking';
+
+function formatTapTime(value?: string): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    return '—';
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+
+  return parsed.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function resolveOrderStage(status?: string | null): number {
+  const value = String(status ?? '').trim().toLowerCase();
+  if (value === 'approved' || value === 'done' || value === 'delivered') return 4;
+  if (value === 'paid' || value === 'confirmed') return 1;
+  if (value === 'new' || value === 'contacted' || value === 'rejected' || value === 'expired') return 0;
+  return 0;
+}
+
+function getOrderStatusBadge(status?: string): string {
+  const value = String(status ?? '').trim().toLowerCase();
+  if (value === 'new') return 'Новая';
+  if (value === 'contacted') return 'Связались';
+  if (value === 'paid' || value === 'confirmed') return 'Оплачено';
+  if (value === 'approved' || value === 'done' || value === 'delivered') return 'Активировано';
+  if (value === 'rejected' || value === 'expired') return 'Отклонено';
+  return 'В обработке';
+}
+
+function formatOrderDate(value?: string): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '—';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export function WristbandPage({
   visible,
@@ -40,13 +97,22 @@ export function WristbandPage({
   tags,
   history,
   loading,
+  orders,
+  selectedOrderId,
   orderStatus,
+  autoOpenOrderId,
+  onAutoOpenHandled,
   onRenameTag,
+  onDeleteTag,
   onCreateOrder,
   onTrackOrder,
   renamePending,
+  deletePendingUid,
   orderPending,
 }: WristbandPageProps): React.JSX.Element {
+  const isIos = Platform.OS === 'ios';
+  const { language } = useLanguageContext();
+  const isUz = language === 'uz';
   const [orderStep, setOrderStep] = React.useState<OrderStep>(null);
   const [selectedTag, setSelectedTag] = React.useState<string | null>(null);
   const [editTag, setEditTag] = React.useState<string | null>(null);
@@ -63,19 +129,81 @@ export function WristbandPage({
     }
   }, [visible]);
 
+  React.useEffect(() => {
+    if (selectedTag && !tags.some((item) => item.uid === selectedTag)) {
+      setSelectedTag(null);
+    }
+  }, [selectedTag, tags]);
+
   const selected = selectedTag ? tags.find((item) => item.uid === selectedTag) : null;
-  const selectedHistory = selectedTag ? history.filter((item) => item.uid === selectedTag) : [];
+  const selectedHistory = React.useMemo(
+    () => (selectedTag ? history.filter((item) => item.uid === selectedTag) : []),
+    [history, selectedTag],
+  );
+  const linkedSlug = String(status?.linkedSlug ?? '').trim();
+  const overallLastTap = history[0]?.timestamp;
+  const activeOrder = React.useMemo(() => {
+    if (orderStatus?.id) {
+      const fromList = orders.find((item) => item.id === orderStatus.id);
+      return {
+        ...fromList,
+        ...orderStatus,
+      };
+    }
+    if (!selectedOrderId) {
+      return null;
+    }
+    return orders.find((item) => item.id === selectedOrderId) ?? null;
+  }, [orderStatus, orders, selectedOrderId]);
+  const orderStage = resolveOrderStage(activeOrder?.status);
+
+  React.useEffect(() => {
+    if (!visible || !autoOpenOrderId) {
+      return;
+    }
+    onTrackOrder(autoOpenOrderId);
+    setOrderStep('tracking');
+    onAutoOpenHandled?.();
+  }, [autoOpenOrderId, onAutoOpenHandled, onTrackOrder, visible]);
+
+  const openPricingPage = React.useCallback(() => {
+    void Linking.openURL('https://unqx.uz/#pricing').catch(() => undefined);
+  }, []);
+
+  const requestDeleteTag = React.useCallback(
+    (uid: string, name: string) => {
+      if (deletePendingUid) {
+        return;
+      }
+
+      Alert.alert(
+        isUz ? 'Tegni o\'chirilsinmi?' : 'Удалить метку?',
+        isUz
+          ? `${name} (${uid}) tegi qayta tiklab bo\'lmaydigan tarzda o\'chiriladi.`
+          : `Метка ${name} (${uid}) будет удалена без возможности восстановления.`,
+        [
+          { text: isUz ? 'Bekor qilish' : 'Отмена', style: 'cancel' },
+          {
+            text: isUz ? 'O\'chirish' : 'Удалить',
+            style: 'destructive',
+            onPress: () => onDeleteTag(uid),
+          },
+        ],
+      );
+    },
+    [deletePendingUid, isUz, onDeleteTag],
+  );
 
   const orderSteps = [
-    { label: 'Заявка принята', sub: 'Проверяем данные', done: true },
-    { label: 'Оплата подтверждена', sub: 'Payme · 300 000 сум', done: true },
-    { label: 'В сборке', sub: `Привязываем к ${status?.linkedSlug ?? 'ALI001'}`, done: true },
-    { label: 'Передан в доставку', sub: 'Яндекс Доставка', done: orderStatus?.status === 'delivery' || orderStatus?.status === 'done' },
-    { label: 'Доставлен', sub: 'Ожидается 3 апр', done: orderStatus?.status === 'done' },
+    { label: 'Заявка принята', sub: 'Проверяем данные', done: Boolean(activeOrder?.id) },
+    { label: 'Оплата подтверждена', sub: isIos ? 'Оплата на сайте unqx.uz' : 'Payme · 300 000 сум', done: orderStage >= 1 },
+    { label: 'В сборке', sub: linkedSlug ? `Привязываем к ${linkedSlug}` : 'Привязываем к активному slug', done: orderStage >= 2 },
+    { label: 'Передан в доставку', sub: 'Данные доставки от курьера', done: orderStage >= 3 },
+    { label: 'Доставлен', sub: 'Заказ успешно завершен', done: orderStage >= 4 },
   ];
 
   const Header = ({ title, back }: { title: string; back: () => void }) => (
-    <View style={[styles.header, { borderBottomColor: tokens.border, backgroundColor: tokens.phoneBg }]}> 
+    <View style={[styles.header, { borderBottomColor: tokens.border, backgroundColor: tokens.phoneBg }]}>
       <Pressable onPress={() => runThrottled(back)} style={styles.backBtn}>
         <ArrowLeft size={16} strokeWidth={1.5} color={tokens.textMuted} />
         <Text style={[styles.backText, { color: tokens.textMuted }]}>Назад</Text>
@@ -87,47 +215,88 @@ export function WristbandPage({
 
   return (
     <Modal visible={visible} animationType='slide' onRequestClose={onClose}>
-      <View style={[styles.root, { backgroundColor: tokens.phoneBg }]}> 
+      <View style={[styles.root, { backgroundColor: tokens.phoneBg }]}>
         {selected ? (
           <>
             <Header title={selected.name} back={() => setSelectedTag(null)} />
             <ScrollView contentContainerStyle={styles.content}>
-              <View style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.surface }]}> 
+              <View style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
                 <Row label='UID' value={selected.uid} textColor={tokens.text} mutedColor={tokens.textMuted} borderColor={tokens.border} />
-                <Row label='Привязан к' value={`unqx.uz/${selected.linkedSlug ?? status?.linkedSlug ?? 'ALI001'}`} textColor={tokens.text} mutedColor={tokens.textMuted} borderColor={tokens.border} />
+                <Row
+                  label='Привязан к'
+                  value={selected.linkedSlug ? `unqx.uz/${selected.linkedSlug}` : linkedSlug ? `unqx.uz/${linkedSlug}` : '—'}
+                  textColor={tokens.text}
+                  mutedColor={tokens.textMuted}
+                  borderColor={tokens.border}
+                />
                 <Row label='Тапов' value={`${selectedHistory.length}`} textColor={tokens.text} mutedColor={tokens.textMuted} borderColor={tokens.border} />
-                <Row label='Последний тап' value={selectedHistory[0]?.timestamp ?? '—'} textColor={tokens.text} mutedColor={tokens.textMuted} borderColor={tokens.border} last />
+                <Row
+                  label='Последний тап'
+                  value={formatTapTime(selectedHistory[0]?.timestamp)}
+                  textColor={tokens.text}
+                  mutedColor={tokens.textMuted}
+                  borderColor={tokens.border}
+                  last
+                />
               </View>
 
               <Label color={tokens.textMuted}>История записей на эту метку</Label>
               {selectedHistory.map((item) => (
-                <View key={item.id} style={[styles.historyRow, { borderBottomColor: tokens.border }]}> 
+                <View key={item.id} style={[styles.historyRow, { borderBottomColor: tokens.border }]}>
                   <View style={[styles.historyIcon, { backgroundColor: `${tokens.accent}14` }]}>
                     <Text style={[styles.historyIconText, { color: tokens.accent }]}>W</Text>
                   </View>
                   <View>
                     <Text style={[styles.historyName, { color: tokens.text }]}>{`unqx.uz/${item.slug}`}</Text>
-                    <Text style={[styles.historyTime, { color: tokens.textMuted }]}>{item.timestamp}</Text>
+                    <Text style={[styles.historyTime, { color: tokens.textMuted }]}>{formatTapTime(item.timestamp)}</Text>
                   </View>
                 </View>
               ))}
+
+              <Pressable
+                style={[styles.dangerBtn, { borderColor: `${tokens.red}66`, backgroundColor: `${tokens.red}12`, opacity: deletePendingUid === selected.uid ? 0.6 : 1 }]}
+                disabled={deletePendingUid === selected.uid}
+                onPress={() => requestDeleteTag(selected.uid, selected.name)}
+              >
+                {deletePendingUid === selected.uid ? (
+                  <ActivityIndicator size='small' color={tokens.red} />
+                ) : (
+                  <Text style={[styles.dangerBtnText, { color: tokens.red }]}>{isUz ? 'Tegni o\'chirish' : 'Удалить метку'}</Text>
+                )}
+              </Pressable>
             </ScrollView>
           </>
         ) : null}
 
         {orderStep === 'tracking' ? (
           <>
-            <Header title='Статус заказа' back={() => setOrderStep(null)} />
+            <Header title='Статус заказа' back={() => setOrderStep('orders')} />
             <ScrollView contentContainerStyle={styles.content}>
-              <View style={[styles.banner, { borderColor: `${tokens.amber}55`, backgroundColor: `${tokens.amber}14` }]}> 
-                <Text style={[styles.bannerTitle, { color: tokens.amber }]}>В пути</Text>
-                <Text style={[styles.bannerSub, { color: tokens.textSub }]}>{`Заказ #${orderStatus?.id || 'UNQ-2847'} · Ташкент`}</Text>
+              <View style={[styles.banner, { borderColor: `${tokens.amber}55`, backgroundColor: `${tokens.amber}14` }]}>
+                <Text style={[styles.bannerTitle, { color: tokens.amber }]}>{activeOrder?.statusBadge || getOrderStatusBadge(activeOrder?.status)}</Text>
+                <Text style={[styles.bannerSub, { color: tokens.textSub }]}>{activeOrder?.id ? `Заказ #${activeOrder.id}` : 'Статус заказа в обработке'}</Text>
               </View>
+
+              {activeOrder ? (
+                <View style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+                  <Row label='Создан' value={formatOrderDate(activeOrder.createdAt)} textColor={tokens.text} mutedColor={tokens.textMuted} borderColor={tokens.border} />
+                  <Row label='Статус' value={activeOrder.statusBadge || getOrderStatusBadge(activeOrder.status)} textColor={tokens.text} mutedColor={tokens.textMuted} borderColor={tokens.border} />
+                  <Row label='Slug' value={activeOrder.slug || linkedSlug || '—'} textColor={tokens.text} mutedColor={tokens.textMuted} borderColor={tokens.border} />
+                  <Row
+                    label='Примечание'
+                    value={activeOrder.adminNote || '—'}
+                    textColor={tokens.text}
+                    mutedColor={tokens.textMuted}
+                    borderColor={tokens.border}
+                    last
+                  />
+                </View>
+              ) : null}
 
               {orderSteps.map((step, index) => (
                 <View key={step.label} style={styles.stepRow}>
                   <View style={styles.stepLineCol}>
-                    <View style={[styles.stepDot, { borderColor: step.done ? tokens.green : tokens.border, backgroundColor: step.done ? tokens.green : tokens.surface }]}> 
+                    <View style={[styles.stepDot, { borderColor: step.done ? tokens.green : tokens.border, backgroundColor: step.done ? tokens.green : tokens.surface }]}>
                       {step.done ? <Check size={10} strokeWidth={2} color='#fff' /> : null}
                     </View>
                     {index < orderSteps.length - 1 ? <View style={[styles.stepLine, { backgroundColor: step.done ? tokens.green : tokens.border }]} /> : null}
@@ -142,40 +311,90 @@ export function WristbandPage({
           </>
         ) : null}
 
+        {orderStep === 'orders' ? (
+          <>
+            <Header title='Мои заказы' back={() => setOrderStep(null)} />
+            <ScrollView contentContainerStyle={styles.content}>
+              {orders.length === 0 ? (
+                <View style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+                  <Text style={[styles.orderSub, { color: tokens.textMuted }]}>Заказов пока нет</Text>
+                </View>
+              ) : (
+                orders.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={[styles.orderRowCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}
+                    onPress={() => {
+                      onTrackOrder(item.id);
+                      setOrderStep('tracking');
+                    }}
+                  >
+                    <View style={styles.orderTop}>
+                      <Text style={[styles.orderName, { color: tokens.text }]}>{`Заказ #${item.id}`}</Text>
+                      <Text style={[styles.orderPrice, { color: tokens.textMuted }]}>{item.statusBadge || getOrderStatusBadge(item.status)}</Text>
+                    </View>
+                    <Text style={[styles.orderSub, { color: tokens.textMuted }]}>
+                      {`${item.slug || linkedSlug || 'UNQ'} · ${formatOrderDate(item.createdAt)}`}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </>
+        ) : null}
+
         {orderStep === 'form' ? (
           <>
             <Header title='Заказ браслета' back={() => setOrderStep(null)} />
             <ScrollView contentContainerStyle={styles.content}>
-              <View style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.surface }]}> 
+              <View style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
                 <View style={styles.orderTop}>
                   <Text style={[styles.orderName, { color: tokens.text }]}>UNQX Wristband</Text>
                   <Text style={[styles.orderPrice, { color: tokens.text }]}>300 000 сум</Text>
                 </View>
-                <Text style={[styles.orderSub, { color: tokens.textMuted }]}>NFC-браслет · Тканевый · Привязывается к {status?.linkedSlug ?? 'ALI001'}</Text>
+                <Text style={[styles.orderSub, { color: tokens.textMuted }]}>NFC-браслет · Тканевый · Привязывается к {linkedSlug || 'активному slug'}</Text>
               </View>
 
-              <Field label='Адрес доставки' value={address} onChangeText={setAddress} tokens={tokens} />
-              <Field label='Количество' value={qty} onChangeText={setQty} tokens={tokens} keyboardType='number-pad' />
+              {isIos ? (
+                <>
+                  <View style={[styles.blueInfo, { borderColor: `${tokens.blue}55`, backgroundColor: `${tokens.blue}14` }]}>
+                    <Text style={[styles.blueTitle, { color: tokens.blue }]}>Оформление на сайте</Text>
+                    <Text style={[styles.blueText, { color: tokens.textSub }]}>Для оформления заказа и оплаты перейдите на официальный сайт UNQX.</Text>
+                  </View>
 
-              <View style={[styles.blueInfo, { borderColor: `${tokens.blue}55`, backgroundColor: `${tokens.blue}14` }]}> 
-                <Text style={[styles.blueTitle, { color: tokens.blue }]}>После оплаты</Text>
-                <Text style={[styles.blueText, { color: tokens.textSub }]}>Мы напишем в Telegram и отправим реквизиты Payme или Click. Активация в течение 15 мин.</Text>
-              </View>
+                  <Pressable
+                    style={[styles.primaryBtn, { backgroundColor: tokens.accent }]}
+                    onPress={openPricingPage}
+                  >
+                    <Text style={[styles.primaryBtnText, { color: tokens.accentText }]}>Открыть unqx.uz</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Field label='Адрес доставки' value={address} onChangeText={setAddress} tokens={tokens} />
+                  <Field label='Количество' value={qty} onChangeText={setQty} tokens={tokens} keyboardType='number-pad' />
 
-              <Pressable
-                style={[styles.primaryBtn, { backgroundColor: tokens.accent, opacity: orderPending ? 0.5 : 1 }]}
-                disabled={orderPending || !address.trim()}
-                onPress={() => {
-                  onCreateOrder({ address: address.trim(), quantity: Math.max(1, Number(qty) || 1) });
-                  setOrderStep('tracking');
-                }}
-              >
-                {orderPending ? (
-                  <ActivityIndicator color={tokens.accentText} />
-                ) : (
-                  <Text style={[styles.primaryBtnText, { color: tokens.accentText }]}>Отправить заявку</Text>
-                )}
-              </Pressable>
+                  <View style={[styles.blueInfo, { borderColor: `${tokens.blue}55`, backgroundColor: `${tokens.blue}14` }]}>
+                    <Text style={[styles.blueTitle, { color: tokens.blue }]}>После оплаты</Text>
+                    <Text style={[styles.blueText, { color: tokens.textSub }]}>Мы напишем в Telegram и отправим реквизиты Payme или Click. Активация в течение 15 мин.</Text>
+                  </View>
+
+                  <Pressable
+                    style={[styles.primaryBtn, { backgroundColor: tokens.accent, opacity: orderPending ? 0.5 : 1 }]}
+                    disabled={orderPending || !address.trim()}
+                    onPress={() => {
+                      onCreateOrder({ address: address.trim(), quantity: Math.max(1, Number(qty) || 1) });
+                      setOrderStep('orders');
+                    }}
+                  >
+                    {orderPending ? (
+                      <ActivityIndicator color={tokens.accentText} />
+                    ) : (
+                      <Text style={[styles.primaryBtnText, { color: tokens.accentText }]}>Отправить заявку</Text>
+                    )}
+                  </Pressable>
+                </>
+              )}
             </ScrollView>
           </>
         ) : null}
@@ -184,7 +403,7 @@ export function WristbandPage({
           <>
             <Header title='Браслет и метки' back={onClose} />
             <ScrollView contentContainerStyle={styles.content}>
-              <View style={[styles.activeCard, { borderColor: `${tokens.green}55`, backgroundColor: `${tokens.green}14` }]}> 
+              <View style={[styles.activeCard, { borderColor: `${tokens.green}55`, backgroundColor: `${tokens.green}14` }]}>
                 <View style={styles.activeLeft}>
                   <View style={[styles.deviceIcon, { backgroundColor: tokens.greenBg }]}>
                     <Text style={styles.deviceGlyph}>NFC</Text>
@@ -194,7 +413,7 @@ export function WristbandPage({
                     {loading ? (
                       <SkeletonBlock tokens={tokens} height={10} width={150} style={{ marginTop: 4 }} />
                     ) : (
-                      <Text style={[styles.activeSub, { color: tokens.textMuted }]}>{`${status?.linkedSlug ?? 'ALI001'} · последний тап 5 мин назад`}</Text>
+                      <Text style={[styles.activeSub, { color: tokens.textMuted }]}>{`${linkedSlug || '—'} · последний тап ${formatTapTime(overallLastTap)}`}</Text>
                     )}
                   </View>
                 </View>
@@ -203,7 +422,7 @@ export function WristbandPage({
 
               <Label color={tokens.textMuted}>{`Мои метки (${tags.length})`}</Label>
               {tags.map((tag) => (
-                <View key={tag.uid} style={[styles.tagCard, { borderColor: tag.status === 'warn' ? tokens.amber : tokens.border, backgroundColor: tokens.surface }]}> 
+                <View key={tag.uid} style={[styles.tagCard, { borderColor: tag.status === 'warn' ? tokens.amber : tokens.border, backgroundColor: tokens.surface }]}>
                   <View style={styles.tagHead}>
                     <View>
                       {editTag === tag.uid ? (
@@ -255,10 +474,25 @@ export function WristbandPage({
                   </View>
 
                   <View style={styles.tagFoot}>
-                    <Text style={[styles.tagMeta, { color: tokens.textMuted }]}>0 тапов · —</Text>
-                    <Pressable style={[styles.historyBtn, { borderColor: tokens.border }]} onPress={() => setSelectedTag(tag.uid)}>
-                      <Text style={[styles.historyBtnText, { color: tokens.text }]}>История →</Text>
-                    </Pressable>
+                    <Text style={[styles.tagMeta, { color: tokens.textMuted }]}>
+                      {`${history.filter((item) => item.uid === tag.uid).length} тапов · ${formatTapTime(history.find((item) => item.uid === tag.uid)?.timestamp)}`}
+                    </Text>
+                    <View style={styles.tagActions}>
+                      <Pressable style={[styles.historyBtn, { borderColor: tokens.border }]} onPress={() => setSelectedTag(tag.uid)}>
+                        <Text style={[styles.historyBtnText, { color: tokens.text }]}>История →</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.historyBtn, { borderColor: `${tokens.red}66`, opacity: deletePendingUid === tag.uid ? 0.5 : 1 }]}
+                        disabled={deletePendingUid === tag.uid}
+                        onPress={() => requestDeleteTag(tag.uid, tag.name)}
+                      >
+                        {deletePendingUid === tag.uid ? (
+                          <ActivityIndicator size='small' color={tokens.red} />
+                        ) : (
+                          <Text style={[styles.historyBtnText, { color: tokens.red }]}>{isUz ? 'O\'chirish' : 'Удалить'}</Text>
+                        )}
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               ))}
@@ -266,7 +500,7 @@ export function WristbandPage({
               <View style={[styles.divider, { backgroundColor: tokens.border }]} />
               <Label color={tokens.textMuted}>Заказать новый браслет</Label>
 
-              <View style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.surface }]}> 
+              <View style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
                 <View style={styles.orderTop}>
                   <Text style={[styles.orderName, { color: tokens.text }]}>UNQX Wristband</Text>
                   <Text style={[styles.orderPrice, { color: tokens.text }]}>300 000 сум</Text>
@@ -275,12 +509,18 @@ export function WristbandPage({
                 <Pressable
                   style={[styles.primaryBtn, { backgroundColor: tokens.accent, opacity: orderPending ? 0.5 : 1 }]}
                   disabled={orderPending}
-                  onPress={() => setOrderStep('form')}
+                  onPress={() => {
+                    if (isIos) {
+                      openPricingPage();
+                      return;
+                    }
+                    setOrderStep('form');
+                  }}
                 >
                   {orderPending ? (
                     <ActivityIndicator color={tokens.accentText} />
                   ) : (
-                    <Text style={[styles.primaryBtnText, { color: tokens.accentText }]}>Заказать браслет</Text>
+                    <Text style={[styles.primaryBtnText, { color: tokens.accentText }]}>{isIos ? 'Открыть unqx.uz' : 'Заказать браслет'}</Text>
                   )}
                 </Pressable>
               </View>
@@ -288,13 +528,10 @@ export function WristbandPage({
               <Pressable
                 style={[styles.secondaryBtn, { borderColor: tokens.border, backgroundColor: tokens.surface }]}
                 onPress={() => {
-                  if (orderStatus?.id) {
-                    onTrackOrder(orderStatus.id);
-                  }
-                  setOrderStep('tracking');
+                  setOrderStep('orders');
                 }}
               >
-                <Text style={[styles.secondaryBtnText, { color: tokens.text }]}>{`Отслеживать заказ #${orderStatus?.id ?? 'UNQ-2847'} →`}</Text>
+                <Text style={[styles.secondaryBtnText, { color: tokens.text }]}>{orders.length ? `Мои заказы (${orders.length}) →` : 'Мои заказы →'}</Text>
               </Pressable>
             </ScrollView>
           </>
@@ -470,6 +707,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  tagActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   tagMeta: {
     fontSize: 12,
     fontFamily: 'Inter_400Regular',
@@ -485,6 +727,18 @@ const styles = StyleSheet.create({
   historyBtnText: {
     fontSize: 11,
     fontFamily: 'Inter_500Medium',
+  },
+  dangerBtn: {
+    minHeight: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  dangerBtnText: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
   },
   divider: {
     height: 1,
@@ -526,6 +780,12 @@ const styles = StyleSheet.create({
   secondaryBtnText: {
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
+  },
+  orderRowCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
   },
   historyRow: {
     minHeight: 52,

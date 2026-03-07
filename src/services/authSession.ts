@@ -2,6 +2,7 @@ import { ApiError, apiClient, getAuthToken, setAuthToken } from '@/lib/apiClient
 import { captureSentryException, setSentryUser } from '@/lib/sentry';
 import { MESSAGES } from '@/constants/messages';
 import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
+import { clearPersistedQueryCache } from '@/lib/queryClient';
 import { secureStorage } from '@/utils/secureStorage';
 
 const AUTH_SIGNED_KEY = 'unqx.auth.signed';
@@ -331,6 +332,7 @@ export async function signOut(): Promise<void> {
   }
 
   await secureStorage.clear();
+  await clearPersistedQueryCache();
   await setSignedFlag(false);
   setSentryUser(null);
 }

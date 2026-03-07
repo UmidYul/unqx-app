@@ -3,6 +3,7 @@ import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ProfileCard, ThemeTokens } from '@/types';
 import { findButtonIcon } from '@/components/profile/buttonIcons';
+import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 
 interface CardPreviewProps {
   visible: boolean;
@@ -11,8 +12,80 @@ interface CardPreviewProps {
   onClose: () => void;
 }
 
+function resolvePreviewTheme(theme: ProfileCard['theme']): {
+  cardBg: string;
+  avatarBg: string;
+  avatarText: string;
+  name: string;
+  job: string;
+  slug: string;
+  buttonBg: string;
+  buttonText: string;
+} {
+  if (theme === 'arctic') {
+    return {
+      cardBg: '#f0f5f9',
+      avatarBg: '#dce6ef',
+      avatarText: '#365066',
+      name: '#1a2a3a',
+      job: '#6f8ba4',
+      slug: '#4a6880',
+      buttonBg: '#dce6ef',
+      buttonText: '#1a2a3a',
+    };
+  }
+  if (theme === 'linen') {
+    return {
+      cardBg: '#f2ede6',
+      avatarBg: '#dfd4c8',
+      avatarText: '#6b5540',
+      name: '#3a2e24',
+      job: '#8a7060',
+      slug: '#6b5540',
+      buttonBg: '#ebe3da',
+      buttonText: '#3a2e24',
+    };
+  }
+  if (theme === 'marble') {
+    return {
+      cardBg: '#ffffff',
+      avatarBg: '#f1f1f1',
+      avatarText: '#444444',
+      name: '#0a0a0a',
+      job: '#8b8b8b',
+      slug: '#222222',
+      buttonBg: '#f5f5f5',
+      buttonText: '#111111',
+    };
+  }
+  if (theme === 'forest') {
+    return {
+      cardBg: '#0e2010',
+      avatarBg: '#162a18',
+      avatarText: '#e8dcc0',
+      name: '#f0e8d0',
+      job: '#9ab18d',
+      slug: '#d8c7a0',
+      buttonBg: '#19311c',
+      buttonText: '#e8dcc0',
+    };
+  }
+
+  return {
+    cardBg: '#111111',
+    avatarBg: '#222222',
+    avatarText: '#e8dfc8',
+    name: '#f5f5f5',
+    job: 'rgba(255,255,255,0.5)',
+    slug: '#e8dfc8',
+    buttonBg: 'rgba(255,255,255,0.08)',
+    buttonText: '#f5f5f5',
+  };
+}
+
 export function CardPreview({ visible, card, tokens, onClose }: CardPreviewProps): React.JSX.Element {
-  const isDark = card.theme === 'dark' || card.theme === 'gradient';
+  const theme = resolvePreviewTheme(card.theme);
+  const avatarImage = useRetryImageUri(card.avatarUrl);
 
   return (
     <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
@@ -20,19 +93,24 @@ export function CardPreview({ visible, card, tokens, onClose }: CardPreviewProps
         <Pressable style={styles.inner} onPress={() => undefined}>
           <Text style={styles.hint}>КАК ВИДЯТ ДРУГИЕ</Text>
 
-          <View style={[styles.card, { backgroundColor: isDark ? '#111111' : '#ffffff' }]}> 
+          <View style={[styles.card, { backgroundColor: theme.cardBg }]}>
             <View style={styles.centered}>
-              <View style={[styles.avatar, { backgroundColor: isDark ? '#222222' : '#f0f0f0' }]}>
-                {card.avatarUrl ? (
-                  <Image source={{ uri: card.avatarUrl }} style={styles.avatarImage} />
+              <View style={[styles.avatar, { backgroundColor: theme.avatarBg }]}>
+                {avatarImage.showImage && avatarImage.imageUri ? (
+                  <Image
+                    key={`${card.avatarUrl}:${avatarImage.retryCount}`}
+                    source={{ uri: avatarImage.imageUri }}
+                    style={styles.avatarImage}
+                    onError={avatarImage.onError}
+                  />
                 ) : (
-                  <Text style={[styles.avatarText, { color: isDark ? '#e8dfc8' : '#111111' }]}>{card.name[0] || 'U'}</Text>
+                  <Text style={[styles.avatarText, { color: theme.avatarText }]}>{card.name[0] || 'U'}</Text>
                 )}
               </View>
 
-              <Text style={[styles.name, { color: isDark ? '#f5f5f5' : '#0a0a0a' }]}>{card.name}</Text>
-              <Text style={[styles.job, { color: isDark ? 'rgba(255,255,255,0.5)' : '#777777' }]}>{card.job}</Text>
-              <Text style={[styles.slug, { color: isDark ? '#e8dfc8' : '#000000' }]}>{`unqx.uz/${card.slug}`}</Text>
+              <Text style={[styles.name, { color: theme.name }]}>{card.name}</Text>
+              <Text style={[styles.job, { color: theme.job }]}>{card.job}</Text>
+              <Text style={[styles.slug, { color: theme.slug }]}>{`unqx.uz/${card.slug}`}</Text>
 
               <View style={styles.buttons}>
                 {card.buttons
@@ -40,9 +118,9 @@ export function CardPreview({ visible, card, tokens, onClose }: CardPreviewProps
                   .map((button, index) => {
                     const Icon = findButtonIcon(button.icon).Icon;
                     return (
-                      <View key={`btn-${index}`} style={[styles.button, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f5f5f5' }]}>
-                        <Icon size={14} strokeWidth={1.5} color={isDark ? '#f5f5f5' : '#111111'} />
-                        <Text style={[styles.buttonText, { color: isDark ? '#f5f5f5' : '#111111' }]}>{button.label}</Text>
+                      <View key={`btn-${index}`} style={[styles.button, { backgroundColor: theme.buttonBg }]}>
+                        <Icon size={14} strokeWidth={1.5} color={theme.buttonText} />
+                        <Text style={[styles.buttonText, { color: theme.buttonText }]}>{button.label}</Text>
                       </View>
                     );
                   })}
@@ -50,7 +128,7 @@ export function CardPreview({ visible, card, tokens, onClose }: CardPreviewProps
             </View>
           </View>
 
-          <Pressable onPress={onClose} style={[styles.closeBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}> 
+          <Pressable onPress={onClose} style={[styles.closeBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
             <Text style={[styles.closeText, { color: '#ffffff' }]}>Закрыть</Text>
           </Pressable>
         </Pressable>

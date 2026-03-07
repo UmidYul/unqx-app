@@ -1,4 +1,5 @@
 import { apiClient, ApiError } from '@/lib/apiClient';
+import { resolveAssetUrl } from '@/lib/assetUrl';
 import { ProfileCard, ResidentProfile } from '@/types';
 
 const memoryCache = new Map<string, { value: unknown; expiresAt: number }>();
@@ -29,8 +30,23 @@ function pickPrimarySlug(bootstrap: any): string | null {
 }
 
 function normalizeButtons(buttons: ProfileCard['buttons']) {
+  const mapType = (icon: string): string => {
+    const key = String(icon || '').trim().toLowerCase();
+    if (key === 'send' || key === 'telegram') return 'telegram';
+    if (key === 'ig' || key === 'instagram') return 'instagram';
+    if (key === 'whatsapp' || key === 'wa') return 'whatsapp';
+    if (key === 'youtube' || key === 'yt') return 'youtube';
+    if (key === 'tiktok') return 'tiktok';
+    if (key === 'website' || key === 'globe' || key === 'web' || key === 'link') return 'website';
+    if (key === 'phone') return 'phone';
+    if (key === 'email' || key === 'mail') return 'email';
+    if (key === 'card' || key === 'creditcard' || key === 'credit_card' || key === 'payment' || key === 'pay' || key === 'click') return 'card';
+    if (key === 'other' || key === 'chat' || key === 'briefcase' || key === 'linkedin') return 'other';
+    return 'other';
+  };
+
   return (buttons || []).map((item) => ({
-    type: item.icon,
+    type: mapType(item.icon),
     label: item.label,
     value: item.url,
   }));
@@ -115,12 +131,17 @@ function mapResidentProfile(raw: any): ResidentProfile {
   const source = raw?.profile ?? raw ?? {};
   const slug = normalizeResidentSlug(source?.slug) || 'UNQ000';
   const slugs = parseResidentSlugs(source?.slugs, slug);
+  const addressRaw = source?.address ?? source?.location ?? source?.addressLine ?? source?.addressText ?? source?.street;
 
   return {
     name: String(source?.name ?? 'Unknown'),
     slug,
     slugs: slugs.length ? slugs : [slug],
-    avatarUrl: source?.avatarUrl ? String(source.avatarUrl) : undefined,
+    slugPrice: Number.isFinite(Number(source?.slugPrice ?? source?.price))
+      ? Number(source?.slugPrice ?? source?.price)
+      : undefined,
+    avatarUrl: resolveAssetUrl(source?.avatarUrl ? String(source.avatarUrl) : undefined),
+    address: addressRaw ? String(addressRaw) : undefined,
     city: source?.city ? String(source.city) : undefined,
     tag: String(source?.tag ?? 'basic'),
     taps: Number(source?.taps ?? 0),
@@ -130,12 +151,12 @@ function mapResidentProfile(raw: any): ResidentProfile {
     phone: source?.phone ? String(source.phone) : undefined,
     buttons: Array.isArray(source?.buttons)
       ? source.buttons
-          .map((item: any) => ({
-            icon: item?.icon ? String(item.icon) : undefined,
-            label: String(item?.label ?? ''),
-            url: String(item?.url ?? ''),
-          }))
-          .filter((item: { label: string; url: string }) => item.label && item.url)
+        .map((item: any) => ({
+          icon: item?.icon ? String(item.icon) : undefined,
+          label: String(item?.label ?? ''),
+          url: String(item?.url ?? ''),
+        }))
+        .filter((item: { label: string; url: string }) => item.label && item.url)
       : [],
     saved: Boolean(source?.saved),
     subscribed: Boolean(source?.subscribed),
@@ -145,15 +166,15 @@ function mapResidentProfile(raw: any): ResidentProfile {
 function mapSources(input: unknown, total: number) {
   const rows = Array.isArray(input)
     ? input.map((item: any) => ({
-        source: normalizeTapSource(item?.source ?? item?.label ?? 'direct'),
-        count: Number(item?.count ?? item?.value ?? 0),
-        percent: Number(item?.percent ?? 0),
-      }))
+      source: normalizeTapSource(item?.source ?? item?.label ?? 'direct'),
+      count: Number(item?.count ?? item?.value ?? 0),
+      percent: Number(item?.percent ?? 0),
+    }))
     : Object.entries((input || {}) as Record<string, unknown>).map(([source, count]) => ({
-        source: normalizeTapSource(source),
-        count: Number(count ?? 0),
-        percent: 0,
-      }));
+      source: normalizeTapSource(source),
+      count: Number(count ?? 0),
+      percent: 0,
+    }));
 
   return rows
     .map((item) => {
@@ -491,6 +512,7 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
       slug: normalizedSlug,
       name: matchDirectory?.name ?? matchContacts?.name ?? 'Unknown',
       avatarUrl: matchDirectory?.avatarUrl ?? matchContacts?.avatarUrl ?? undefined,
+      address: matchDirectory?.address ?? '',
       city: matchDirectory?.city ?? '',
       tag: matchDirectory?.tag ?? matchContacts?.tag ?? 'basic',
       taps: Number(matchDirectory?.taps ?? matchContacts?.taps ?? 0),
@@ -608,6 +630,30 @@ export async function trackWristbandOrderLike(orderId: string): Promise<unknown>
       },
     };
   }
+}
+
+export async function fetchWristbandOrdersLike(): Promise<unknown> {
+  const requests = await apiClient.get<any>('/profile/requests');
+  const items = Array.isArray(requests?.items) ? requests.items : [];
+
+  return {
+    items: items
+      .filter((item: any) => Boolean(item?.bracelet))
+      .map((item: any) => ({
+        id: String(item?.id ?? ''),
+        slug: item?.slug ? String(item.slug) : undefined,
+        slugPrice: Number.isFinite(Number(item?.slugPrice)) ? Number(item.slugPrice) : undefined,
+        requestedPlan: item?.requestedPlan ? String(item.requestedPlan) : undefined,
+        planPrice: Number.isFinite(Number(item?.planPrice)) ? Number(item.planPrice) : undefined,
+        bracelet: Boolean(item?.bracelet),
+        status: String(item?.status ?? 'pending').toLowerCase(),
+        statusBadge: item?.statusBadge ? String(item.statusBadge) : undefined,
+        adminNote: item?.adminNote ? String(item.adminNote) : null,
+        createdAt: item?.createdAt,
+        estimatedAt: item?.purchasedAt,
+      }))
+      .filter((item: any) => item.id),
+  };
 }
 
 export async function fetchNotificationsLike(): Promise<unknown> {

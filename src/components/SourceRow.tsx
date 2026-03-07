@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { ThemeTokens, TapSource } from '@/types';
 import { getSourceConfig, resolveSource } from '@/utils/sourceConfig';
 
@@ -14,9 +15,13 @@ interface SourceRowProps {
 }
 
 export function SourceRow({ source, count, percent, index, tokens }: SourceRowProps): React.JSX.Element {
+  const { language } = useLanguageContext();
   const resolved = resolveSource(source);
-  const sourceConfig = React.useMemo(() => getSourceConfig(tokens), [tokens]);
+  const sourceConfig = React.useMemo(() => getSourceConfig(tokens, language), [tokens, language]);
   const config = sourceConfig[resolved];
+  const isDark = tokens.text === '#f5f5f5';
+  const trackColor = isDark ? 'rgba(255,255,255,0.14)' : `${tokens.border}22`;
+  const fillColor = isDark ? 'rgba(232,223,200,0.9)' : config.color;
   const progress = useSharedValue(0);
 
   React.useEffect(() => {
@@ -40,10 +45,10 @@ export function SourceRow({ source, count, percent, index, tokens }: SourceRowPr
           <config.Icon size={13} strokeWidth={1.5} color={config.color} />
           <Text style={[styles.label, { color: tokens.text }]}>{config.label}</Text>
         </View>
-        <Text style={[styles.meta, { color: tokens.textMuted }]}>{`${count} · ${percent}%`}</Text>
+        <Text style={[styles.meta, { color: isDark ? 'rgba(255,255,255,0.62)' : tokens.textMuted }]}>{`${count} · ${percent}%`}</Text>
       </View>
-      <View style={[styles.track, { borderColor: tokens.border, backgroundColor: `${tokens.border}22` }]}>
-        <Animated.View style={[styles.fill, { backgroundColor: config.color }, barStyle]} />
+      <View style={[styles.track, { borderColor: tokens.border, backgroundColor: trackColor }]}>
+        <Animated.View style={[styles.fill, { backgroundColor: fillColor }, barStyle]} />
       </View>
     </View>
   );

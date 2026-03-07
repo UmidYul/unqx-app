@@ -8,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
+import { CheckCircle2, ChevronRight } from 'lucide-react-native';
 import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 import Animated, {
   Easing,
@@ -276,11 +276,10 @@ export function DotsLoader({ color }: { color: string }): React.JSX.Element {
 }
 
 export function CheckCircle({ tokens }: { tokens: ThemeTokens }): React.JSX.Element {
+  const iconColor = tokens.bg === '#ffffff' ? tokens.accent : tokens.text;
+
   return (
-    <Svg width={26} height={26} viewBox='0 0 26 26'>
-      <Circle cx={13} cy={13} r={12} fill={tokens.greenBg} stroke={tokens.green} strokeWidth={1.5} />
-      <Path d='M7.5 13L11 16.5L18.5 9.5' stroke={tokens.green} strokeWidth={2} strokeLinecap='round' strokeLinejoin='round' />
-    </Svg>
+    <CheckCircle2 size={26} color={iconColor} strokeWidth={1.8} />
   );
 }
 

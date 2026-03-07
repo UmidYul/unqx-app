@@ -1,7 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Fingerprint, ScanFace } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
 
 import { BiometricType, useBiometrics } from '@/hooks/useBiometrics';
 import { ThemeTokens } from '@/types';
@@ -45,8 +44,7 @@ export function BiometricLockScreen({
   }
 
   return (
-    <View style={styles.container}>
-      <BlurView tint='dark' intensity={55} style={StyleSheet.absoluteFillObject} />
+    <View style={[styles.container, { backgroundColor: tokens.phoneBg }]}>
       <View style={[styles.card, { backgroundColor: tokens.phoneBg, borderColor: tokens.border }]}>
         <View style={[styles.iconWrap, { backgroundColor: `${tokens.accent}18`, borderColor: `${tokens.accent}55` }]}>
           <Icon size={34} color={tokens.accent} strokeWidth={1.6} />
