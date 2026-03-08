@@ -2,7 +2,9 @@ import React from 'react';
 import {
   FlatList,
   Image,
+  Linking,
   ListRenderItemInfo,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -19,6 +21,7 @@ import { getBrandLogoSource } from '@/lib/brandAssets';
 import { apiClient } from '@/lib/apiClient';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { ThemeTokens } from '@/types';
+import { toast } from '@/utils/toast';
 
 interface OnboardingScreenProps {
   tokens: ThemeTokens;
@@ -82,7 +85,7 @@ export function OnboardingScreen({
   const isDark = theme === 'dark';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { requestPermission: requestNfcPermission } = useNFC();
+  const { isSupported: nfcSupported, requestPermission: requestNfcPermission } = useNFC();
   const listRef = React.useRef<FlatList<StepItem> | null>(null);
   const [step, setStep] = React.useState(clampStep(initialStep));
   const [busy, setBusy] = React.useState(false);
@@ -123,29 +126,60 @@ export function OnboardingScreen({
     if (step === 2) {
       setBusy(true);
       try {
-        await requestNfcPermission();
+        if (!nfcSupported) {
+          toast.info('NFC недоступен на этом устройстве');
+          nextStep();
+          return;
+        }
+
+        const enabled = await requestNfcPermission();
+        if (!enabled) {
+          toast.info('Включи NFC в настройках и повтори');
+          return;
+        }
+
+        nextStep();
       } catch {
-        // Continue onboarding even if permission request flow fails.
+        toast.error('Не удалось запросить NFC');
       } finally {
         setBusy(false);
       }
-      nextStep();
       return;
     }
 
     if (step === 3) {
       setBusy(true);
       try {
+        const Notifications = await import('expo-notifications');
+        const current = await Notifications.getPermissionsAsync();
+        let granted = current.status === 'granted';
+
+        if (!granted) {
+          const requested = await Notifications.requestPermissionsAsync();
+          granted = requested.status === 'granted';
+        }
+
+        if (!granted) {
+          toast.info('Разреши уведомления в настройках');
+          await Linking.openSettings().catch(() => undefined);
+          return;
+        }
+
         const token = await requestPushPermission();
         if (token) {
-          await apiClient.post('/notifications/token', { token }).catch(() => undefined);
+          await apiClient.post('/notifications/token', {
+            token,
+            expoToken: token,
+            platform: Platform.OS,
+          }).catch(() => undefined);
         }
+
+        nextStep();
       } catch {
-        // Continue onboarding even if push permission/token request fails.
+        toast.error('Не удалось запросить уведомления');
       } finally {
         setBusy(false);
       }
-      nextStep();
       return;
     }
 
@@ -155,7 +189,7 @@ export function OnboardingScreen({
     }
 
     nextStep();
-  }, [busy, nextStep, onComplete, requestNfcPermission, step]);
+  }, [busy, nfcSupported, nextStep, onComplete, requestNfcPermission, step]);
 
   const handleSkip = React.useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);

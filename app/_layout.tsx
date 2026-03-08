@@ -94,7 +94,11 @@ function RootNavigator(): React.JSX.Element {
     }
 
     const syncToken = async () => {
-      if (!token) {
+      const preferredToken = Platform.OS === 'android'
+        ? (nativeToken ?? token)
+        : (token ?? nativeToken);
+
+      if (!preferredToken) {
         return;
       }
       const payloadKey = `${token ?? ''}|${nativeToken ?? ''}`;
@@ -104,16 +108,17 @@ function RootNavigator(): React.JSX.Element {
 
       try {
         await apiClient.post('/notifications/token', {
-          token,
+          token: preferredToken,
           expoToken: token,
           deviceToken: nativeToken,
+          fcmToken: Platform.OS === 'android' ? nativeToken : undefined,
           platform: Platform.OS,
         });
       } catch {
         return;
       }
-      await storageSetItem('unqx.push.last-token', token ?? nativeToken ?? '');
-      lastTokenRef.current = token ?? nativeToken ?? null;
+      await storageSetItem('unqx.push.last-token', preferredToken);
+      lastTokenRef.current = preferredToken;
       pushedTokenRef.current = payloadKey;
     };
 

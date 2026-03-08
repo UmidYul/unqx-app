@@ -41,6 +41,17 @@ import { toast } from '@/utils/toast';
 
 type PeopleTab = 'contacts' | 'directory' | 'leaderboard';
 
+function resolvePersonAvatar(item: any): string | undefined {
+  return resolveAssetUrl(
+    item?.avatarUrl
+    ?? item?.avatar_url
+    ?? item?.avatar
+    ?? item?.photoUrl
+    ?? item?.photo_url
+    ?? item?.photo,
+  );
+}
+
 function parseContacts(raw: unknown): Contact[] {
   const source = (raw as { items?: unknown[]; contacts?: unknown[] })?.items ?? (raw as { contacts?: unknown[] })?.contacts ?? raw;
   if (!Array.isArray(source)) {
@@ -62,7 +73,7 @@ function parseContacts(raw: unknown): Contact[] {
       return {
         name: item?.name ?? item?.displayName ?? item?.ownerName ?? item?.firstName ?? 'Unknown',
         slug: item?.slug ?? item?.code ?? item?.fullSlug ?? 'UNQ000',
-        avatarUrl: resolveAssetUrl(item?.avatarUrl),
+        avatarUrl: resolvePersonAvatar(item),
         phone: item?.phone,
         taps,
         tag: item?.tag ?? item?.plan ?? 'basic',
@@ -140,7 +151,7 @@ function parseResidents(raw: unknown): Resident[] {
 
   source.forEach((entry: any) => {
     const name = String(entry?.name ?? entry?.displayName ?? entry?.ownerName ?? 'Unknown');
-    const avatarUrl = resolveAssetUrl(entry?.avatarUrl);
+    const avatarUrl = resolvePersonAvatar(entry);
     const city = String(entry?.city ?? entry?.verifiedCompany ?? '');
     const tag = entry?.tag ?? entry?.plan ?? 'basic';
     const taps = Number(entry?.taps ?? entry?.views ?? entry?.count ?? 0);
@@ -198,7 +209,7 @@ function parseLeaderboard(raw: unknown): LeaderboardEntry[] {
     rank: Number(item?.rank ?? index + 1),
     name: item?.name ?? item?.displayName ?? item?.ownerName ?? 'Unknown',
     slug: item?.slug ?? 'UNQ000',
-    avatarUrl: resolveAssetUrl(item?.avatarUrl),
+    avatarUrl: resolvePersonAvatar(item),
     taps: Number(item?.taps ?? item?.views ?? item?.count ?? 0),
     delta: Number(item?.delta ?? 0),
     score: Number(item?.score ?? 0),
@@ -325,18 +336,21 @@ export default function PeoplePage(): React.JSX.Element {
   const contactsQuery = useQuery({
     queryKey: queryKeys.contacts,
     queryFn: async () => parseContacts(await fetchContactsLike('')),
+    refetchOnMount: 'always',
   });
 
   const directoryQuery = useQuery({
     queryKey: queryKeys.directory(residentsSearch.trim(), 1),
     queryFn: async () => parseResidents(await fetchDirectoryLike(residentsSearch.trim(), 1)),
     enabled: activeTab === 'directory',
+    refetchOnMount: 'always',
   });
 
   const leaderboardQuery = useQuery({
     queryKey: queryKeys.leaderboard,
     queryFn: async () => parseLeaderboard(await apiClient.getFirst(['/leaderboard'])),
     enabled: activeTab === 'leaderboard',
+    refetchOnMount: 'always',
   });
 
   const contacts = React.useMemo(() => (Array.isArray(contactsQuery.data) ? contactsQuery.data : parseContacts(contactsQuery.data)), [contactsQuery.data]);
@@ -1040,12 +1054,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+    alignItems: 'stretch',
   },
   residentCardWrap: {
     width: '48.5%',
+    alignSelf: 'stretch',
   },
   residentCard: {
     width: '100%',
+    flex: 1,
     borderWidth: 1,
     borderRadius: 12,
     padding: 13,

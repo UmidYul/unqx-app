@@ -112,6 +112,7 @@ export interface AnalyticsSummary {
 export interface RecentTap {
   id: string;
   name: string;
+  slug?: string;
   time: string;
   source?: string;
 }

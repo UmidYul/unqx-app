@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Redirect } from 'expo-router';
+import { Eye, EyeOff } from 'lucide-react-native';
 
 import { AuthLoadingScreen } from '@/components/AuthLoadingScreen';
 import { MESSAGES } from '@/constants/messages';
@@ -17,6 +18,7 @@ export default function LoginPage(): React.JSX.Element {
 
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [verificationEmail, setVerificationEmail] = React.useState<string>('');
@@ -88,17 +90,23 @@ export default function LoginPage(): React.JSX.Element {
             ]}
           />
 
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder={MESSAGES.ui.auth.passwordPlaceholder}
-            placeholderTextColor={tokens.textMuted}
-            secureTextEntry
-            style={[
-              styles.input,
-              { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text },
-            ]}
-          />
+          <View style={[styles.passwordWrap, { backgroundColor: tokens.inputBg, borderColor: tokens.border }]}>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder={MESSAGES.ui.auth.passwordPlaceholder}
+              placeholderTextColor={tokens.textMuted}
+              secureTextEntry={!showPassword}
+              style={[styles.passwordInput, { color: tokens.text }]}
+            />
+            <Pressable onPress={() => setShowPassword((prev) => !prev)} style={styles.eyeBtn}>
+              {showPassword ? (
+                <EyeOff size={18} strokeWidth={1.5} color={tokens.textMuted} />
+              ) : (
+                <Eye size={18} strokeWidth={1.5} color={tokens.textMuted} />
+              )}
+            </Pressable>
+          </View>
 
           {error ? <Text style={[styles.error, { color: tokens.red }]}>{error}</Text> : null}
 
@@ -179,6 +187,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     fontSize: 14,
     fontFamily: 'Inter_400Regular',
+  },
+  passwordWrap: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 14,
+    paddingRight: 10,
+  },
+  passwordInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    paddingVertical: 12,
+    paddingRight: 8,
+  },
+  eyeBtn: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   error: {
     marginTop: 4,

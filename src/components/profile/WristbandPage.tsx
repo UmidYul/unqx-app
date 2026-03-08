@@ -142,6 +142,22 @@ export function WristbandPage({
   );
   const linkedSlug = String(status?.linkedSlug ?? '').trim();
   const overallLastTap = history[0]?.timestamp;
+  const normalizedStatus = String(status?.status ?? '').trim().toLowerCase();
+  const hasLinkedSlug = linkedSlug.length > 0;
+  const hasTags = tags.length > 0;
+  const hasTapHistory = Boolean(overallLastTap);
+  const isWristbandActive = normalizedStatus === 'active' || normalizedStatus === 'linked' || hasLinkedSlug || hasTags;
+  const activeTitle = isWristbandActive
+    ? (isUz ? 'Bilaguzuk faol' : 'Браслет активен')
+    : (isUz ? 'Bilaguzuk ulanmagan' : 'Браслет не привязан');
+  const activeSub = hasLinkedSlug || hasTapHistory
+    ? `${hasLinkedSlug ? linkedSlug : (isUz ? 'slug biriktirilmagan' : 'slug не привязан')} · ${isUz ? 'oxirgi tap' : 'последний тап'} ${formatTapTime(overallLastTap)}`
+    : (isUz ? 'Slug va taplar hali yo\'q' : 'Пока нет привязки slug и тапов');
+  const statusPill = {
+    color: isWristbandActive ? tokens.green : tokens.textMuted,
+    bg: isWristbandActive ? tokens.greenBg : tokens.inputBg,
+    text: isWristbandActive ? (isUz ? 'Faol' : 'Активен') : (isUz ? 'Ulanmagan' : 'Не привязан'),
+  };
   const activeOrder = React.useMemo(() => {
     if (orderStatus?.id) {
       const fromList = orders.find((item) => item.id === orderStatus.id);
@@ -384,7 +400,6 @@ export function WristbandPage({
                     disabled={orderPending || !address.trim()}
                     onPress={() => {
                       onCreateOrder({ address: address.trim(), quantity: Math.max(1, Number(qty) || 1) });
-                      setOrderStep('orders');
                     }}
                   >
                     {orderPending ? (
@@ -403,21 +418,29 @@ export function WristbandPage({
           <>
             <Header title='Браслет и метки' back={onClose} />
             <ScrollView contentContainerStyle={styles.content}>
-              <View style={[styles.activeCard, { borderColor: `${tokens.green}55`, backgroundColor: `${tokens.green}14` }]}>
+              <View
+                style={[
+                  styles.activeCard,
+                  {
+                    borderColor: isWristbandActive ? `${tokens.green}55` : tokens.border,
+                    backgroundColor: isWristbandActive ? `${tokens.green}14` : tokens.surface,
+                  },
+                ]}
+              >
                 <View style={styles.activeLeft}>
-                  <View style={[styles.deviceIcon, { backgroundColor: tokens.greenBg }]}>
+                  <View style={[styles.deviceIcon, { backgroundColor: isWristbandActive ? tokens.greenBg : tokens.inputBg }]}>
                     <Text style={styles.deviceGlyph}>NFC</Text>
                   </View>
                   <View>
-                    {loading ? <SkeletonBlock tokens={tokens} height={12} width={110} /> : <Text style={[styles.activeTitle, { color: tokens.text }]}>Браслет активен</Text>}
+                    {loading ? <SkeletonBlock tokens={tokens} height={12} width={110} /> : <Text style={[styles.activeTitle, { color: tokens.text }]}>{activeTitle}</Text>}
                     {loading ? (
                       <SkeletonBlock tokens={tokens} height={10} width={150} style={{ marginTop: 4 }} />
                     ) : (
-                      <Text style={[styles.activeSub, { color: tokens.textMuted }]}>{`${linkedSlug || '—'} · последний тап ${formatTapTime(overallLastTap)}`}</Text>
+                      <Text style={[styles.activeSub, { color: tokens.textMuted }]}>{activeSub}</Text>
                     )}
                   </View>
                 </View>
-                <Pill color={tokens.green} bg={tokens.greenBg}>● Активен</Pill>
+                <Pill color={statusPill.color} bg={statusPill.bg}>{`● ${statusPill.text}`}</Pill>
               </View>
 
               <Label color={tokens.textMuted}>{`Мои метки (${tags.length})`}</Label>

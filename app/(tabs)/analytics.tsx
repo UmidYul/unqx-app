@@ -226,6 +226,7 @@ export default function AnalyticsPage(): React.JSX.Element {
   const weekMax = Math.max(...analytics.weekTaps, 1);
   const isDark = tokens.text === '#f5f5f5';
   const weekTrackColor = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(17,17,17,0.10)';
+  const weekBarMutedColor = isDark ? 'rgba(232,223,200,0.42)' : tokens.borderStrong;
   const cityTrackColor = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(17,17,17,0.12)';
   const cityFillColor = isDark ? 'rgba(232,223,200,0.95)' : tokens.accent;
   const days = React.useMemo(() => {
@@ -321,7 +322,7 @@ export default function AnalyticsPage(): React.JSX.Element {
                           <AnimatedBar
                             ratio={v <= 0 ? 0 : Math.max(0.06, v / weekMax)}
                             delay={i * 70}
-                            color={i === todayBarIndex || days[i]?.dayIndex === 5 ? tokens.accent : (isDark ? 'rgba(255,255,255,0.86)' : tokens.borderStrong)}
+                            color={i === todayBarIndex || days[i]?.dayIndex === 5 ? tokens.accent : weekBarMutedColor}
                           />
                         </View>
                         <Text style={[styles.weekDay, { color: i === todayBarIndex ? tokens.text : (isDark ? 'rgba(255,255,255,0.62)' : tokens.textMuted) }]}>{days[i]?.label ?? ''}</Text>

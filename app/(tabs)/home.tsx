@@ -70,9 +70,18 @@ function parseRecent(raw: unknown): RecentTap[] {
   return source.slice(0, 4).map((item: any, index: number) => ({
     id: String(item?.id ?? `${index}`),
     name: item?.name ?? item?.ownerName ?? item?.viewerName ?? item?.slug ?? 'Unknown',
+    slug: item?.slug ?? item?.fullSlug ?? item?.viewerSlug ?? item?.visitorSlug ?? item?.ownerSlug ?? undefined,
     time: item?.time ?? item?.timestamp ?? item?.createdAt ?? 'just now',
     source: item?.source ?? item?.channel ?? item?.slug ?? item?.visitorSlug ?? 'direct',
   }));
+}
+
+function normalizeRecentSlug(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 20);
 }
 
 function initialLetter(name: string): string {
@@ -387,14 +396,21 @@ export default function HomePage(): React.JSX.Element {
             <Label color={tokens.textMuted}>{MESSAGES.ui.home.recentTaps}</Label>
             {recent.length === 0 ? <Text style={[styles.recentEmpty, { color: tokens.textMuted }]}>{homeText.noEvents}</Text> : null}
             {recent.map((item, index) => {
+              const normalizedSlug = normalizeRecentSlug(item.slug);
+              const isUnknown = item.name.trim().toLowerCase() === homeText.unknownName.trim().toLowerCase();
+              const isClickable = Boolean(normalizedSlug) && !isUnknown;
+
               return (
                 <Animated.View key={item.id} entering={FadeInDown.duration(220).delay(index * 50)}>
-                  <View
+                  <AnimatedPressable
+                    onPress={isClickable ? () => safePush(`/(tabs)/people/${normalizedSlug}`) : undefined}
+                    disabled={!isClickable}
                     style={[
                       styles.recentRow,
                       {
                         borderBottomColor: tokens.border,
                         borderBottomWidth: index === recent.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                        opacity: isClickable ? 1 : 0.9,
                       },
                     ]}
                   >
@@ -413,7 +429,7 @@ export default function HomePage(): React.JSX.Element {
                       </Pill>
                       <Text style={[styles.recentTime, { color: tokens.textMuted }]}>{toAgoLabel(item.time, isUz)}</Text>
                     </View>
-                  </View>
+                  </AnimatedPressable>
                 </Animated.View>
               );
             })}

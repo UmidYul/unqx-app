@@ -400,6 +400,7 @@ export async function fetchHomeRecentLike(): Promise<unknown> {
         items: requestItems.map((item: any, index: number) => ({
           id: item?.id ?? `req-${index}`,
           name: 'Заявка',
+          slug: item?.slug ?? item?.fullSlug ?? item?.selectedSlug ?? '',
           source: item?.slug ?? 'UNQ000',
           time: item?.createdAt ?? item?.purchasedAt ?? 'недавно',
         })),
@@ -418,6 +419,7 @@ export async function fetchHomeRecentLike(): Promise<unknown> {
     items: items.map((item: any, index: number) => ({
       id: item?.id ?? `lb-${index}`,
       name: item?.name ?? item?.ownerName ?? item?.displayName ?? 'UNQX User',
+      slug: item?.slug ?? item?.fullSlug ?? item?.selectedSlug ?? '',
       source: item?.slug ?? 'UNQ000',
       time: 'недавно',
     })),
@@ -636,9 +638,26 @@ export async function fetchWristbandOrdersLike(): Promise<unknown> {
   const requests = await apiClient.get<any>('/profile/requests');
   const items = Array.isArray(requests?.items) ? requests.items : [];
 
+  const isBraceletOrder = (item: any): boolean => {
+    if (Boolean(item?.bracelet)) {
+      return true;
+    }
+
+    const requestedPlan = String(item?.requestedPlan ?? '').toLowerCase();
+    if (requestedPlan.includes('bracelet') || requestedPlan.includes('wristband')) {
+      return true;
+    }
+
+    const products = Array.isArray(item?.products) ? item.products : [];
+    return products.some((product: any) => {
+      const type = String(product?.type ?? product?.name ?? '').toLowerCase();
+      return type.includes('bracelet') || type.includes('wristband');
+    });
+  };
+
   return {
     items: items
-      .filter((item: any) => Boolean(item?.bracelet))
+      .filter((item: any) => isBraceletOrder(item))
       .map((item: any) => ({
         id: String(item?.id ?? ''),
         slug: item?.slug ? String(item.slug) : undefined,
