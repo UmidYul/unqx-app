@@ -482,7 +482,14 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
               const filteredButtons = Array.isArray(local.buttons)
                 ? local.buttons.filter((b) => b.label && b.url)
                 : [];
-              const payload = { ...local, buttons: filteredButtons };
+              // Преобразуем кнопки в формат, который ожидает backend
+              const fixedButtons = filteredButtons.map((b) => ({
+                type: b.icon || 'other',
+                label: b.label,
+                value: b.url,
+                href: b.url,
+              }));
+              const payload = { ...local, buttons: fixedButtons };
               console.log('Saving card:', payload); // Для отладки
               onSave(payload);
             }}
