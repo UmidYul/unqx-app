@@ -564,23 +564,44 @@ export async function fetchProfileLike(): Promise<unknown> {
 
 export async function saveProfileCardLike(card: ProfileCard): Promise<unknown> {
   try {
-    return await apiClient.patch('/me/card', card);
+    // Для PATCH отправляем кнопки как есть (icon, label, url)
+    const patchCard = { ...card };
+    if (Array.isArray(card.buttons) && card.buttons.length > 0) {
+      patchCard.buttons = card.buttons.map(btn => ({
+        icon: btn.icon,
+        label: btn.label,
+        url: btn.url,
+      }));
+    }
+    return await apiClient.patch('/me/card', patchCard);
   } catch (error) {
     if (!isFallbackError(error)) {
       throw error;
     }
 
-    const payload = {
+    // Для PUT нормализуем type, но сохраняем icon/label/url
+    const payload: Record<string, any> = {
       name: card.name,
       role: card.job,
       email: card.email || null,
+      phone: card.phone || null,
       extraPhone: card.phone || null,
       theme: card.theme,
-      buttons: normalizeButtons(card.buttons),
       tags: card.telegram ? [card.telegram] : [],
       bio: card.job,
       showBranding: true,
     };
+
+    if (Array.isArray(card.buttons) && card.buttons.length > 0) {
+      payload.buttons = card.buttons.map(btn => ({
+        type: normalizeButtons([btn])[0]?.type || 'other',
+        icon: btn.icon,
+        label: btn.label,
+        url: btn.url,
+      }));
+    }
+
+    payload.telegram = card.telegram || '';
 
     return apiClient.put('/profile/card', payload);
   }

@@ -14,19 +14,13 @@ interface BottomNavProps {
   tokens: ThemeTokens;
 }
 
-type NavItem = {
-  id: ScreenTab;
-  label: string;
-  route: string;
-  icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
-};
 
-const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: MESSAGES.ui.bottomNav.home, route: '/(tabs)/home', icon: House },
-  { id: 'nfc', label: MESSAGES.ui.bottomNav.nfc, route: '/(tabs)/nfc', icon: Wifi },
-  { id: 'people', label: MESSAGES.ui.bottomNav.people, route: '/(tabs)/people', icon: UsersRound },
-  { id: 'analytics', label: MESSAGES.ui.bottomNav.analytics, route: '/(tabs)/analytics', icon: BarChart3 },
-  { id: 'profile', label: MESSAGES.ui.bottomNav.profile, route: '/(tabs)/profile', icon: UserRound },
+const NAV_CONFIG = [
+  { id: 'home', route: '/(tabs)/home', icon: House },
+  { id: 'nfc', route: '/(tabs)/nfc', icon: Wifi },
+  { id: 'people', route: '/(tabs)/people', icon: UsersRound },
+  { id: 'analytics', route: '/(tabs)/analytics', icon: BarChart3 },
+  { id: 'profile', route: '/(tabs)/profile', icon: UserRound },
 ];
 
 function resolveActiveTab(pathname: string): ScreenTab {
@@ -48,6 +42,15 @@ export function BottomNav({ tokens }: BottomNavProps): React.JSX.Element {
       ? Math.max(6, insets.bottom)
       : Math.max(14, Math.min(24, (insets.bottom || 0) + 10));
 
+  // Формируем подписи динамически из актуального MESSAGES
+  const navItems = useMemo(() => {
+    const labels = MESSAGES.ui.bottomNav;
+    return NAV_CONFIG.map((item) => ({
+      ...item,
+      label: labels[item.id as keyof typeof labels] || item.id,
+    }));
+  }, [MESSAGES.ui.bottomNav]);
+
   return (
     <View
       style={[
@@ -59,7 +62,7 @@ export function BottomNav({ tokens }: BottomNavProps): React.JSX.Element {
         },
       ]}
     >
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const isActive = item.id === activeTab;
         const Icon = item.icon;
         const color = isActive ? tokens.accent : tokens.text;

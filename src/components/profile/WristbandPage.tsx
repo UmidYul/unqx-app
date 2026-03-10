@@ -632,6 +632,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
     gap: 10,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 440,
   },
   activeCard: {
     borderWidth: 1,
@@ -788,6 +791,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'stretch',
+    width: '100%',
+    maxWidth: 420,
+    marginTop: 8,
   },
   primaryBtnText: {
     fontSize: 13,
@@ -799,6 +806,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'stretch',
+    width: '100%',
+    maxWidth: 420,
+    marginTop: 8,
   },
   secondaryBtnText: {
     fontSize: 13,

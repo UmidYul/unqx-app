@@ -1,9 +1,32 @@
+// Выбор и удаление аватара
+const pickAvatar = async () => {
+  setAvatarUploading(true);
+  try {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets && result.assets[0]?.uri) {
+      updateField('avatarUrl', result.assets[0].uri);
+    }
+  } finally {
+    setAvatarUploading(false);
+  }
+};
+
+const removeAvatar = () => {
+  updateField('avatarUrl', '');
+};
 import React from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Switch, useWindowDimensions } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Camera, Plus, Trash2 } from 'lucide-react-native';
 
 import { ProfileCard, ThemeTokens } from '@/types';
 import { BUTTON_ICONS, inferButtonIcon, normalizeButtonIconKey } from '@/components/profile/buttonIcons';
+import { CardPreview } from '@/components/profile/CardPreview';
 import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { runThrottled } from '@/utils/navigation';
 
@@ -12,49 +35,118 @@ interface CardEditorProps {
   tokens: ThemeTokens;
   card: ProfileCard;
   saving: boolean;
+  userPlan: 'basic' | 'premium' | string;
   onClose: () => void;
   onPreview: (card: ProfileCard) => void;
   onSave: (card: ProfileCard) => void;
 }
 
-const MAX_BUTTONS = 6;
 
-const THEME_OPTIONS: Array<{ id: ProfileCard['theme']; label: string; swatch: string }> = [
+const MAX_BUTTONS = 6;
+const MAX_BIO_LENGTH = 120;
+
+const THEME_OPTIONS: Array<{ id: string; label: string; swatch: string; premium?: boolean }> = [
   { id: 'default_dark', label: 'Default Dark', swatch: '#0a0a0a' },
-  { id: 'arctic', label: 'Arctic', swatch: '#f0f5f9' },
-  { id: 'linen', label: 'Linen', swatch: '#f2ede6' },
-  { id: 'marble', label: 'Marble', swatch: '#ffffff' },
-  { id: 'forest', label: 'Forest', swatch: '#0e2010' },
+  { id: 'arctic', label: 'Arctic', swatch: '#f0f5f9', premium: true },
+  { id: 'linen', label: 'Linen', swatch: '#f2ede6', premium: true },
+  { id: 'marble', label: 'Marble', swatch: '#ffffff', premium: true },
+  { id: 'forest', label: 'Forest', swatch: '#0e2010', premium: true },
+  { id: 'graphite', label: 'Graphite', swatch: '#23272e', premium: true },
+  { id: 'gold', label: 'Gold', swatch: '#f7e9b0', premium: true },
+  { id: 'violet', label: 'Violet', swatch: '#e6e6fa', premium: true },
+  { id: 'ocean', label: 'Ocean', swatch: '#b3e0f2', premium: true },
+  { id: 'sunset', label: 'Sunset', swatch: '#ffb347', premium: true },
+  { id: 'mint', label: 'Mint', swatch: '#b6fcd5', premium: true },
+  { id: 'coral', label: 'Coral', swatch: '#ff7f50', premium: true },
+  { id: 'night', label: 'Night', swatch: '#22223b', premium: true },
 ];
 
-export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, onSave }: CardEditorProps): React.JSX.Element {
-  const [local, setLocal] = React.useState<ProfileCard>(card);
+export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, onPreview, onSave }: CardEditorProps): React.JSX.Element {
+  // Валидация
+  const [errors, setErrors] = React.useState<any>({});
+  const { width } = useWindowDimensions();
+  const isWide = width >= 900;
+  const [previewVisible, setPreviewVisible] = React.useState(false);
+  // Расширяем локальное состояние для новых полей
+  const [local, setLocal] = React.useState<any>({
+    ...card,
+    bio: card.bio || '',
+    hashtag: card.hashtag || '',
+    tags: card.tags || [],
+    address: card.address || '',
+    postcode: card.postcode || '',
+    extraPhone: card.extraPhone || '',
+    customColor: card.customColor || '#111111',
+    showBranding: card.showBranding !== undefined ? card.showBranding : true,
+  });
+  const [tagInput, setTagInput] = React.useState('');
   const avatarImage = useRetryImageUri(local.avatarUrl);
+  const [avatarUploading, setAvatarUploading] = React.useState(false);
   const isDirty = React.useMemo(() => JSON.stringify(local) !== JSON.stringify(card), [card, local]);
+
+  // Проверка полей
+  React.useEffect(() => {
+    const nextErrors: any = {};
+    if (!local.name || local.name.trim().length < 2) {
+      nextErrors.name = 'Имя обязательно (минимум 2 символа)';
+    }
+    if (local.bio && local.bio.length > MAX_BIO_LENGTH) {
+      nextErrors.bio = 'Максимум 120 символов';
+    }
+    if (local.email && !/^\S+@\S+\.\S+$/.test(local.email)) {
+      nextErrors.email = 'Некорректный email';
+    }
+    if (local.buttons && local.buttons.some((b: any) => b.label && !b.url)) {
+      nextErrors.buttons = 'У всех кнопок с названием должна быть ссылка';
+    }
+    setErrors(nextErrors);
+  }, [local]);
 
   React.useEffect(() => {
     if (visible) {
-      setLocal(card);
+      setLocal({
+        ...card,
+        bio: card.bio || '',
+        hashtag: card.hashtag || '',
+        tags: card.tags || [],
+        address: card.address || '',
+        postcode: card.postcode || '',
+        extraPhone: card.extraPhone || '',
+        customColor: card.customColor || '#111111',
+        showBranding: card.showBranding !== undefined ? card.showBranding : true,
+        buttons: Array.isArray(card.buttons) ? card.buttons : [],
+      });
+      setTagInput('');
     }
   }, [card, visible]);
 
-  const updateField = <K extends keyof ProfileCard>(key: K, value: ProfileCard[K]) => {
-    setLocal((prev) => ({ ...prev, [key]: value }));
+  const updateField = (key: string, value: any) => {
+    setLocal((prev: any) => ({ ...prev, [key]: value }));
+  };
+
+  const addTag = () => {
+    const tag = tagInput.trim();
+    if (tag && !local.tags.includes(tag)) {
+      setLocal((prev: any) => ({ ...prev, tags: [...prev.tags, tag] }));
+      setTagInput('');
+    }
+  };
+
+  const removeTag = (idx: number) => {
+    setLocal((prev: any) => ({ ...prev, tags: prev.tags.filter((_: string, i: number) => i !== idx) }));
   };
 
   const updateButton = (index: number, patch: Partial<ProfileCard['buttons'][number]>) => {
-    setLocal((prev) => ({
+    setLocal((prev: any) => ({
       ...prev,
-      buttons: prev.buttons.map((button, i) => {
+      buttons: prev.buttons.map((button: any, i: number) => {
         if (i !== index) {
           return button;
         }
-
         const next = { ...button, ...patch };
         if (Object.prototype.hasOwnProperty.call(patch, 'icon')) {
           return { ...next, icon: normalizeButtonIconKey(String(next.icon || 'other')) };
         }
-
         return {
           ...next,
           icon: inferButtonIcon({
@@ -67,24 +159,26 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
     }));
   };
 
-  const removeButton = (index: number) => {
-    setLocal((prev) => ({
-      ...prev,
-      buttons: prev.buttons.filter((_, i) => i !== index),
-    }));
+  const addButton = () => {
+    if (local.buttons.length < MAX_BUTTONS) {
+      setLocal((prev: any) => ({
+        ...prev,
+        buttons: [
+          ...prev.buttons,
+          { label: '', url: '', icon: 'other' }
+        ]
+      }));
+    }
   };
 
-  const addButton = () => {
-    setLocal((prev) => {
-      if (prev.buttons.length >= MAX_BUTTONS) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        buttons: [...prev.buttons, { icon: 'website', label: '', url: '' }],
-      };
-    });
+  const removeButton = (index: number) => {
+    setLocal((prev: any) => ({
+      ...prev,
+      buttons: prev.buttons.filter((_: any, i: number) => i !== index)
+    }));
+  };
+  const removeAvatar = () => {
+    updateField('avatarUrl', '');
   };
 
   return (
@@ -103,7 +197,9 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.avatarBlock}>
             <View style={[styles.avatar, { backgroundColor: `${tokens.accent}14` }]}>
-              {avatarImage.showImage && avatarImage.imageUri ? (
+              {avatarUploading ? (
+                <ActivityIndicator color={tokens.accent} />
+              ) : avatarImage.showImage && avatarImage.imageUri ? (
                 <Image
                   key={`${local.avatarUrl}:${avatarImage.retryCount}`}
                   source={{ uri: avatarImage.imageUri }}
@@ -113,17 +209,55 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
               ) : (
                 <Text style={[styles.avatarText, { color: tokens.accent }]}>{local.name[0] || 'A'}</Text>
               )}
-              <View style={[styles.avatarPlus, { backgroundColor: tokens.accent }]}>
+              <Pressable style={[styles.avatarPlus, { backgroundColor: tokens.accent }]} onPress={pickAvatar}>
                 <Camera size={12} strokeWidth={1.5} color={tokens.accentText} />
-              </View>
+              </Pressable>
             </View>
-            <Text style={[styles.avatarHint, { color: tokens.textMuted }]}>Нажми чтобы сменить фото</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+              <Pressable onPress={pickAvatar} style={[styles.addBtn, { backgroundColor: tokens.inputBg }]}>
+                <Text style={{ color: tokens.accent }}>Загрузить</Text>
+              </Pressable>
+              {!!local.avatarUrl && (
+                <Pressable onPress={removeAvatar} style={[styles.addBtn, { backgroundColor: tokens.inputBg }]}>
+                  <Text style={{ color: tokens.red }}>Удалить</Text>
+                </Pressable>
+              )}
+            </View>
+            <Text style={[styles.avatarHint, { color: tokens.textMuted }]}>Загрузите или удалите фото профиля</Text>
           </View>
 
           <View style={styles.block}>
             <Text style={[styles.blockLabel, { color: tokens.textMuted }]}>Основная информация</Text>
+            {/* Имя (обязательно) */}
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>Имя *</Text>
+              <TextInput
+                value={local.name}
+                onChangeText={(v) => updateField('name', v)}
+                placeholder='Имя'
+                placeholderTextColor={tokens.textMuted}
+                style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
+                maxLength={40}
+              />
+              {errors.name && <Text style={{ color: tokens.red, fontSize: 11 }}>{errors.name}</Text>}
+            </View>
+            {/* Bio */}
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>Bio</Text>
+              <TextInput
+                value={local.bio}
+                onChangeText={(v) => updateField('bio', v.slice(0, MAX_BIO_LENGTH))}
+                placeholder='О себе (до 120 символов)'
+                placeholderTextColor={tokens.textMuted}
+                style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text, minHeight: 60 }]}
+                multiline
+                maxLength={MAX_BIO_LENGTH}
+              />
+              <Text style={{ fontSize: 11, color: tokens.textMuted, alignSelf: 'flex-end' }}>{local.bio.length}/{MAX_BIO_LENGTH}</Text>
+              {errors.bio && <Text style={{ color: tokens.red, fontSize: 11 }}>{errors.bio}</Text>}
+            </View>
+            {/* Должность, Телефон, Telegram, Email */}
             {[
-              ['Имя', 'name'],
               ['Должность', 'job'],
               ['Телефон', 'phone'],
               ['Telegram', 'telegram'],
@@ -132,38 +266,154 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
               <View key={key} style={styles.fieldBlock}>
                 <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>{label}</Text>
                 <TextInput
-                  value={String(local[key as keyof ProfileCard] ?? '')}
-                  onChangeText={(v) => updateField(key as keyof ProfileCard, v as never)}
+                  value={String(local[key] ?? '')}
+                  onChangeText={(v) => updateField(key, v)}
                   placeholder={String(label)}
                   placeholderTextColor={tokens.textMuted}
                   style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
                 />
+                {key === 'email' && errors.email && <Text style={{ color: tokens.red, fontSize: 11 }}>{errors.email}</Text>}
               </View>
             ))}
+            {/* Нижний хэштег */}
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>Нижний хэштег</Text>
+              <TextInput
+                value={local.hashtag}
+                onChangeText={(v) => updateField('hashtag', v)}
+                placeholder='#UnqPower2026'
+                placeholderTextColor={tokens.textMuted}
+                style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
+              />
+            </View>
+            {/* Теги */}
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>Теги</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  value={tagInput}
+                  onChangeText={setTagInput}
+                  placeholder='#Дизайнер'
+                  placeholderTextColor={tokens.textMuted}
+                  style={[styles.fieldInput, { flex: 1, backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
+                  onSubmitEditing={addTag}
+                />
+                <Pressable onPress={addTag} style={[styles.addBtn, { alignSelf: 'center' }]}>
+                  <Text style={[styles.addText, { color: tokens.accent }]}>Добавить</Text>
+                </Pressable>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                {local.tags.map((tag: string, idx: number) => (
+                  <View key={tag + idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: tokens.inputBg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                    <Text style={{ color: tokens.text, fontSize: 12 }}>{tag}</Text>
+                    <Pressable onPress={() => removeTag(idx)}>
+                      <Text style={{ color: tokens.red, marginLeft: 4 }}>×</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            </View>
+            {/* Адрес */}
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>Адрес</Text>
+              <TextInput
+                value={local.address}
+                onChangeText={(v) => updateField('address', v)}
+                placeholder='Farghona, Mustaqillik 13'
+                placeholderTextColor={tokens.textMuted}
+                style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
+              />
+            </View>
+            {/* Индекс */}
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>Индекс</Text>
+              <TextInput
+                value={local.postcode}
+                onChangeText={(v) => updateField('postcode', v)}
+                placeholder='150100'
+                placeholderTextColor={tokens.textMuted}
+                style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
+              />
+            </View>
+            {/* Дополнительный телефон */}
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>Доп. телефон</Text>
+              <TextInput
+                value={local.extraPhone}
+                onChangeText={(v) => updateField('extraPhone', v)}
+                placeholder='+998200001360'
+                placeholderTextColor={tokens.textMuted}
+                style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
+              />
+            </View>
+          </View>
+
+          {/* Кастомный цвет акцента и брендинг */}
+          <View style={styles.block}>
+            <Text style={[styles.blockLabel, { color: tokens.textMuted }]}>Кастомный цвет акцента</Text>
+            <TextInput
+              value={local.customColor}
+              onChangeText={(v) => updateField('customColor', v)}
+              placeholder='#111111'
+              placeholderTextColor={tokens.textMuted}
+              style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text, width: 120 }]}
+            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+              <Switch
+                value={local.showBranding}
+                onValueChange={(v) => updateField('showBranding', v)}
+                trackColor={{ false: tokens.border, true: tokens.accent }}
+                thumbColor={local.showBranding ? tokens.accent : tokens.inputBg}
+              />
+              <Text style={{ color: tokens.text, marginLeft: 8 }}>Скрыть брендинг UNQX</Text>
+            </View>
           </View>
 
           <View style={styles.block}>
             <Text style={[styles.blockLabel, { color: tokens.textMuted }]}>Тема визитки</Text>
             <View style={styles.themeGrid}>
-              {THEME_OPTIONS.map((option) => (
-                <Pressable
-                  key={option.id}
-                  onPress={() => updateField('theme', option.id)}
-                  style={[
-                    styles.themeBtn,
-                    {
-                      borderColor: local.theme === option.id ? tokens.borderStrong : tokens.border,
-                      backgroundColor: local.theme === option.id ? tokens.surface : tokens.inputBg,
-                    },
-                  ]}
-                >
-                  <View style={[styles.themeSwatch, { backgroundColor: option.swatch, borderColor: tokens.border }]} />
-                  <Text style={[styles.themeText, { color: local.theme === option.id ? tokens.text : tokens.textMuted }]} numberOfLines={1}>
-                    {option.label}
-                  </Text>
-                </Pressable>
-              ))}
+              {THEME_OPTIONS.map((option) => {
+                const locked = option.premium && String(userPlan).toLowerCase() !== 'premium';
+                return (
+                  <Pressable
+                    key={option.id}
+                    onPress={() => !locked && updateField('theme', option.id)}
+                    style={[
+                      styles.themeBtn,
+                      {
+                        borderColor: local.theme === option.id ? tokens.borderStrong : tokens.border,
+                        backgroundColor: local.theme === option.id ? tokens.surface : tokens.inputBg,
+                        opacity: locked ? 0.5 : 1,
+                      },
+                    ]}
+                    disabled={locked}
+                  >
+                    <View style={[styles.themeSwatch, { backgroundColor: option.swatch, borderColor: tokens.border, position: 'relative' }]}
+                    >
+                      {locked && (
+                        <Text style={{
+                          position: 'absolute',
+                          left: 0, right: 0, top: 0, bottom: 0,
+                          textAlign: 'center',
+                          textAlignVertical: 'center',
+                          color: tokens.textMuted,
+                          fontSize: 13,
+                          fontWeight: 'bold',
+                        }}>🔒</Text>
+                      )}
+                    </View>
+                    <Text style={[styles.themeText, { color: local.theme === option.id ? tokens.text : tokens.textMuted }]} numberOfLines={1}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
+            {String(userPlan).toLowerCase() !== 'premium' && (
+              <Text style={{ color: tokens.textMuted, fontSize: 12, marginTop: 6 }}>
+                Премиум-темы доступны только на тарифе Premium
+              </Text>
+            )}
           </View>
 
           <View style={styles.block}>
@@ -176,6 +426,7 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
                 </Pressable>
               ) : null}
             </View>
+            {errors.buttons && <Text style={{ color: tokens.red, fontSize: 11, marginBottom: 4 }}>{errors.buttons}</Text>}
 
             {local.buttons.map((button, index) => (
               <View key={`btn-${index}`} style={styles.buttonRow}>
@@ -225,9 +476,17 @@ export function CardEditor({ visible, tokens, card, saving, onClose, onPreview, 
           </View>
 
           <Pressable
-            disabled={saving || !isDirty}
-            onPress={() => onSave(local)}
-            style={[styles.saveBtn, { backgroundColor: tokens.accent, opacity: saving || !isDirty ? 0.5 : 1 }]}
+            disabled={saving || !isDirty || Object.keys(errors).length > 0}
+            onPress={() => {
+              // Фильтруем кнопки: только с label и url
+              const filteredButtons = Array.isArray(local.buttons)
+                ? local.buttons.filter((b) => b.label && b.url)
+                : [];
+              const payload = { ...local, buttons: filteredButtons };
+              console.log('Saving card:', payload); // Для отладки
+              onSave(payload);
+            }}
+            style={[styles.saveBtn, { backgroundColor: tokens.accent, opacity: saving || !isDirty || Object.keys(errors).length > 0 ? 0.5 : 1 }]}
           >
             {saving ? (
               <ActivityIndicator color={tokens.accentText} />

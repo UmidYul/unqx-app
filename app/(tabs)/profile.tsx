@@ -488,9 +488,14 @@ export default function ProfilePage(): React.JSX.Element {
       toast.success(MESSAGES.toast.orderSent);
       void incrementSuccess().then(() => maybeAskReview()).catch(() => undefined);
     },
-    onError: () => {
-      setError('Не удалось создать заказ браслета');
-      toast.error(MESSAGES.toast.orderSendFailed, MESSAGES.common.retryConnection);
+    onError: (err: any) => {
+      let errorMsg = 'Не удалось создать заказ браслета';
+      if (err && typeof err === 'object') {
+        if (err.message) errorMsg = String(err.message);
+        if (err.code && err.code !== 'UNKNOWN') errorMsg += ` (${err.code})`;
+      }
+      setError(errorMsg);
+      toast.error(errorMsg, MESSAGES.common.retryConnection);
     },
   });
 
