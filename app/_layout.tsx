@@ -176,12 +176,12 @@ function RootNavigator(): React.JSX.Element {
       const previousState = appStateRef.current;
       appStateRef.current = nextState;
 
-      if (nextState === 'background' || nextState === 'inactive') {
+      if (nextState === 'background') {
         backgroundAtRef.current = Date.now();
         return;
       }
 
-      if (nextState === 'active' && previousState !== 'active') {
+      if (nextState === 'active' && previousState === 'background') {
         void (async () => {
           const [enabled, timeoutMs] = await Promise.all([
             getBiometricsEnabled(),

@@ -6,17 +6,24 @@ import { extractSlug } from '@/utils/links';
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://unqx.uz/api';
 const TOKEN_KEY = 'unqx.auth.bearer';
 const REFRESH_TOKEN_KEY = 'unqx.auth.refresh';
-const CSRF_BOOTSTRAP_PATH = '/login';
+const CSRF_BOOTSTRAP_PATH = '/auth/me';
 
 export class ApiError extends Error implements ApiErrorShape {
   status: number;
   code: string | null;
+  details: Record<string, unknown> | null;
 
-  constructor(message: string, status: number, code: string | null) {
+  constructor(
+    message: string,
+    status: number,
+    code: string | null,
+    details: Record<string, unknown> | null = null,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -34,16 +41,6 @@ let csrfTokenCache: string | null = null;
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
 }
-
-function resolveAppOrigin(baseUrl: string): string {
-  try {
-    return new URL(baseUrl).origin;
-  } catch {
-    return 'https://unqx.uz';
-  }
-}
-
-const APP_ORIGIN = resolveAppOrigin(API_BASE_URL);
 
 function buildQuery(query?: Record<string, ApiQueryValue>): string {
   if (!query) {
@@ -88,36 +85,16 @@ function isWriteMethod(method: string): boolean {
   return method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
 }
 
-function parseCsrfTokenFromHtml(html: string): string | null {
-  if (!html) {
-    return null;
-  }
-
-  const patterns = [
-    /<meta[^>]*name=["']csrf-token["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]*content=["']([^"']+)["'][^>]*name=["']csrf-token["'][^>]*>/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) {
-      return match[1];
-    }
-  }
-
-  return null;
-}
-
 async function ensureCsrfToken(forceRefresh = false): Promise<string | null> {
   if (!forceRefresh && csrfTokenCache) {
     return csrfTokenCache;
   }
 
   try {
-    const response = await fetch(`${APP_ORIGIN}${CSRF_BOOTSTRAP_PATH}`, {
+    const response = await fetch(buildUrl(CSRF_BOOTSTRAP_PATH), {
       method: 'GET',
       headers: {
-        Accept: 'text/html',
+        Accept: 'application/json',
       },
       credentials: 'include',
     });
@@ -126,8 +103,8 @@ async function ensureCsrfToken(forceRefresh = false): Promise<string | null> {
       return null;
     }
 
-    const html = await response.text();
-    const token = parseCsrfTokenFromHtml(html);
+    const payload = (await response.json().catch(() => null)) as { csrfToken?: unknown } | null;
+    const token = typeof payload?.csrfToken === 'string' ? payload.csrfToken.trim() : '';
     if (!token) {
       return null;
     }
@@ -148,8 +125,10 @@ async function parseApiError(response: Response, endpoint: string, method: strin
   });
 
   if (isJsonResponse(contentType)) {
-    const payload = (await response.json().catch(() => null)) as { error?: string; code?: string } | null;
-    throw new ApiError(payload?.error ?? 'Request failed', response.status, payload?.code ?? null);
+    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    const message = typeof payload?.error === 'string' ? payload.error : 'Request failed';
+    const code = typeof payload?.code === 'string' ? payload.code : null;
+    throw new ApiError(message, response.status, code, payload);
   }
 
   const text = await response.text().catch(() => null);
@@ -476,9 +455,6 @@ export const nfcApi = {
     const encodedUid = encodeURIComponent(cleanUid);
     const deleteVariants: Array<() => Promise<unknown>> = [
       () => apiClient.delete(`/nfc/tags/${encodedUid}`),
-      () => apiClient.delete(`/nfc/tags/${encodedUid}/delete`),
-      () => apiClient.post(`/nfc/tags/${encodedUid}/delete`, {}),
-      () => apiClient.post('/nfc/tags/delete', { uid: cleanUid }),
       () => apiClient.delete('/nfc/tags', { query: { uid: cleanUid } }),
     ];
 

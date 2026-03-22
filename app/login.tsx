@@ -8,15 +8,16 @@ import { MESSAGES } from '@/constants/messages';
 import { useAuthStatus } from '@/hooks/useAuthStatus';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { AuthSessionError, loginWithApi } from '@/services/authSession';
-import { validateEmail } from '@/services/authValidation';
+import { validateEmail, validateLogin } from '@/services/authValidation';
 import { useThemeContext } from '@/theme/ThemeProvider';
+import { toUserErrorMessage } from '@/utils/errorMessages';
 
 export default function LoginPage(): React.JSX.Element {
   const { safePush, safeReplace } = useThrottledNavigation();
   const { tokens } = useThemeContext();
   const { ready, signedIn } = useAuthStatus();
 
-  const [email, setEmail] = React.useState('');
+  const [login, setLogin] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
@@ -24,10 +25,10 @@ export default function LoginPage(): React.JSX.Element {
   const [verificationEmail, setVerificationEmail] = React.useState<string>('');
 
   const submit = React.useCallback(async () => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const emailError = validateEmail(normalizedEmail);
-    if (emailError) {
-      setError(emailError);
+    const normalizedLogin = login.trim();
+    const loginError = validateLogin(normalizedLogin);
+    if (loginError) {
+      setError(loginError);
       return;
     }
     if (!password) {
@@ -39,23 +40,27 @@ export default function LoginPage(): React.JSX.Element {
     setError(null);
     setVerificationEmail('');
     try {
-      const result = await loginWithApi(normalizedEmail, password);
+      const result = await loginWithApi(normalizedLogin, password);
       if (result.requiresVerification) {
         setError(result.message ?? MESSAGES.auth.unverifiedEmail);
-        setVerificationEmail(normalizedEmail);
+        let emailForVerification = typeof result.email === 'string' ? result.email.trim().toLowerCase() : '';
+        if (!emailForVerification && validateEmail(normalizedLogin) === null) {
+          emailForVerification = normalizedLogin.toLowerCase();
+        }
+        setVerificationEmail(emailForVerification);
         return;
       }
       safeReplace('/(tabs)/home');
     } catch (e) {
       if (e instanceof AuthSessionError) {
-        setError(e.message);
+        setError(toUserErrorMessage(e, MESSAGES.auth.loginError));
         return;
       }
-      setError(e instanceof Error ? e.message : MESSAGES.auth.loginError);
+      setError(toUserErrorMessage(e, MESSAGES.auth.loginError));
     } finally {
       setLoading(false);
     }
-  }, [email, password, safeReplace]);
+  }, [login, password, safeReplace]);
 
   if (!ready) {
     return <AuthLoadingScreen tokens={tokens} title={MESSAGES.ui.auth.sessionChecking} />;
@@ -77,12 +82,11 @@ export default function LoginPage(): React.JSX.Element {
 
         <View style={styles.form}>
           <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder={MESSAGES.ui.auth.emailPlaceholder}
+            value={login}
+            onChangeText={setLogin}
+            placeholder={MESSAGES.ui.auth.loginPlaceholder}
             placeholderTextColor={tokens.textMuted}
             autoCapitalize='none'
-            keyboardType='email-address'
             autoCorrect={false}
             style={[
               styles.input,

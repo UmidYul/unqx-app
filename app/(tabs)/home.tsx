@@ -26,6 +26,7 @@ import {
   fetchContactsLike,
   fetchCurrentUserLike,
   fetchHomeRecentLike,
+  fetchHomeSummaryLike,
 } from '@/services/mobileApi';
 import { AnalyticsSummary, HomeUser, RecentTap } from '@/types';
 import { useThemeContext } from '@/theme/ThemeProvider';
@@ -43,11 +44,15 @@ function parseUser(raw: unknown): HomeUser {
   const source = payload?.user ?? payload;
   const slugs = Array.isArray(payload?.slugs) ? payload.slugs : Array.isArray(source?.slugs) ? source.slugs : [];
   const primarySlug = slugs.find((item: any) => item?.isPrimary)?.fullSlug ?? slugs[0]?.fullSlug ?? payload?.selectedSlug;
+  const normalizedPlan = String(source?.effectivePlan ?? source?.plan ?? 'none').trim().toLowerCase();
+  const plan = normalizedPlan === 'premium' || normalizedPlan === 'basic' || normalizedPlan === 'none'
+    ? normalizedPlan
+    : 'none';
   return {
     id: source?.id,
     name: source?.name ?? source?.displayName ?? source?.firstName ?? 'UNQX User',
     slug: source?.slug ?? primarySlug ?? source?.username ?? 'UNQX001',
-    plan: source?.plan ?? source?.effectivePlan ?? 'basic',
+    plan,
   };
 }
 
@@ -136,6 +141,7 @@ export default function HomePage(): React.JSX.Element {
       retry: 'Qayta urinish',
       premium: 'Premium',
       basic: 'Asosiy',
+      noPlan: 'Tarif tanlanmagan',
       share: 'Ulashish',
       showQr: 'QR ko\'rsatish',
       today: 'Bugun',
@@ -150,6 +156,7 @@ export default function HomePage(): React.JSX.Element {
       retry: 'Повторить',
       premium: 'Премиум',
       basic: 'Базовый',
+      noPlan: 'Тариф не выбран',
       share: 'Поделиться',
       showQr: 'Показать QR',
       today: 'Сегодня',
@@ -168,8 +175,8 @@ export default function HomePage(): React.JSX.Element {
   });
 
   const analyticsQuery = useQuery({
-    queryKey: queryKeys.analytics,
-    queryFn: fetchAnalyticsDashboardLike,
+    queryKey: queryKeys.homeSummary,
+    queryFn: fetchHomeSummaryLike,
   });
 
   const recentQuery = useQuery({
@@ -284,7 +291,7 @@ export default function HomePage(): React.JSX.Element {
             tokens={tokens}
             onRetry={() => {
               void queryClient.invalidateQueries({ queryKey: queryKeys.me });
-              void queryClient.invalidateQueries({ queryKey: queryKeys.analytics });
+              void queryClient.invalidateQueries({ queryKey: queryKeys.homeSummary });
               void queryClient.invalidateQueries({ queryKey: queryKeys.homeRecent });
             }}
           />
@@ -299,7 +306,9 @@ export default function HomePage(): React.JSX.Element {
 
   const growth = Number(summary.growth ?? 0);
   const growthText = `${growth > 0 ? '+' : ''}${growth}% ${homeText.growthSuffix}`;
-  const isPremium = String(user.plan).toLowerCase() === 'premium';
+  const normalizedPlan = String(user.plan).toLowerCase();
+  const isPremium = normalizedPlan === 'premium';
+  const planLabel = isPremium ? homeText.premium : normalizedPlan === 'basic' ? homeText.basic : homeText.noPlan;
 
   return (
     <ErrorBoundary>
@@ -315,7 +324,7 @@ export default function HomePage(): React.JSX.Element {
                 <AnimatedPressable
                   onPress={() => {
                     void queryClient.invalidateQueries({ queryKey: queryKeys.me });
-                    void queryClient.invalidateQueries({ queryKey: queryKeys.analytics });
+                    void queryClient.invalidateQueries({ queryKey: queryKeys.homeSummary });
                     void queryClient.invalidateQueries({ queryKey: queryKeys.homeRecent });
                   }}
                 >
@@ -332,7 +341,7 @@ export default function HomePage(): React.JSX.Element {
 
               <View style={styles.heroPills}>
                 <BlurView intensity={28} tint='dark' style={styles.blurPill}>
-                  <Text style={styles.blurText}>{isPremium ? homeText.premium : homeText.basic}</Text>
+                  <Text style={styles.blurText}>{planLabel}</Text>
                 </BlurView>
                 <BlurView intensity={28} tint='dark' style={styles.blurPill}>
                   <Text style={styles.blurText}>● NFC active</Text>

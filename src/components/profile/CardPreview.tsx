@@ -4,6 +4,7 @@ import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ProfileCard, ThemeTokens } from '@/types';
 import { findButtonIcon } from '@/components/profile/buttonIcons';
 import { useRetryImageUri } from '@/hooks/useRetryImageUri';
+import { useLanguageContext } from '@/i18n/LanguageProvider';
 
 interface CardPreviewProps {
   visible: boolean;
@@ -70,6 +71,66 @@ function resolvePreviewTheme(theme: ProfileCard['theme']): {
       buttonText: '#e8dcc0',
     };
   }
+  if (theme === 'sage_luxe') {
+    return {
+      cardBg: '#eef4ef',
+      avatarBg: '#dde8df',
+      avatarText: '#3f5f47',
+      name: '#223328',
+      job: '#607a67',
+      slug: '#3f5f47',
+      buttonBg: '#e2ebe4',
+      buttonText: '#223328',
+    };
+  }
+  if (theme === 'midnight_obsidian') {
+    return {
+      cardBg: '#101827',
+      avatarBg: '#1a2435',
+      avatarText: '#d5deef',
+      name: '#f3f6fb',
+      job: 'rgba(226,235,248,0.65)',
+      slug: '#d5deef',
+      buttonBg: 'rgba(255,255,255,0.10)',
+      buttonText: '#f3f6fb',
+    };
+  }
+  if (theme === 'golden_noir') {
+    return {
+      cardBg: '#141a27',
+      avatarBg: '#1f2738',
+      avatarText: '#e2c88a',
+      name: '#f7f3e8',
+      job: 'rgba(247,243,232,0.68)',
+      slug: '#e2c88a',
+      buttonBg: 'rgba(226,200,138,0.16)',
+      buttonText: '#f7f3e8',
+    };
+  }
+  if (theme === 'aurora_codex') {
+    return {
+      cardBg: '#efe1c2',
+      avatarBg: '#e6d6b1',
+      avatarText: '#5b4031',
+      name: '#342419',
+      job: '#7b5d4d',
+      slug: '#5b4031',
+      buttonBg: '#f5e9cf',
+      buttonText: '#342419',
+    };
+  }
+  if (theme === 'nebula_glass') {
+    return {
+      cardBg: '#1c1c1e',
+      avatarBg: '#2a2a2d',
+      avatarText: '#e3e3e8',
+      name: '#f7f7fb',
+      job: 'rgba(247,247,251,0.64)',
+      slug: '#d8d8de',
+      buttonBg: 'rgba(255,255,255,0.08)',
+      buttonText: '#f7f7fb',
+    };
+  }
 
   return {
     cardBg: '#111111',
@@ -84,6 +145,8 @@ function resolvePreviewTheme(theme: ProfileCard['theme']): {
 }
 
 export function CardPreview({ visible, card, tokens, onClose }: CardPreviewProps): React.JSX.Element {
+  const { language } = useLanguageContext();
+  const isUz = language === 'uz';
   const theme = resolvePreviewTheme(card.theme);
   const avatarImage = useRetryImageUri(card.avatarUrl);
 
@@ -91,7 +154,7 @@ export function CardPreview({ visible, card, tokens, onClose }: CardPreviewProps
     <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.inner} onPress={() => undefined}>
-          <Text style={styles.hint}>КАК ВИДЯТ ДРУГИЕ</Text>
+          <Text style={styles.hint}>{isUz ? "Boshqalar qanday ko'radi" : 'КАК ВИДЯТ ДРУГИЕ'}</Text>
 
           <View style={[styles.card, { backgroundColor: theme.cardBg }]}>
             <View style={styles.centered}>
@@ -129,7 +192,7 @@ export function CardPreview({ visible, card, tokens, onClose }: CardPreviewProps
           </View>
 
           <Pressable onPress={onClose} style={[styles.closeBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-            <Text style={[styles.closeText, { color: '#ffffff' }]}>Закрыть</Text>
+            <Text style={[styles.closeText, { color: '#ffffff' }]}>{isUz ? 'Yopish' : 'Закрыть'}</Text>
           </Pressable>
         </Pressable>
       </Pressable>

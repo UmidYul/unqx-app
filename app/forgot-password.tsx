@@ -6,6 +6,7 @@ import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { AuthSessionError, forgotPasswordWithApi } from '@/services/authSession';
 import { validateEmail } from '@/services/authValidation';
 import { useThemeContext } from '@/theme/ThemeProvider';
+import { toUserErrorMessage } from '@/utils/errorMessages';
 
 export default function ForgotPasswordPage(): React.JSX.Element {
   const { tokens } = useThemeContext();
@@ -34,10 +35,10 @@ export default function ForgotPasswordPage(): React.JSX.Element {
       setInfo(result.message);
     } catch (e) {
       if (e instanceof AuthSessionError) {
-        setError(e.message);
+        setError(toUserErrorMessage(e, MESSAGES.auth.otpSendError));
         return;
       }
-      setError(e instanceof Error ? e.message : MESSAGES.auth.otpSendError);
+      setError(toUserErrorMessage(e, MESSAGES.auth.otpSendError));
     } finally {
       setLoading(false);
     }

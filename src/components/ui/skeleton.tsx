@@ -29,11 +29,16 @@ export function SkeletonBlock({
 }: SkeletonBlockProps): React.JSX.Element {
   const progress = useSharedValue(0);
   const isDark = tokens.bg !== '#ffffff';
+  const baseColor = isDark ? 'rgba(255,255,255,0.08)' : '#EEF1F4';
+  const borderColor = isDark ? 'rgba(255,255,255,0.07)' : '#E4E8ED';
+  const shimmerColors: readonly [string, string, string] = isDark
+    ? ['rgba(255,255,255,0)', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0)']
+    : ['rgba(255,255,255,0)', 'rgba(255,255,255,0.86)', 'rgba(255,255,255,0)'];
 
   React.useEffect(() => {
     progress.value = withRepeat(
       withTiming(1, {
-        duration: 1200,
+        duration: 1350,
         easing: Easing.inOut(Easing.quad),
       }),
       -1,
@@ -42,7 +47,7 @@ export function SkeletonBlock({
   }, [progress]);
 
   const shimmerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: interpolate(progress.value, [0, 1], [-160, 160]) }],
+    transform: [{ translateX: interpolate(progress.value, [0, 1], [-220, 420]) }],
   }));
 
   return (
@@ -53,15 +58,15 @@ export function SkeletonBlock({
           width,
           height,
           borderRadius: radius,
-          backgroundColor: tokens.surface,
-          borderColor: tokens.border,
+          backgroundColor: baseColor,
+          borderColor,
         },
         style,
       ]}
     >
       <Animated.View pointerEvents='none' style={[styles.shimmer, shimmerStyle]}>
         <LinearGradient
-          colors={isDark ? ['rgba(255,255,255,0.02)', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0.02)'] : ['#f0f0f0', '#ffffff', '#f0f0f0']}
+          colors={shimmerColors}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.shimmerGradient}
@@ -92,7 +97,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: 120,
+    width: 180,
   },
   shimmerGradient: {
     flex: 1,

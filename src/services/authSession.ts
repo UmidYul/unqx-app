@@ -4,6 +4,7 @@ import { MESSAGES } from '@/constants/messages';
 import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { clearPersistedQueryCache } from '@/lib/queryClient';
 import { secureStorage } from '@/utils/secureStorage';
+import { toUserErrorMessage } from '@/utils/errorMessages';
 
 const AUTH_SIGNED_KEY = 'unqx.auth.signed';
 
@@ -22,6 +23,20 @@ export class AuthSessionError extends Error {
     this.code = code;
     this.status = status;
   }
+}
+
+export interface AvailabilityFieldResult {
+  provided: boolean;
+  valid: boolean;
+  available: boolean;
+  checked: boolean;
+  message: string;
+}
+
+export interface RegistrationAvailabilityResult {
+  supported: boolean;
+  login: AvailabilityFieldResult;
+  email: AvailabilityFieldResult;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -128,18 +143,10 @@ function findFirstStringByKeys(value: unknown, keys: readonly string[]): string 
 }
 
 function authErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.code && AUTH_CODE_MESSAGES[error.code]) {
-      return AUTH_CODE_MESSAGES[error.code];
-    }
-    return error.message || MESSAGES.auth.errorTitle;
+  if (error instanceof ApiError && error.code && AUTH_CODE_MESSAGES[error.code]) {
+    return AUTH_CODE_MESSAGES[error.code];
   }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return MESSAGES.auth.errorTitle;
+  return toUserErrorMessage(error, MESSAGES.auth.errorTitle);
 }
 
 function toAuthError(error: unknown): AuthSessionError {
@@ -148,6 +155,97 @@ function toAuthError(error: unknown): AuthSessionError {
   }
 
   return new AuthSessionError(authErrorMessage(error), null, 0);
+}
+
+function buildAvailabilityField(provided: boolean): AvailabilityFieldResult {
+  return {
+    provided,
+    valid: true,
+    available: true,
+    checked: false,
+    message: '',
+  };
+}
+
+function normalizeAvailabilityField(raw: unknown, provided: boolean): AvailabilityFieldResult {
+  const field = buildAvailabilityField(provided);
+  if (!raw || typeof raw !== 'object') {
+    return field;
+  }
+
+  const value = raw as Record<string, unknown>;
+  if (typeof value.provided === 'boolean') field.provided = value.provided;
+  if (typeof value.valid === 'boolean') field.valid = value.valid;
+  if (typeof value.available === 'boolean') field.available = value.available;
+  if (typeof value.checked === 'boolean') field.checked = value.checked;
+  if (typeof value.message === 'string') field.message = value.message;
+  return field;
+}
+
+function extractEmailFromPayload(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const email = (value as Record<string, unknown>).email;
+  if (typeof email !== 'string') {
+    return undefined;
+  }
+
+  const normalized = email.trim().toLowerCase();
+  return normalized || undefined;
+}
+
+async function hasAuthenticatedSession(): Promise<boolean> {
+  try {
+    const payload = await apiClient.get<any>('/auth/me');
+    return Boolean(payload?.authenticated);
+  } catch {
+    return false;
+  }
+}
+
+export async function checkRegistrationAvailability(input: {
+  login?: string;
+  email?: string;
+}): Promise<RegistrationAvailabilityResult> {
+  const login = String(input.login ?? '').trim();
+  const email = String(input.email ?? '').trim().toLowerCase();
+  const hasLogin = Boolean(login);
+  const hasEmail = Boolean(email);
+
+  const defaults: RegistrationAvailabilityResult = {
+    supported: true,
+    login: buildAvailabilityField(hasLogin),
+    email: buildAvailabilityField(hasEmail),
+  };
+
+  if (!hasLogin && !hasEmail) {
+    return defaults;
+  }
+
+  try {
+    const payload = await apiClient.get<any>('/auth/check-availability', {
+      query: {
+        login: hasLogin ? login : undefined,
+        email: hasEmail ? email : undefined,
+      },
+    });
+
+    return {
+      supported: true,
+      login: normalizeAvailabilityField(payload?.login, hasLogin),
+      email: normalizeAvailabilityField(payload?.email, hasEmail),
+    };
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
+      return {
+        ...defaults,
+        supported: false,
+      };
+    }
+    throw toAuthError(error);
+  }
 }
 
 function applySentryUserFromPayload(payload: unknown): boolean {
@@ -178,10 +276,13 @@ async function syncSentryUserFromApi(): Promise<void> {
   }
 }
 
-export async function loginWithApi(email: string, password: string): Promise<{ requiresVerification: boolean; message?: string }> {
+export async function loginWithApi(
+  login: string,
+  password: string,
+): Promise<{ requiresVerification: boolean; message?: string; email?: string }> {
   try {
-    const payload = await apiClient.postFirst<any>(['/auth/login', '/login'], {
-      email,
+    const payload = await apiClient.post<any>('/auth/login', {
+      login,
       password,
       rememberMe: true,
     });
@@ -200,6 +301,7 @@ export async function loginWithApi(email: string, password: string): Promise<{ r
       return {
         requiresVerification: true,
         message: payload?.error || MESSAGES.auth.unverifiedEmail,
+        email: extractEmailFromPayload(payload),
       };
     }
 
@@ -211,6 +313,7 @@ export async function loginWithApi(email: string, password: string): Promise<{ r
       return {
         requiresVerification: true,
         message: error.message || MESSAGES.auth.unverifiedEmail,
+        email: extractEmailFromPayload(error.details),
       };
     }
     throw toAuthError(error);
@@ -219,16 +322,16 @@ export async function loginWithApi(email: string, password: string): Promise<{ r
 
 export async function registerWithApi(input: {
   firstName: string;
-  email: string;
+  city: string;
+  login: string;
+  email?: string | null;
   password: string;
   confirmPassword: string;
 }): Promise<{ signedIn: boolean; message?: string; email?: string }> {
   try {
-    const payload = await apiClient.postFirst<any>(['/auth/register', '/register'], input);
+    const payload = await apiClient.post<any>('/auth/register', input);
     const token = await persistAuth(payload);
-    const authenticated = Boolean(payload?.authenticated || payload?.ok === true && payload?.user);
-
-    if (token || payload?.user || payload?.authenticated === true || authenticated) {
+    if (token || payload?.user || payload?.authenticated === true) {
       await setSignedFlag(true);
       if (!applySentryUserFromPayload(payload)) {
         await syncSentryUserFromApi();
@@ -236,11 +339,35 @@ export async function registerWithApi(input: {
       return { signedIn: true };
     }
 
+    // Some deployments return register success without auto-login cookie.
+    if (payload?.ok === true) {
+      const sessionReady = await hasAuthenticatedSession();
+      if (sessionReady) {
+        await setSignedFlag(true);
+        await syncSentryUserFromApi();
+        return { signedIn: true };
+      }
+
+      const loginResult = await loginWithApi(input.login, input.password).catch(() => null);
+      if (loginResult && !loginResult.requiresVerification) {
+        return { signedIn: true };
+      }
+      if (loginResult?.requiresVerification) {
+        await setSignedFlag(false);
+        return {
+          signedIn: false,
+          message: loginResult.message ?? MESSAGES.auth.unverifiedEmail,
+          email: loginResult.email ?? (input.email ?? undefined),
+        };
+      }
+    }
+
     await setSignedFlag(false);
+    const hasEmail = Boolean(String(input.email ?? '').trim());
     return {
       signedIn: false,
-      message: payload?.message || MESSAGES.auth.registerDoneVerify,
-      email: input.email,
+      message: payload?.message || (hasEmail ? MESSAGES.auth.registerDoneVerify : MESSAGES.auth.registerDoneLogin),
+      email: input.email ?? undefined,
     };
   } catch (error) {
     throw toAuthError(error);
@@ -249,7 +376,7 @@ export async function registerWithApi(input: {
 
 export async function sendEmailOtpWithApi(email: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const payload = await apiClient.postFirst<any>(['/auth/send-otp', '/send-otp'], {
+    const payload = await apiClient.post<any>('/auth/send-otp', {
       email,
     });
 
@@ -264,7 +391,7 @@ export async function sendEmailOtpWithApi(email: string): Promise<{ ok: boolean;
 
 export async function verifyEmailWithApi(email: string, code: string): Promise<{ signedIn: boolean; message?: string }> {
   try {
-    const payload = await apiClient.postFirst<any>(['/auth/verify-email', '/verify-email'], {
+    const payload = await apiClient.post<any>('/auth/verify-email', {
       email,
       code,
     });
@@ -292,7 +419,7 @@ export async function verifyEmailWithApi(email: string, code: string): Promise<{
 
 export async function forgotPasswordWithApi(email: string): Promise<{ message: string }> {
   try {
-    const payload = await apiClient.postFirst<any>(['/auth/forgot-password', '/forgot-password'], {
+    const payload = await apiClient.post<any>('/auth/forgot-password', {
       email,
     });
 
@@ -311,7 +438,7 @@ export async function resetPasswordWithApi(input: {
   confirmPassword: string;
 }): Promise<{ ok: boolean; message: string }> {
   try {
-    const payload = await apiClient.postFirst<any>(['/auth/reset-password', '/reset-password'], input);
+    const payload = await apiClient.post<any>('/auth/reset-password', input);
     await secureStorage.clear();
     await setSignedFlag(false);
 
@@ -326,7 +453,7 @@ export async function resetPasswordWithApi(input: {
 
 export async function signOut(): Promise<void> {
   try {
-    await apiClient.postFirst(['/auth/logout', '/logout'], {});
+    await apiClient.post('/auth/logout', {});
   } catch {
     // noop
   }

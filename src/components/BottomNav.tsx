@@ -74,7 +74,7 @@ export function BottomNav({ tokens }: BottomNavProps): React.JSX.Element {
               if (pathname?.includes(`/${item.id}`)) {
                 return;
               }
-              setActiveTab(item.id);
+              setActiveTab(item.id as ScreenTab);
               safeReplace(item.route);
             }}
             containerStyle={styles.itemWrap}

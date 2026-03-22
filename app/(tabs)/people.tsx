@@ -58,30 +58,37 @@ function parseContacts(raw: unknown): Contact[] {
     return [];
   }
 
-  return source
-    .map((item: any) => {
+  const mapped: Array<Contact | null> = source.map((item: any) => {
       const taps = Number(item?.taps ?? item?.views ?? item?.count ?? 0);
       const lastSeen = String(item?.lastSeen ?? item?.time ?? item?.lastTapAt ?? item?.latestTapAt ?? item?.viewedAt ?? '').trim();
       const saved = Boolean(item?.saved);
+      const subscribed = Boolean(item?.subscribed);
 
-      // Contacts tab should not be polluted by plain signups that never interacted with your card.
-      const hasInteraction = taps > 0 || Boolean(lastSeen);
-      if (!saved && !hasInteraction) {
+      // Contacts tab should show only explicitly added people.
+      if (!saved && !subscribed) {
         return null;
       }
 
-      return {
+      const contact: Contact = {
         name: item?.name ?? item?.displayName ?? item?.ownerName ?? item?.firstName ?? 'Unknown',
         slug: item?.slug ?? item?.code ?? item?.fullSlug ?? 'UNQ000',
-        avatarUrl: resolvePersonAvatar(item),
         phone: item?.phone,
         taps,
         tag: item?.tag ?? item?.plan ?? 'basic',
         lastSeen,
         saved,
-      } satisfies Contact;
-    })
-    .filter((item): item is Contact => Boolean(item));
+        subscribed,
+      };
+
+      const avatarUrl = resolvePersonAvatar(item);
+      if (avatarUrl) {
+        contact.avatarUrl = avatarUrl;
+      }
+
+      return contact;
+    });
+
+  return mapped.filter((item): item is Contact => item !== null);
 }
 
 function normalizeResidentSlug(value: unknown): string | null {
@@ -290,7 +297,7 @@ export default function PeoplePage(): React.JSX.Element {
       noFavorites: 'Sevimlilar yo\'q',
       noFavoritesHint: 'Kontakt yonidagi ★ ni bosing',
       noContacts: 'Kontaktlar yo\'q',
-      noContactsHint: 'Hali hech kim vizitkangizni tap qilmagan',
+      noContactsHint: 'Siz hali hech kimni kontaktlarga qo\'shmagansiz',
       residentSearch: 'Rezident qidirish...',
       residentsCount: 'rezident',
       more: 'yana',
@@ -315,7 +322,7 @@ export default function PeoplePage(): React.JSX.Element {
       noFavorites: 'Нет избранных',
       noFavoritesHint: 'Нажми ★ рядом с контактом',
       noContacts: 'Нет контактов',
-      noContactsHint: 'Никто ещё не тапнул твою визитку',
+      noContactsHint: 'Вы ещё никого не добавили в контакты',
       residentSearch: 'Поиск резидента...',
       residentsCount: 'резидентов',
       more: 'ещё',
@@ -397,6 +404,7 @@ export default function PeoplePage(): React.JSX.Element {
       return haystack.includes(query);
     });
   }, [contacts, contactsSearch, favoritesOnly]);
+  const isSingleColumnResidents = width < 370;
 
   const filteredResidents = React.useMemo(() => {
     const query = residentsSearch.trim().toLowerCase();
@@ -407,6 +415,17 @@ export default function PeoplePage(): React.JSX.Element {
       return `${item.name} ${slugValues}`.toLowerCase().includes(query);
     });
   }, [residents, residentsSearch]);
+  const residentRows = React.useMemo(() => {
+    if (isSingleColumnResidents) {
+      return filteredResidents.map((resident) => [resident]);
+    }
+
+    const rows: Resident[][] = [];
+    for (let i = 0; i < filteredResidents.length; i += 2) {
+      rows.push(filteredResidents.slice(i, i + 2));
+    }
+    return rows;
+  }, [filteredResidents, isSingleColumnResidents]);
 
   const saveMutation = useMutation({
     networkMode: 'offlineFirst',
@@ -502,17 +521,13 @@ export default function PeoplePage(): React.JSX.Element {
   const medals = ['1', '2', '3'];
   const topPalette = React.useMemo(
     () => [
-      { bg: `${tokens.accent}14`, border: `${tokens.accent}66`, text: tokens.accent, badgeBg: `${tokens.accent}1F` },
-      { bg: tokens.surface, border: tokens.borderStrong, text: tokens.text, badgeBg: tokens.inputBg },
-      { bg: tokens.surface, border: tokens.border, text: tokens.textMuted, badgeBg: tokens.inputBg },
+      { border: '#D9B55A', text: '#8A6A14', badgeBg: '#FFF6DE' },
+      { border: '#B9C3D1', text: '#5A6472', badgeBg: '#F3F6FA' },
+      { border: '#C9A489', text: '#80553A', badgeBg: '#FBEFE6' },
     ],
-    [tokens],
+    [],
   );
-  const isSingleColumnResidents = width < 370;
-  const residentCardWrapStyle = React.useMemo(
-    () => ({ width: isSingleColumnResidents ? '100%' : '48.5%' as const }),
-    [isSingleColumnResidents],
-  );
+  const residentCardWrapStyle = React.useMemo(() => ({ flex: 1 as const }), []);
 
   const hardContactsError = contactsQuery.isError && !contactsQuery.data;
   const hardDirectoryError = directoryQuery.isError && activeTab === 'directory' && !directoryQuery.data;
@@ -725,62 +740,69 @@ export default function PeoplePage(): React.JSX.Element {
                         </View>
                       ) : null}
 
-                      <View style={styles.grid}>
-                        {filteredResidents.map((resident, index) => {
-                          const residentSlugs = resident.slugs?.length ? resident.slugs : [resident.slug];
-                          const visibleSlugs = residentSlugs.slice(0, 3).map((slug) => formatSlug(slug));
-                          const hiddenSlugsCount = Math.max(0, residentSlugs.length - visibleSlugs.length);
+                      <View style={styles.residentRows}>
+                        {residentRows.map((row, rowIndex) => (
+                          <View key={`resident-row-${rowIndex}`} style={styles.residentRow}>
+                            {row.map((resident, colIndex) => {
+                              const residentSlugs = resident.slugs?.length ? resident.slugs : [resident.slug];
+                              const visibleSlugs = residentSlugs.slice(0, 3).map((slug) => formatSlug(slug));
+                              const hiddenSlugsCount = Math.max(0, residentSlugs.length - visibleSlugs.length);
+                              const animationIndex = rowIndex * (isSingleColumnResidents ? 1 : 2) + colIndex;
 
-                          return (
-                            <Animated.View
-                              key={`${resident.name}-${resident.slug}-${index}`}
-                              entering={FadeInDown.duration(220).delay(index * 40)}
-                              style={[styles.residentCardWrap, residentCardWrapStyle]}
-                            >
-                              <AnimatedPressable
-                                onPress={() => handleOpenProfile(resident.slug)}
-                                style={[styles.residentCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
-                              >
-                                <View style={styles.residentHead}>
-                                  <Avatar
-                                    name={resident.name}
-                                    avatarUrl={resident.avatarUrl}
-                                    fallbackColor={tokens.accent}
-                                    style={styles.residentAvatar}
-                                    textStyle={styles.residentAvatarText}
-                                  />
-                                  <View style={styles.residentHeadBody}>
-                                    <Text style={[styles.residentName, { color: tokens.text }]} numberOfLines={1}>{resident.name}</Text>
-                                    {resident.city ? (
-                                      <Text style={[styles.residentCity, { color: tokens.textMuted }]} numberOfLines={1}>
-                                        {resident.city}
-                                      </Text>
-                                    ) : null}
-                                  </View>
-                                </View>
+                              return (
+                                <Animated.View
+                                  key={`${resident.name}-${resident.slug}-${animationIndex}`}
+                                  entering={FadeInDown.duration(220).delay(animationIndex * 40)}
+                                  style={[styles.residentCardWrap, residentCardWrapStyle]}
+                                >
+                                  <AnimatedPressable
+                                    onPress={() => handleOpenProfile(resident.slug)}
+                                    containerStyle={styles.residentCardPressable}
+                                    style={[styles.residentCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+                                  >
+                                    <View style={styles.residentHead}>
+                                      <Avatar
+                                        name={resident.name}
+                                        avatarUrl={resident.avatarUrl}
+                                        fallbackColor={tokens.accent}
+                                        style={styles.residentAvatar}
+                                        textStyle={styles.residentAvatarText}
+                                      />
+                                      <View style={styles.residentHeadBody}>
+                                        <Text style={[styles.residentName, { color: tokens.text }]} numberOfLines={1}>{resident.name}</Text>
+                                        {resident.city ? (
+                                          <Text style={[styles.residentCity, { color: tokens.textMuted }]} numberOfLines={1}>
+                                            {resident.city}
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                    </View>
 
-                                <View style={styles.slugChips}>
-                                  {visibleSlugs.map((slug) => (
-                                    <View key={`${resident.slug}-${slug}`} style={[styles.slugChip, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
-                                      <Text style={[styles.slugChipText, { color: tokens.textMuted }]} numberOfLines={1}>{slug}</Text>
+                                    <View style={styles.slugChips}>
+                                      {visibleSlugs.map((slug) => (
+                                        <View key={`${resident.slug}-${slug}`} style={[styles.slugChip, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
+                                          <Text style={[styles.slugChipText, { color: tokens.textMuted }]} numberOfLines={1}>{slug}</Text>
+                                        </View>
+                                      ))}
+                                      {hiddenSlugsCount > 0 ? (
+                                        <View style={[styles.slugChip, styles.slugChipMore, { borderColor: tokens.border, backgroundColor: `${tokens.accent}14` }]}>
+                                          <Text style={[styles.slugChipText, { color: tokens.accent }]}>{`+${hiddenSlugsCount} ${peopleText.more}`}</Text>
+                                        </View>
+                                      ) : null}
                                     </View>
-                                  ))}
-                                  {hiddenSlugsCount > 0 ? (
-                                    <View style={[styles.slugChip, styles.slugChipMore, { borderColor: tokens.border, backgroundColor: `${tokens.accent}14` }]}>
-                                      <Text style={[styles.slugChipText, { color: tokens.accent }]}>{`+${hiddenSlugsCount} ${peopleText.more}`}</Text>
+                                    <View style={styles.residentFoot}>
+                                      <Pill color={resident.tag === 'premium' ? tokens.amber : tokens.textMuted} bg={resident.tag === 'premium' ? tokens.amberBg : tokens.surface}>
+                                        {resident.tag === 'premium' ? peopleText.premium : peopleText.basic}
+                                      </Pill>
+                                      <Text style={[styles.residentTaps, { color: tokens.textMuted }]}>{resident.taps ?? 0}</Text>
                                     </View>
-                                  ) : null}
-                                </View>
-                                <View style={styles.residentFoot}>
-                                  <Pill color={resident.tag === 'premium' ? tokens.amber : tokens.textMuted} bg={resident.tag === 'premium' ? tokens.amberBg : tokens.surface}>
-                                    {resident.tag === 'premium' ? peopleText.premium : peopleText.basic}
-                                  </Pill>
-                                  <Text style={[styles.residentTaps, { color: tokens.textMuted }]}>{resident.taps ?? 0}</Text>
-                                </View>
-                              </AnimatedPressable>
-                            </Animated.View>
-                          );
-                        })}
+                                  </AnimatedPressable>
+                                </Animated.View>
+                              );
+                            })}
+                            {!isSingleColumnResidents && row.length === 1 ? <View style={[styles.residentCardWrap, styles.residentCardPlaceholder]} /> : null}
+                          </View>
+                        ))}
                       </View>
                       {!directoryQuery.isLoading && filteredResidents.length === 0 ? (
                         <EmptyState
@@ -844,12 +866,17 @@ export default function PeoplePage(): React.JSX.Element {
                           onPress={() => handleOpenProfile(row.slug)}
                           style={[
                             styles.rankRow,
-                            index < 3 ? styles.rankRowTop : undefined,
-                            {
-                              backgroundColor: index < 3 ? topPalette[index].bg : tokens.surface,
-                              borderColor: index < 3 ? topPalette[index].border : tokens.border,
-                              borderWidth: index < 3 ? 1.5 : 1,
-                            },
+                            index < 3
+                              ? {
+                                backgroundColor: tokens.surface,
+                                borderColor: topPalette[index].border,
+                                borderWidth: 1,
+                              }
+                              : {
+                                backgroundColor: tokens.surface,
+                                borderColor: tokens.border,
+                                borderWidth: 1,
+                              },
                           ]}
                         >
                           <Text
@@ -1056,9 +1083,20 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: 'stretch',
   },
+  residentRows: {
+    gap: 10,
+  },
+  residentRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'stretch',
+  },
   residentCardWrap: {
-    width: '48.5%',
+    flex: 1,
     alignSelf: 'stretch',
+  },
+  residentCardPlaceholder: {
+    opacity: 0,
   },
   residentCard: {
     width: '100%',
@@ -1067,6 +1105,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 13,
     gap: 10,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
+  residentCardPressable: {
+    flex: 1,
   },
   residentHead: {
     flexDirection: 'row',
@@ -1135,13 +1179,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 13,
   },
-  rankRowTop: {
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
   rankPos: {
     width: 28,
     textAlign: 'center',
@@ -1173,7 +1210,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
   },
   topBadge: {
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
     paddingHorizontal: 7,
     paddingVertical: 2,

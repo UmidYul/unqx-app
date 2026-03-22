@@ -1,6 +1,7 @@
 import { MESSAGES } from '@/constants/messages';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LOGIN_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9]$/;
 const PASSWORD_HAS_LETTER_RE = /[A-Za-z]/;
 const PASSWORD_HAS_DIGIT_RE = /\d/;
 const OTP_RE = /^\d{6}$/;
@@ -26,6 +27,25 @@ export function validateFirstName(value: string): string | null {
   }
   if (name.length > 50) {
     return MESSAGES.validation.nameTooLong;
+  }
+  return null;
+}
+
+export function validateCity(value: string): string | null {
+  const city = value.trim();
+  if (!city) {
+    return MESSAGES.validation.cityRequired;
+  }
+  return null;
+}
+
+export function validateLogin(value: string): string | null {
+  const login = value.trim();
+  if (!login) {
+    return MESSAGES.validation.loginRequired;
+  }
+  if (!LOGIN_RE.test(login)) {
+    return MESSAGES.validation.loginInvalid;
   }
   return null;
 }

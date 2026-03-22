@@ -187,12 +187,30 @@ export interface CardButton {
 export interface ProfileCard {
   name: string;
   job: string;
+  bio?: string;
+  hashtag?: string;
+  address?: string;
+  postcode?: string;
+  extraPhone?: string;
+  tags?: string[];
+  customColor?: string;
+  showBranding?: boolean;
   phone: string;
   telegram: string;
   email: string;
   slug: string;
   avatarUrl?: string;
-  theme: 'default_dark' | 'arctic' | 'linen' | 'marble' | 'forest';
+  theme:
+    | 'default_dark'
+    | 'arctic'
+    | 'linen'
+    | 'marble'
+    | 'forest'
+    | 'sage_luxe'
+    | 'midnight_obsidian'
+    | 'golden_noir'
+    | 'aurora_codex'
+    | 'nebula_glass';
   buttons: CardButton[];
 }
 

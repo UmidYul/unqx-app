@@ -42,6 +42,7 @@ import { NFCHistoryItem, ProfileCard, ThemeTokens, WristbandOrder, WristbandStat
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { getUzbekistanHour, resolveThemeByHour } from '@/theme/tokens';
 import { formatSlug } from '@/utils/avatar';
+import { toUserErrorMessage } from '@/utils/errorMessages';
 import { toast } from '@/utils/toast';
 
 interface WristbandTag {
@@ -54,6 +55,14 @@ interface WristbandTag {
 const DEFAULT_CARD: ProfileCard = {
   name: 'UNQX User',
   job: 'Digital Card Owner',
+  bio: '',
+  hashtag: '',
+  address: '',
+  postcode: '',
+  extraPhone: '',
+  tags: [],
+  customColor: '#111111',
+  showBranding: true,
   phone: '',
   telegram: '',
   email: '',
@@ -82,6 +91,11 @@ function normalizeCardTheme(rawTheme: unknown): ProfileCard['theme'] {
   if (raw === 'linen') return 'linen';
   if (raw === 'marble') return 'marble';
   if (raw === 'forest') return 'forest';
+  if (raw === 'royal_ivory' || raw === 'sage_luxe') return 'sage_luxe';
+  if (raw === 'midnight_obsidian') return 'midnight_obsidian';
+  if (raw === 'golden_noir') return 'golden_noir';
+  if (raw === 'aurora_codex') return 'aurora_codex';
+  if (raw === 'nebula_glass') return 'nebula_glass';
   return 'default_dark';
 }
 
@@ -93,11 +107,19 @@ function parseProfileCard(raw: unknown): ProfileCard {
   return {
     name: card?.name ?? sourceUser?.name ?? sourceUser?.displayName ?? sourceUser?.firstName ?? DEFAULT_CARD.name,
     job: card?.job ?? card?.role ?? DEFAULT_CARD.job,
+    bio: card?.bio ?? '',
+    hashtag: card?.hashtag ?? '',
+    address: card?.address ?? '',
+    postcode: card?.postcode ?? '',
+    extraPhone: card?.extraPhone ?? '',
+    tags: Array.isArray(card?.tags) ? card.tags.map((item: any) => String(item)).filter(Boolean) : [],
+    customColor: card?.customColor ?? '#111111',
+    showBranding: typeof card?.showBranding === 'boolean' ? card.showBranding : true,
     phone: card?.phone ?? card?.extraPhone ?? sourceUser?.phone ?? '',
     telegram: card?.telegram ?? '',
     email: card?.email ?? sourceUser?.email ?? '',
     slug: pickPrimarySlug(payload),
-    avatarUrl: resolveAssetUrl(card?.avatarUrl ?? sourceUser?.avatarUrl),
+    avatarUrl: resolveAssetUrl(card?.avatarUrl ?? card?.avatar_url ?? sourceUser?.avatarUrl ?? sourceUser?.avatar_url),
     theme: normalizeCardTheme(card?.theme),
     buttons: Array.isArray(card?.buttons)
       ? card.buttons.map((item: any) => ({
@@ -107,6 +129,16 @@ function parseProfileCard(raw: unknown): ProfileCard {
       }))
       : DEFAULT_CARD.buttons,
   };
+}
+
+function parseUserPlan(raw: unknown): 'none' | 'basic' | 'premium' | string {
+  const payload = raw as { user?: any };
+  const source = payload?.user ?? payload;
+  const normalized = String(source?.effectivePlan ?? source?.plan ?? 'none').trim().toLowerCase();
+  if (normalized === 'premium' || normalized === 'basic' || normalized === 'none') {
+    return normalized;
+  }
+  return 'none';
 }
 
 function parseTotalTaps(raw: unknown): number {
@@ -285,6 +317,8 @@ export default function ProfilePage(): React.JSX.Element {
   });
 
   const card = React.useMemo(() => (meQuery.data ? parseProfileCard(meQuery.data) : null), [meQuery.data]);
+  const userPlan = React.useMemo(() => parseUserPlan(meQuery.data), [meQuery.data]);
+  const hasCardAccess = userPlan === 'basic' || userPlan === 'premium';
   const avatarImage = useRetryImageUri(card?.avatarUrl);
   const totalTaps = React.useMemo(() => parseTotalTaps(analyticsQuery.data), [analyticsQuery.data]);
   const wristbandStatus = React.useMemo(
@@ -345,8 +379,16 @@ export default function ProfilePage(): React.JSX.Element {
           ...(old?.card ?? {}),
           name: nextCard.name,
           role: nextCard.job,
+          bio: nextCard.bio ?? '',
+          hashtag: nextCard.hashtag ?? '',
+          address: nextCard.address ?? '',
+          postcode: nextCard.postcode ?? '',
+          extraPhone: nextCard.extraPhone ?? nextCard.phone ?? '',
+          tags: Array.isArray(nextCard.tags) ? nextCard.tags : [],
+          customColor: nextCard.customColor ?? null,
+          showBranding: typeof nextCard.showBranding === 'boolean' ? nextCard.showBranding : true,
           email: nextCard.email,
-          extraPhone: nextCard.phone,
+          phone: nextCard.phone,
           telegram: nextCard.telegram,
           theme: nextCard.theme,
           buttons: nextCard.buttons,
@@ -364,9 +406,29 @@ export default function ProfilePage(): React.JSX.Element {
       }));
       return { previous };
     },
-    onError: () => {
-      setError('Не удалось сохранить визитку');
-      toast.error(MESSAGES.toast.saveFailed, MESSAGES.common.retryConnection);
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === 'PLAN_REQUIRED') {
+        const title = isUz ? 'Tarif faollashtirilmagan' : 'Тариф не активирован';
+        const subtitle = isUz
+          ? 'Vizitkani tahrirlash uchun avval tarif sotib oling'
+          : 'Чтобы редактировать визитку, сначала купите тариф';
+        setError(title);
+        toast.error(title, subtitle);
+        return;
+      }
+      if (error instanceof ApiError && error.code === 'UPGRADE_REQUIRED') {
+        const title = isUz ? 'Premium kerak' : 'Нужен Премиум';
+        const subtitle = isUz
+          ? 'Bu funksiya Premium tarifida mavjud'
+          : 'Эта функция доступна только на Премиум тарифе';
+        setError(title);
+        toast.error(title, subtitle);
+        return;
+      }
+
+      const message = toUserErrorMessage(error, isUz ? 'Vizitkani saqlab bo‘lmadi' : 'Не удалось сохранить визитку');
+      setError(message);
+      toast.error(MESSAGES.toast.saveFailed, message);
     },
     onSuccess: () => {
       setEditorVisible(false);
@@ -396,9 +458,10 @@ export default function ProfilePage(): React.JSX.Element {
       }));
       return { previous };
     },
-    onError: () => {
-      setError('Не удалось переименовать метку');
-      toast.error(MESSAGES.toast.saveFailed, MESSAGES.common.retryConnection);
+    onError: (error) => {
+      const message = toUserErrorMessage(error, isUz ? "Teg nomini o'zgartirib bo'lmadi" : 'Не удалось переименовать метку');
+      setError(message);
+      toast.error(MESSAGES.toast.saveFailed, message);
     },
     onSuccess: () => {
       toast.success(MESSAGES.toast.tagNameSaved);
@@ -438,25 +501,9 @@ export default function ProfilePage(): React.JSX.Element {
       return { previousTags, previousHistory };
     },
     onError: (error) => {
-      setError(isUz ? 'Tegni o\'chirib bo\'lmadi' : 'Не удалось удалить метку');
-
-      if (error instanceof ApiError && error.code === 'NFC_TAG_DELETE_NOT_CONFIRMED') {
-        toast.error(
-          isUz ? 'Teg serverda o\'chirilmadi' : 'Сервер не подтвердил удаление метки',
-          isUz ? 'Iltimos, yana urinib ko\'ring' : 'Попробуйте удалить ещё раз',
-        );
-        return;
-      }
-
-      if (error instanceof ApiError && error.code === 'NFC_TAG_DELETE_FAILED') {
-        toast.error(
-          isUz ? 'Tegni o\'chirish endpointi ishlamadi' : 'Эндпоинт удаления метки не сработал',
-          isUz ? 'Server sozlamalarini tekshiring' : 'Проверьте настройки API на сервере',
-        );
-        return;
-      }
-
-      toast.error(MESSAGES.toast.saveFailed, MESSAGES.common.retryConnection);
+      const message = toUserErrorMessage(error, isUz ? "Tegni o'chirib bo'lmadi" : 'Не удалось удалить метку');
+      setError(message);
+      toast.error(MESSAGES.toast.saveFailed, message);
     },
     onSuccess: () => {
       toast.success(MESSAGES.toast.tagDeleted);
@@ -488,27 +535,45 @@ export default function ProfilePage(): React.JSX.Element {
       toast.success(MESSAGES.toast.orderSent);
       void incrementSuccess().then(() => maybeAskReview()).catch(() => undefined);
     },
-    onError: (err: any) => {
-      let errorMsg = 'Не удалось создать заказ браслета';
-      if (err && typeof err === 'object') {
-        if (err.message) errorMsg = String(err.message);
-        if (err.code && err.code !== 'UNKNOWN') errorMsg += ` (${err.code})`;
-      }
-      setError(errorMsg);
-      toast.error(errorMsg, MESSAGES.common.retryConnection);
+    onError: (error) => {
+      const message = toUserErrorMessage(error, isUz ? "Bilaguzuk buyurtmasini yaratib bo'lmadi" : 'Не удалось создать заказ браслета');
+      setError(message);
+      toast.error(MESSAGES.toast.orderSendFailed, message);
     },
   });
 
   const handleSaveCard = React.useCallback(
     (nextCard: ProfileCard) => {
+      if (!hasCardAccess) {
+        const title = isUz ? 'Tarif faollashtirilmagan' : 'Тариф не активирован';
+        const subtitle = isUz
+          ? 'Vizitkani tahrirlash uchun avval tarif sotib oling'
+          : 'Чтобы редактировать визитку, сначала купите тариф';
+        setError(title);
+        toast.error(title, subtitle);
+        return;
+      }
       if (!isOnline) {
         toast.info(MESSAGES.toast.offlineQueued);
         return;
       }
       saveCardMutation.mutate(nextCard);
     },
-    [isOnline, saveCardMutation],
+    [hasCardAccess, isOnline, isUz, saveCardMutation],
   );
+
+  const handleOpenCardEditor = React.useCallback(() => {
+    if (!hasCardAccess) {
+      const title = isUz ? 'Tarif faollashtirilmagan' : 'Тариф не активирован';
+      const subtitle = isUz
+        ? 'Vizitkani tahrirlash uchun avval tarif sotib oling'
+        : 'Чтобы редактировать визитку, сначала купите тариф';
+      setError(title);
+      toast.error(title, subtitle);
+      return;
+    }
+    setEditorVisible(true);
+  }, [hasCardAccess, isUz]);
 
   const handleRenameTag = React.useCallback(
     (uid: string, name: string) => {
@@ -640,6 +705,8 @@ export default function ProfilePage(): React.JSX.Element {
   const profileText = isUz
     ? {
       premium: 'Premium',
+      basic: 'Asosiy',
+      noPlan: 'Tarif tanlanmagan',
       nfcActive: '● NFC faol',
       qrTitle: 'QR-kod',
       qrSub: "Yuklab olish yoki ko'rsatish",
@@ -688,6 +755,8 @@ export default function ProfilePage(): React.JSX.Element {
     }
     : {
       premium: 'Премиум',
+      basic: 'Базовый',
+      noPlan: 'Тариф не выбран',
       nfcActive: '● NFC активен',
       qrTitle: 'QR-код',
       qrSub: 'Скачать или показать',
@@ -828,7 +897,9 @@ export default function ProfilePage(): React.JSX.Element {
                   unqx.uz/<Text style={styles.slugStrong}>{formatSlug(card.slug)}</Text>
                 </Text>
                 <View style={styles.heroPills}>
-                  <Pill color={tokens.amber} bg={tokens.amberBg}>{profileText.premium}</Pill>
+                  <Pill color={userPlan === 'premium' ? tokens.amber : tokens.textMuted} bg={userPlan === 'premium' ? tokens.amberBg : tokens.surface}>
+                    {userPlan === 'premium' ? profileText.premium : userPlan === 'basic' ? profileText.basic : profileText.noPlan}
+                  </Pill>
                   <Pill color={tokens.green} bg={tokens.greenBg}>{profileText.nfcActive}</Pill>
                 </View>
               </View>
@@ -856,8 +927,15 @@ export default function ProfilePage(): React.JSX.Element {
             </View>
 
             {[
-              { label: profileText.editCard, sub: profileText.editCardSub, onPress: () => setEditorVisible(true) },
-              { label: profileText.wristband, sub: profileText.wristbandSub, onPress: () => setWristbandVisible(true) },
+              {
+                label: profileText.editCard,
+                sub: hasCardAccess
+                  ? profileText.editCardSub
+                  : (isUz
+                    ? 'Tahrirlash uchun avval tarif sotib oling'
+                    : 'Для редактирования сначала купите тариф'),
+                onPress: handleOpenCardEditor,
+              },
             ].map((item) => (
               <AnimatedPressable key={item.label} onPress={item.onPress} style={[styles.actionRow, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
                 <View style={styles.actionBody}>
@@ -980,6 +1058,7 @@ export default function ProfilePage(): React.JSX.Element {
           visible={editorVisible}
           tokens={tokens}
           card={card}
+          userPlan={userPlan}
           saving={saveCardMutation.isPending}
           onClose={() => setEditorVisible(false)}
           onPreview={(nextCard) => {

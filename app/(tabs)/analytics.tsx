@@ -30,6 +30,9 @@ import { uniqueBy } from '@/utils/uniqueBy';
 
 interface AnalyticsPayload {
   totalTaps: number;
+  todayTaps: number;
+  periodTaps: number;
+  periodDays: number;
   growth: number;
   monthTaps: number[];
   weekTaps: number[];
@@ -115,6 +118,10 @@ function buildCityStats(points: Array<{ city: string; value?: number }>, totalTa
 function parseSummary(raw: unknown): AnalyticsPayload {
   const source = (raw as { summary?: any })?.summary ?? (raw as any);
   const total = Number(source?.totalTaps ?? source?.total ?? 0);
+  const today = Number(source?.todayTaps ?? source?.today ?? 0);
+  const periodTaps = Number(source?.periodTaps ?? 0);
+  const periodDaysRaw = Number(source?.periodDays ?? source?.period ?? 30);
+  const periodDays = Number.isFinite(periodDaysRaw) && periodDaysRaw > 0 ? periodDaysRaw : 30;
   const rawMonth = Array.isArray(source?.monthTaps) ? source.monthTaps : [];
   const rawWeek = Array.isArray(source?.weekTaps) ? source.weekTaps : [];
   const month = rawMonth.map((v: unknown) => Number(v || 0)).slice(-30);
@@ -142,6 +149,11 @@ function parseSummary(raw: unknown): AnalyticsPayload {
 
   return {
     totalTaps: total,
+    todayTaps: Number.isFinite(today) ? today : 0,
+    periodTaps: Number.isFinite(periodTaps) && periodTaps >= 0
+      ? periodTaps
+      : month.reduce((sum: number, value: number) => sum + Number(value || 0), 0),
+    periodDays,
     growth: Number(source?.growth ?? 0),
     monthTaps: month.length === 30 ? month : [...Array.from({ length: Math.max(0, 30 - month.length) }, () => 0), ...month],
     weekTaps: week.length === 7 ? week : [...Array.from({ length: Math.max(0, 7 - week.length) }, () => 0), ...week],
@@ -188,7 +200,9 @@ export default function AnalyticsPage(): React.JSX.Element {
     ? {
       weekDaysSundayFirst: ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sha'],
       retry: 'Qayta urinish',
-      taps30: '30 kunlik taplar',
+      tapsByPeriod: 'kunlik taplar',
+      totalTaps: 'Umumiy taplar',
+      todayTaps: 'Bugun',
       monthGrowth: "o'tgan oyga nisbatan",
       thisWeek: 'Bu hafta',
       cities: 'Shaharlar',
@@ -199,7 +213,9 @@ export default function AnalyticsPage(): React.JSX.Element {
     : {
       weekDaysSundayFirst: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
       retry: 'Повторить',
-      taps30: 'Тапов за 30 дней',
+      tapsByPeriod: 'тапов за период',
+      totalTaps: 'Общие тапы',
+      todayTaps: 'Сегодня',
       monthGrowth: 'к прошлому месяцу',
       thisWeek: 'Эта неделя',
       cities: 'Города',
@@ -212,6 +228,7 @@ export default function AnalyticsPage(): React.JSX.Element {
     queryKey: queryKeys.analytics,
     queryFn: fetchAnalyticsDashboardLike,
   });
+  const showInitialSkeleton = query.isLoading && !query.data;
   const isRefreshing = query.isRefetching;
   const onRefresh = React.useCallback(async () => {
     await query.refetch();
@@ -243,9 +260,10 @@ export default function AnalyticsPage(): React.JSX.Element {
   }, [analyticsText.weekDaysSundayFirst]);
   const todayBarIndex = 6;
   const growthLabel = `${analytics.growth > 0 ? '+' : ''}${analytics.growth}%`;
+  const periodLabel = `${analytics.periodDays} ${analyticsText.tapsByPeriod}`;
 
   React.useEffect(() => {
-    const target = analytics.totalTaps;
+    const target = analytics.periodTaps;
     const from = animatedTotal;
     const duration = 1200;
     const startAt = Date.now();
@@ -261,7 +279,7 @@ export default function AnalyticsPage(): React.JSX.Element {
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [analytics.totalTaps]);
+  }, [analytics.periodTaps]);
 
   return (
     <ErrorBoundary>
@@ -292,28 +310,65 @@ export default function AnalyticsPage(): React.JSX.Element {
                   </Pressable>
                 ) : null}
 
-                {query.isLoading && !query.data ? (
+                {showInitialSkeleton ? (
                   <>
-                    <SkeletonBlock tokens={tokens} height={132} radius={16} />
-                    <SkeletonBlock tokens={tokens} height={130} radius={16} />
+                    <View style={[styles.kpiCard, styles.skeletonCard, { borderColor: tokens.border }]}>
+                      <SkeletonBlock tokens={tokens} height={10} width={110} radius={6} />
+                      <View style={styles.skeletonKpiRow}>
+                        <View style={styles.skeletonKpiLeft}>
+                          <SkeletonBlock tokens={tokens} height={38} width={110} radius={10} />
+                          <SkeletonBlock tokens={tokens} height={12} width={140} radius={6} />
+                        </View>
+                        <SkeletonBlock tokens={tokens} height={42} width={102} radius={10} />
+                      </View>
+                    </View>
+
+                    <View style={[styles.weekCard, styles.skeletonCard, { borderColor: tokens.border }]}>
+                      <SkeletonBlock tokens={tokens} height={10} width={88} radius={6} />
+                      <View style={styles.skeletonWeekRow}>
+                        {Array.from({ length: 7 }).map((_, i) => (
+                          <View key={`wk-sk-${i}`} style={styles.skeletonWeekCol}>
+                            <SkeletonBlock tokens={tokens} height={10} width={18} radius={4} />
+                            <SkeletonBlock tokens={tokens} height={52} width={16} radius={4} />
+                            <SkeletonBlock tokens={tokens} height={10} width={16} radius={4} />
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <View key={`city-sk-${i}`} style={[styles.cityRow, styles.skeletonCard, { borderColor: tokens.border }]}>
+                        <View style={styles.cityHeader}>
+                          <SkeletonBlock tokens={tokens} height={12} width='42%' radius={6} />
+                          <SkeletonBlock tokens={tokens} height={12} width={56} radius={6} />
+                        </View>
+                        <SkeletonBlock tokens={tokens} height={8} width='100%' radius={999} />
+                      </View>
+                    ))}
                   </>
                 ) : null}
 
-                <View style={[styles.kpiCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
-                  <Label color={tokens.textMuted}>{analyticsText.taps30}</Label>
+                {!showInitialSkeleton ? (
+                  <View style={[styles.kpiCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+                  <Label color={tokens.textMuted}>{periodLabel}</Label>
                   <View style={styles.kpiRow}>
                     <View>
                       <Text style={[styles.kpiValue, { color: tokens.text }]}>{animatedTotal}</Text>
                       <Text style={[styles.kpiGrowth, { color: analytics.growth >= 0 ? tokens.green : tokens.red }]}>
                         {`${analytics.growth >= 0 ? '↑' : '↓'} ${growthLabel} ${analyticsText.monthGrowth}`}
                       </Text>
+                      <Text style={[styles.kpiMeta, { color: tokens.textMuted }]}>
+                        {`${analyticsText.totalTaps}: ${analytics.totalTaps} · ${analyticsText.todayTaps}: ${analytics.todayTaps}`}
+                      </Text>
                     </View>
                     <TrendingUp size={18} strokeWidth={1.5} color={analytics.growth >= 0 ? tokens.green : tokens.red} />
                     <Sparkline data={analytics.monthTaps} color={tokens.accent} width={100} height={44} />
                   </View>
-                </View>
+                  </View>
+                ) : null}
 
-                <View style={[styles.weekCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+                {!showInitialSkeleton ? (
+                  <View style={[styles.weekCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
                   <Label color={tokens.textMuted} style={styles.weekLabel}>{analyticsText.thisWeek}</Label>
                   <View style={styles.weekRow}>
                     {analytics.weekTaps.map((v, i) => (
@@ -326,44 +381,49 @@ export default function AnalyticsPage(): React.JSX.Element {
                             color={i === todayBarIndex || days[i]?.dayIndex === 5 ? tokens.accent : weekBarMutedColor}
                           />
                         </View>
-                        <Text style={[styles.weekDay, { color: i === todayBarIndex ? tokens.text : (isDark ? 'rgba(255,255,255,0.62)' : tokens.textMuted) }]}>{days[i]?.label ?? ''}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-
-                <Label color={isDark ? 'rgba(255,255,255,0.52)' : tokens.textMuted}>{analyticsText.cities}</Label>
-                {cityStats.length > 0 ? cityStats.map((item, index) => {
-                  const fillRatio = Math.max(0.08, item.taps / cityMax);
-                  const localizedCityName = localizeCityName(item.city, isUz);
-                  return (
-                    <View key={`${item.city}-${index}`} style={[styles.cityRow, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
-                      <View style={styles.cityHeader}>
-                        <Text style={[styles.cityName, { color: tokens.text }]} numberOfLines={1}>{localizedCityName}</Text>
-                        <Text style={[styles.cityMeta, { color: tokens.textMuted }]}>{`${item.taps} (${item.percent}%)`}</Text>
-                      </View>
-                      <View style={[styles.cityTrack, { backgroundColor: cityTrackColor }]}>
-                        <View style={[styles.cityFill, { backgroundColor: cityFillColor, width: `${Math.round(fillRatio * 100)}%` }]} />
-                      </View>
+                      <Text style={[styles.weekDay, { color: i === todayBarIndex ? tokens.text : (isDark ? 'rgba(255,255,255,0.62)' : tokens.textMuted) }]}>{days[i]?.label ?? ''}</Text>
                     </View>
-                  );
-                }) : (
-                  <Text style={[styles.loadingText, { color: tokens.textMuted }]}>{analyticsText.noCities}</Text>
-                )}
+                  ))}
+                  </View>
+                  </View>
+                ) : null}
 
-                <Label color={isDark ? 'rgba(255,255,255,0.52)' : tokens.textMuted}>{analyticsText.sources}</Label>
-                {analytics.sources.length > 0 ? uniqueBy(analytics.sources, s => s.source).map((item, index) => (
-                  <SourceRow
-                    key={`${item.source}-${index}`}
-                    source={item.source}
-                    count={item.count}
-                    percent={item.percent}
-                    index={index}
-                    tokens={tokens}
-                  />
-                )) : (
-                  <Text style={[styles.loadingText, { color: tokens.textMuted }]}>{analyticsText.noSources}</Text>
-                )}
+                {!showInitialSkeleton ? (
+                  <>
+                    <Label color={isDark ? 'rgba(255,255,255,0.52)' : tokens.textMuted}>{analyticsText.cities}</Label>
+                    {cityStats.length > 0 ? cityStats.map((item, index) => {
+                      const fillRatio = Math.max(0.08, item.taps / cityMax);
+                      const localizedCityName = localizeCityName(item.city, isUz);
+                      return (
+                        <View key={`${item.city}-${index}`} style={[styles.cityRow, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+                          <View style={styles.cityHeader}>
+                            <Text style={[styles.cityName, { color: tokens.text }]} numberOfLines={1}>{localizedCityName}</Text>
+                            <Text style={[styles.cityMeta, { color: tokens.textMuted }]}>{`${item.taps} (${item.percent}%)`}</Text>
+                          </View>
+                          <View style={[styles.cityTrack, { backgroundColor: cityTrackColor }]}>
+                            <View style={[styles.cityFill, { backgroundColor: cityFillColor, width: `${Math.round(fillRatio * 100)}%` }]} />
+                          </View>
+                        </View>
+                      );
+                    }) : (
+                      <Text style={[styles.loadingText, { color: tokens.textMuted }]}>{analyticsText.noCities}</Text>
+                    )}
+
+                    <Label color={isDark ? 'rgba(255,255,255,0.52)' : tokens.textMuted}>{analyticsText.sources}</Label>
+                    {analytics.sources.length > 0 ? uniqueBy(analytics.sources, s => s.source).map((item, index) => (
+                      <SourceRow
+                        key={`${item.source}-${index}`}
+                        source={item.source}
+                        count={item.count}
+                        percent={item.percent}
+                        index={index}
+                        tokens={tokens}
+                      />
+                    )) : (
+                      <Text style={[styles.loadingText, { color: tokens.textMuted }]}>{analyticsText.noSources}</Text>
+                    )}
+                  </>
+                ) : null}
               </>
             ) : null}
           </ScrollView>
@@ -398,6 +458,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter_600SemiBold',
   },
+  skeletonCard: {
+    backgroundColor: 'transparent',
+  },
+  skeletonKpiRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 14,
+  },
+  skeletonKpiLeft: {
+    gap: 8,
+    flex: 1,
+  },
+  skeletonWeekRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+    height: 76,
+  },
+  skeletonWeekCol: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
   kpiCard: {
     borderWidth: 1,
     borderRadius: 16,
@@ -419,6 +505,11 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
+  },
+  kpiMeta: {
+    marginTop: 6,
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
   },
   weekCard: {
     borderWidth: 1,
@@ -492,4 +583,3 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 });
-

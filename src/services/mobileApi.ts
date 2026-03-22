@@ -19,8 +19,39 @@ function writeCache<T>(key: string, value: T, ttlMs = 60_000): T {
   return value;
 }
 
+function invalidateCache(keys: string[]): void {
+  for (const key of keys) {
+    memoryCache.delete(key);
+  }
+}
+
 function isFallbackError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 404 || error.status === 405 || error.status === 501);
+}
+
+function isPlanRestrictedError(error: unknown): boolean {
+  return error instanceof ApiError
+    && error.status === 403
+    && (error.code === 'PLAN_REQUIRED' || error.code === 'UPGRADE_REQUIRED');
+}
+
+function shouldFallbackToMobileCardPatch(error: unknown): boolean {
+  return isFallbackError(error);
+}
+
+function normalizePlanValue(value: unknown): 'none' | 'basic' | 'premium' | null {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (normalized === 'none' || normalized === 'basic' || normalized === 'premium') {
+    return normalized;
+  }
+  return null;
+}
+
+function resolveEffectivePlan(source: any): 'none' | 'basic' | 'premium' | null {
+  const payload = source?.user ?? source ?? {};
+  return normalizePlanValue(payload?.effectivePlan ?? payload?.plan);
 }
 
 function pickPrimarySlug(bootstrap: any): string | null {
@@ -52,6 +83,24 @@ function normalizeButtons(buttons: ProfileCard['buttons']) {
   }));
 }
 
+function normalizeProfileString(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function normalizeLegacyMobileTheme(value: unknown): 'light' | 'dark' | 'gradient' {
+  const raw = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (raw === 'light') return 'light';
+  if (raw === 'gradient') return 'gradient';
+  return 'dark';
+}
+
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function computeGrowthPercent(current: number, delta: number): number {
   const safeCurrent = Number.isFinite(current) ? current : 0;
   const safeDelta = Number.isFinite(delta) ? delta : 0;
@@ -60,6 +109,52 @@ function computeGrowthPercent(current: number, delta: number): number {
     return safeCurrent > 0 ? 100 : 0;
   }
   return Math.round((safeDelta / previous) * 100);
+}
+
+function sumSlugViews(rawSlugs: unknown): number {
+  const slugs = Array.isArray(rawSlugs) ? rawSlugs : [];
+  return slugs.reduce((total, item: any) => {
+    const views = toFiniteNumber(item?.stats?.views ?? item?.views ?? item?.tapCount ?? 0, 0);
+    return total + Math.max(0, views);
+  }, 0);
+}
+
+function normalizeSeries(raw: unknown, length: number): number[] {
+  const values = Array.isArray(raw)
+    ? raw.map((item) => toFiniteNumber(item, 0))
+    : [];
+  if (values.length >= length) {
+    return values.slice(-length);
+  }
+  return [...Array.from({ length: Math.max(0, length - values.length) }, () => 0), ...values];
+}
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function extractTodayFromViewsByDay(items: unknown): number {
+  const list = Array.isArray(items) ? items : [];
+  const today = todayIsoDate();
+  for (const item of list) {
+    if (String((item as any)?.date ?? '') === today) {
+      return toFiniteNumber((item as any)?.value ?? 0, 0);
+    }
+  }
+  return 0;
+}
+
+function normalizeGeoRows(input: unknown): Array<{ city: string; x: number; y: number; r: number; value: number }> {
+  const rows = Array.isArray(input) ? input : [];
+  return rows
+    .map((item: any) => ({
+      city: String(item?.city ?? '').trim(),
+      x: toFiniteNumber(item?.x ?? 178, 178),
+      y: toFiniteNumber(item?.y ?? 72, 72),
+      r: Math.max(2, Math.min(8, toFiniteNumber(item?.r ?? 3, 3))),
+      value: Math.max(0, toFiniteNumber(item?.value ?? item?.count ?? item?.taps ?? 0, 0)),
+    }))
+    .filter((item) => item.city.length > 0);
 }
 
 function mapByDayToSeries(items: unknown[], length: number): number[] {
@@ -257,8 +352,111 @@ function mapGeo(input: Record<string, unknown>) {
   }));
 }
 
+function isLocalImageUri(value: string): boolean {
+  return /^(file|content|ph):/i.test(value);
+}
+
+function detectMimeType(uri: string): string {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.heic') || lower.endsWith('.heif')) return 'image/heic';
+  return 'image/jpeg';
+}
+
+function detectFileName(uri: string, mimeType: string): string {
+  const fromPath = uri.split('/').at(-1)?.split('?')[0]?.trim();
+  if (fromPath && /\.[a-z0-9]+$/i.test(fromPath)) {
+    return fromPath;
+  }
+  if (mimeType === 'image/png') return 'avatar.png';
+  if (mimeType === 'image/webp') return 'avatar.webp';
+  if (mimeType === 'image/heic') return 'avatar.heic';
+  return 'avatar.jpg';
+}
+
+async function syncProfileAvatar(avatarUrl: unknown): Promise<string | null | undefined> {
+  const raw = String(avatarUrl ?? '').trim();
+
+  if (!raw) {
+    try {
+      const deleted = await apiClient.delete<{ avatarUrl?: string | null }>('/profile/card/avatar');
+      return deleted?.avatarUrl ?? null;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return null;
+      }
+      if (isPlanRestrictedError(error)) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  if (!isLocalImageUri(raw)) {
+    return undefined;
+  }
+
+  const mimeType = detectMimeType(raw);
+  const fileName = detectFileName(raw, mimeType);
+  const formData = new FormData();
+  formData.append('file', {
+    uri: raw,
+    type: mimeType,
+    name: fileName,
+  } as any);
+
+  let uploaded: { avatarUrl?: string | null } | null = null;
+  try {
+    uploaded = await apiClient.post<{ avatarUrl?: string | null }>('/profile/card/avatar', formData);
+  } catch (error) {
+    if (isPlanRestrictedError(error)) {
+      return undefined;
+    }
+    throw error;
+  }
+
+  if (typeof uploaded?.avatarUrl === 'string') {
+    return uploaded.avatarUrl;
+  }
+  if (uploaded?.avatarUrl === null) {
+    return null;
+  }
+  return undefined;
+}
+
 interface ProfileAnalyticsPayload {
+  bootstrap: any;
   analytics: any;
+}
+
+async function fetchTotalTapsFromProfileStats(): Promise<number | null> {
+  const cached = readCache<number>('profile-total-taps');
+  if (typeof cached === 'number' && cached > 0) {
+    return cached;
+  }
+
+  try {
+    const bootstrap = await apiClient.get<any>('/profile/bootstrap');
+    const totalFromBootstrap = sumSlugViews(bootstrap?.slugs);
+    if (totalFromBootstrap > 0) {
+      return writeCache('profile-total-taps', totalFromBootstrap);
+    }
+  } catch {
+    // Non-fatal: summary endpoint can still provide totals.
+  }
+
+  try {
+    const slugsPayload = await apiClient.get<any>('/profile/slugs');
+    const totalFromSlugs = sumSlugViews(slugsPayload?.items);
+    if (totalFromSlugs > 0) {
+      return writeCache('profile-total-taps', totalFromSlugs);
+    }
+  } catch {
+    // Non-fatal: keep fallback chain alive.
+  }
+
+  return null;
 }
 
 async function fetchProfileAnalyticsPayload(period: number): Promise<ProfileAnalyticsPayload | null> {
@@ -281,7 +479,7 @@ async function fetchProfileAnalyticsPayload(period: number): Promise<ProfileAnal
     const analytics = await apiClient.get<any>('/profile/analytics', {
       query: { slug, period },
     });
-    return { analytics };
+    return { bootstrap, analytics };
   } catch (error) {
     if (isFallbackError(error)) {
       return null;
@@ -302,7 +500,21 @@ export async function fetchHomeSummaryLike(): Promise<unknown> {
   if (cached) return cached;
 
   try {
-    return writeCache('home-summary', await apiClient.get<any>('/analytics/summary'));
+    const [summaryPayload, totalFromSlugStats] = await Promise.all([
+      apiClient.get<any>('/analytics/summary'),
+      fetchTotalTapsFromProfileStats(),
+    ]);
+    const summarySource = summaryPayload?.summary ?? summaryPayload ?? {};
+    const apiTotal = toFiniteNumber(summarySource?.totalTaps ?? summarySource?.total ?? 0, 0);
+    const resolvedTotal = totalFromSlugStats && totalFromSlugStats > apiTotal ? totalFromSlugStats : apiTotal;
+
+    return writeCache('home-summary', {
+      ...(summaryPayload?.summary ? summaryPayload : {}),
+      summary: {
+        ...summarySource,
+        totalTaps: resolvedTotal,
+      },
+    });
   } catch (error) {
     if (!isFallbackError(error)) {
       throw error;
@@ -310,15 +522,17 @@ export async function fetchHomeSummaryLike(): Promise<unknown> {
 
     const profilePayload = await fetchProfileAnalyticsPayload(30);
     if (profilePayload) {
+      const totalFromSlugs = await fetchTotalTapsFromProfileStats();
       const analytics = profilePayload.analytics;
       const kpi = analytics?.kpi ?? {};
       const byDay = Array.isArray(analytics?.chart?.viewsByDay) ? analytics.chart.viewsByDay : [];
+      const periodViews = toFiniteNumber(kpi.views ?? 0, 0);
 
       return writeCache('home-summary', {
         summary: {
-          totalTaps: Number(kpi.views ?? 0),
+          totalTaps: totalFromSlugs && totalFromSlugs > 0 ? totalFromSlugs : periodViews,
           todayTaps: Number(byDay.at(-1)?.value ?? 0),
-          growth: computeGrowthPercent(Number(kpi.views ?? 0), Number(kpi?.trends?.views ?? 0)),
+          growth: computeGrowthPercent(periodViews, Number(kpi?.trends?.views ?? 0)),
           weekTaps: byDay.slice(-7).map((item: any) => Number(item?.value ?? 0)),
           monthTaps: byDay.slice(-30).map((item: any) => Number(item?.value ?? 0)),
         },
@@ -341,7 +555,74 @@ export async function fetchAnalyticsDashboardLike(): Promise<unknown> {
   if (cached) return cached;
 
   try {
-    return writeCache('analytics-dashboard', await apiClient.get<any>('/analytics/summary'));
+    const [summaryPayload, profilePayload, totalFromSlugStats] = await Promise.all([
+      apiClient.get<any>('/analytics/summary'),
+      fetchProfileAnalyticsPayload(30).catch((error) => {
+        if (isFallbackError(error) || isPlanRestrictedError(error)) {
+          return null;
+        }
+        throw error;
+      }),
+      fetchTotalTapsFromProfileStats(),
+    ]);
+
+    const sourceSummary = summaryPayload?.summary ?? summaryPayload ?? {};
+    const initialTotal = toFiniteNumber(sourceSummary?.totalTaps ?? sourceSummary?.total ?? 0, 0);
+    const totalTaps = Math.max(initialTotal, toFiniteNumber(totalFromSlugStats, 0));
+    const todayTaps = toFiniteNumber(sourceSummary?.todayTaps ?? sourceSummary?.today ?? 0, 0);
+    const growth = toFiniteNumber(sourceSummary?.growth ?? 0, 0);
+    let weekTaps = normalizeSeries(sourceSummary?.weekTaps, 7);
+    let monthTaps = normalizeSeries(sourceSummary?.monthTaps, 30);
+    let sources = mapSources(sourceSummary?.sources ?? [], totalTaps);
+    let geo = normalizeGeoRows(sourceSummary?.geo);
+    let periodTaps = toFiniteNumber(monthTaps.reduce((sum, value) => sum + value, 0), 0);
+    let periodDays = 30;
+
+    if (profilePayload) {
+      const analytics = profilePayload.analytics ?? {};
+      const viewsByDay = Array.isArray(analytics?.chart?.viewsByDay) ? analytics.chart.viewsByDay : [];
+      const profileViews = toFiniteNumber(analytics?.kpi?.views ?? 0, 0);
+      const profileTrends = toFiniteNumber(analytics?.kpi?.trends?.views ?? 0, 0);
+      const profileGrowth = computeGrowthPercent(profileViews, profileTrends);
+      const profilePeriod = toFiniteNumber(analytics?.period ?? 30, 30);
+
+      periodDays = profilePeriod > 0 ? profilePeriod : 30;
+      periodTaps = profileViews;
+      if (viewsByDay.length > 0) {
+        weekTaps = mapByDayToSeries(viewsByDay, 7);
+        monthTaps = mapByDayToSeries(viewsByDay, 30);
+      }
+      sources = mapSources(analytics?.chart?.trafficSources ?? {}, profileViews || totalTaps);
+      geo = mapGeo((analytics?.chart?.geography ?? {}) as Record<string, unknown>);
+
+      return writeCache('analytics-dashboard', {
+        summary: {
+          totalTaps,
+          todayTaps: todayTaps > 0 ? todayTaps : extractTodayFromViewsByDay(viewsByDay),
+          growth: Number.isFinite(growth) ? growth : profileGrowth,
+          periodTaps,
+          periodDays,
+          weekTaps,
+          monthTaps,
+          sources,
+          geo,
+        },
+      });
+    }
+
+    return writeCache('analytics-dashboard', {
+      summary: {
+        totalTaps,
+        todayTaps,
+        growth,
+        periodTaps,
+        periodDays,
+        weekTaps,
+        monthTaps,
+        sources,
+        geo,
+      },
+    });
   } catch (error) {
     if (!isFallbackError(error)) {
       throw error;
@@ -354,11 +635,15 @@ export async function fetchAnalyticsDashboardLike(): Promise<unknown> {
       const trafficSources = (analytics?.chart?.trafficSources ?? {}) as Record<string, unknown>;
       const geography = (analytics?.chart?.geography ?? {}) as Record<string, unknown>;
       const totalViews = Number(analytics?.kpi?.views ?? 0);
+      const period = toFiniteNumber(analytics?.period ?? 30, 30);
 
       return writeCache('analytics-dashboard', {
         summary: {
-          totalTaps: totalViews,
+          totalTaps: Math.max(totalViews, toFiniteNumber(await fetchTotalTapsFromProfileStats(), 0)),
+          todayTaps: extractTodayFromViewsByDay(byDay),
           growth: computeGrowthPercent(totalViews, Number(analytics?.kpi?.trends?.views ?? 0)),
+          periodTaps: totalViews,
+          periodDays: period > 0 ? period : 30,
           monthTaps: mapByDayToSeries(byDay, 30),
           weekTaps: mapByDayToSeries(byDay, 7),
           sources: mapSources(trafficSources, totalViews),
@@ -370,7 +655,10 @@ export async function fetchAnalyticsDashboardLike(): Promise<unknown> {
     return writeCache('analytics-dashboard', {
       summary: {
         totalTaps: 0,
+        todayTaps: 0,
         growth: 0,
+        periodTaps: 0,
+        periodDays: 30,
         monthTaps: Array.from({ length: 30 }, () => 0),
         weekTaps: Array.from({ length: 7 }, () => 0),
         sources: [],
@@ -531,11 +819,11 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
 }
 
 export async function saveContactLike(slug: string): Promise<unknown> {
-  return apiClient.postFirst([`/contacts/${encodeURIComponent(slug)}/save`, `/cards/${encodeURIComponent(slug)}/view`], {});
+  return apiClient.post(`/contacts/${encodeURIComponent(slug)}/save`, {});
 }
 
 export async function subscribeContactLike(slug: string): Promise<unknown> {
-  return apiClient.postFirst([`/contacts/${encodeURIComponent(slug)}/subscribe`, `/cards/${encodeURIComponent(slug)}/view`], {});
+  return apiClient.post(`/contacts/${encodeURIComponent(slug)}/subscribe`, {});
 }
 
 export async function fetchProfileLike(): Promise<unknown> {
@@ -543,7 +831,43 @@ export async function fetchProfileLike(): Promise<unknown> {
   if (cached) return cached;
 
   try {
-    return writeCache('profile', await apiClient.get<any>('/profile/bootstrap'));
+    const bootstrap = await apiClient.get<any>('/profile/bootstrap');
+    const effectivePlan = resolveEffectivePlan(bootstrap);
+    if (effectivePlan === 'none') {
+      return writeCache('profile', {
+        ...bootstrap,
+        card: null,
+      });
+    }
+
+    if (bootstrap?.card) {
+      return writeCache('profile', bootstrap);
+    }
+
+    try {
+      const mePayload = await apiClient.get<any>('/me');
+      const meUser = mePayload?.user ?? mePayload ?? null;
+      const meCard = meUser?.card ?? mePayload?.card ?? null;
+      const meSlugs = Array.isArray(mePayload?.slugs) ? mePayload.slugs : [];
+
+      if (meUser || meCard) {
+        return writeCache('profile', {
+          ...bootstrap,
+          user: {
+            ...(bootstrap?.user ?? {}),
+            ...(meUser ?? {}),
+            card: meCard ?? bootstrap?.user?.card ?? null,
+          },
+          card: meCard ?? bootstrap?.card ?? null,
+          slugs: Array.isArray(bootstrap?.slugs) && bootstrap.slugs.length > 0 ? bootstrap.slugs : meSlugs,
+          selectedSlug: bootstrap?.selectedSlug ?? mePayload?.selectedSlug ?? null,
+        });
+      }
+    } catch {
+      // Non-fatal: profile bootstrap is still usable.
+    }
+
+    return writeCache('profile', bootstrap);
   } catch (error) {
     if (!isFallbackError(error)) {
       throw error;
@@ -563,74 +887,113 @@ export async function fetchProfileLike(): Promise<unknown> {
 }
 
 export async function saveProfileCardLike(card: ProfileCard): Promise<unknown> {
+  const rawCard = card as any;
+  const role = normalizeProfileString(rawCard?.job ?? rawCard?.role);
+  const normalizedName = normalizeProfileString(card.name);
+  const normalizedEmail = normalizeProfileString(card.email).toLowerCase();
+  const normalizedPhone = normalizeProfileString(card.phone);
+  const normalizedTheme = normalizeProfileString(card.theme);
+  const tags = Array.isArray(rawCard?.tags)
+    ? rawCard.tags.map((item: unknown) => String(item ?? '').trim()).filter(Boolean)
+    : (card.telegram ? [card.telegram] : []);
+
+  const payload: Record<string, any> = {
+    name: normalizedName,
+    role,
+    bio: normalizeProfileString(rawCard?.bio),
+    hashtag: normalizeProfileString(rawCard?.hashtag),
+    address: normalizeProfileString(rawCard?.address),
+    postcode: normalizeProfileString(rawCard?.postcode),
+    email: normalizedEmail || null,
+    extraPhone: normalizeProfileString(rawCard?.extraPhone) || normalizedPhone,
+    theme: normalizedTheme,
+    customColor: normalizeProfileString(rawCard?.customColor),
+    tags,
+    showBranding: typeof rawCard?.showBranding === 'boolean' ? rawCard.showBranding : true,
+  };
+
+  if (Array.isArray(card.buttons) && card.buttons.length > 0) {
+    payload.buttons = card.buttons
+      .map((btn: any) => {
+        const icon = String(btn?.icon ?? btn?.type ?? 'other');
+        const label = String(btn?.label ?? '').trim();
+        const url = String(btn?.url ?? btn?.value ?? btn?.href ?? '').trim();
+        if (!label || !url) {
+          return null;
+        }
+        const normalizedIcon = normalizeButtons([{ icon, label, url } as any])[0]?.type || 'other';
+        return {
+          icon: normalizedIcon,
+          label,
+          url,
+        };
+      })
+      .filter((item: any) => Boolean(item));
+  }
+
   try {
-    // Для PATCH отправляем кнопки как есть (icon, label, url)
-    const patchCard = { ...card };
-    if (Array.isArray(card.buttons) && card.buttons.length > 0) {
-      patchCard.buttons = card.buttons.map(btn => ({
-        icon: btn.icon,
-        label: btn.label,
-        url: btn.url,
-      }));
+    // Prefer full profile endpoint: it supports independent role + bio.
+    const saved = await apiClient.put('/profile/card', payload);
+    const syncedAvatarUrl = await syncProfileAvatar(card.avatarUrl);
+    if (syncedAvatarUrl !== undefined && saved && typeof saved === 'object') {
+      const target = saved as Record<string, any>;
+      if (target.card && typeof target.card === 'object') {
+        target.card.avatarUrl = syncedAvatarUrl;
+      }
     }
-    return await apiClient.patch('/me/card', patchCard);
+    invalidateCache(['profile', 'current-user']);
+    return saved;
   } catch (error) {
-    if (!isFallbackError(error)) {
+    if (!shouldFallbackToMobileCardPatch(error)) {
       throw error;
     }
 
-    // Для PUT нормализуем type, но сохраняем icon/label/url
-    const payload: Record<string, any> = {
-      name: card.name,
-      role: card.job,
-      email: card.email || null,
-      phone: card.phone || null,
-      extraPhone: card.phone || null,
-      theme: card.theme,
-      tags: card.telegram ? [card.telegram] : [],
-      bio: card.job,
-      showBranding: true,
+    // Legacy fallback for environments where /profile/card is unavailable.
+    const patchCard: Record<string, any> = {
+      name: normalizedName,
+      job: normalizeProfileString(card.job),
+      email: normalizedEmail || null,
+      phone: normalizedPhone,
+      telegram: normalizeProfileString(card.telegram),
+      theme: normalizeLegacyMobileTheme(card.theme),
     };
-
     if (Array.isArray(card.buttons) && card.buttons.length > 0) {
-      payload.buttons = card.buttons.map(btn => ({
-        type: normalizeButtons([btn])[0]?.type || 'other',
-        icon: btn.icon,
-        label: btn.label,
-        url: btn.url,
-      }));
+      patchCard.buttons = card.buttons
+        .map((btn: any) => {
+          const icon = String(btn?.icon ?? btn?.type ?? 'other');
+          const label = String(btn?.label ?? '').trim();
+          const url = String(btn?.url ?? btn?.value ?? btn?.href ?? '').trim();
+          if (!label || !url) {
+            return null;
+          }
+          return { icon, label, url };
+        })
+        .filter((item: any) => Boolean(item));
     }
-
-    payload.telegram = card.telegram || '';
-
-    return apiClient.put('/profile/card', payload);
+    const saved = await apiClient.patch('/me/card', patchCard);
+    const syncedAvatarUrl = await syncProfileAvatar(card.avatarUrl);
+    if (syncedAvatarUrl !== undefined && saved && typeof saved === 'object') {
+      const target = saved as Record<string, any>;
+      if (target.card && typeof target.card === 'object') {
+        target.card.avatarUrl = syncedAvatarUrl;
+      }
+    }
+    invalidateCache(['profile', 'current-user']);
+    return saved;
   }
 }
 
 export async function createWristbandOrderLike(payload: { address: string; quantity: number }): Promise<unknown> {
-  try {
-    return await apiClient.post<any>('/cards/order-request', {
-      name: 'UNQX Wristband',
-      letters: 'UNQ',
-      digits: '001',
-      tariff: 'basic',
-      products: [{ type: 'bracelet', qty: Math.max(1, payload.quantity) }],
-      address: payload.address,
-    });
-  } catch (error) {
-    if (!isFallbackError(error)) {
-      throw error;
-    }
-
-    return apiClient.post<any>('/cards/order-request', {
-      name: 'UNQX Wristband',
-      letters: 'UNQ',
-      digits: '001',
-      tariff: 'basic',
-      products: [{ type: 'bracelet', qty: Math.max(1, payload.quantity) }],
-      address: payload.address,
-    });
-  }
+  return apiClient.post<any>('/cards/order-request', {
+    name: 'UNQX Wristband',
+    letters: 'UNQ',
+    digits: '001',
+    tariff: 'basic',
+    products: {
+      digitalCard: false,
+      bracelet: true,
+    },
+  });
 }
 
 export async function trackWristbandOrderLike(orderId: string): Promise<unknown> {

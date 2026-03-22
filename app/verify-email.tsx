@@ -10,6 +10,7 @@ import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { AuthSessionError, sendEmailOtpWithApi, verifyEmailWithApi } from '@/services/authSession';
 import { validateEmail, validateOtpCode } from '@/services/authValidation';
 import { useThemeContext } from '@/theme/ThemeProvider';
+import { toUserErrorMessage } from '@/utils/errorMessages';
 
 function paramToString(value: string | string[] | undefined): string {
   if (Array.isArray(value)) {
@@ -60,10 +61,10 @@ export default function VerifyEmailPage(): React.JSX.Element {
       setInfo(result.message ?? MESSAGES.auth.emailVerifiedLogin);
     } catch (e) {
       if (e instanceof AuthSessionError) {
-        setError(e.message);
+        setError(toUserErrorMessage(e, MESSAGES.auth.verifyError));
         return;
       }
-      setError(e instanceof Error ? e.message : MESSAGES.auth.verifyError);
+      setError(toUserErrorMessage(e, MESSAGES.auth.verifyError));
     } finally {
       setLoading(false);
     }
@@ -85,10 +86,10 @@ export default function VerifyEmailPage(): React.JSX.Element {
       setInfo(result.message);
     } catch (e) {
       if (e instanceof AuthSessionError) {
-        setError(e.message);
+        setError(toUserErrorMessage(e, MESSAGES.auth.otpSendError));
         return;
       }
-      setError(e instanceof Error ? e.message : MESSAGES.auth.otpSendError);
+      setError(toUserErrorMessage(e, MESSAGES.auth.otpSendError));
     } finally {
       setResending(false);
     }

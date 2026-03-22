@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import NfcManager, { Ndef, NfcTech } from 'react-native-nfc-manager';
 
+import { getMessagesLanguage } from '@/constants/messages';
 import { nfcApi } from '@/lib/apiClient';
 import { addSentryBreadcrumb } from '@/lib/sentry';
 import { NFCTag, NFCState } from '@/types';
+import { toUserErrorMessage } from '@/utils/errorMessages';
 
 export interface UseNfcResult {
   isSupported: boolean;
@@ -19,16 +21,25 @@ export interface UseNfcResult {
   reset: () => void;
 }
 
-function toErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return 'NFC operation failed';
-}
-
 export const NFC_UNSUPPORTED_ERROR = 'NFC недоступен на этом устройстве';
 export const NFC_PROTECTED_TAG_ERROR = 'NFC_TAG_PROTECTED';
+
+function unsupportedNfcMessage(): string {
+  return getMessagesLanguage() === 'uz'
+    ? "Bu qurilmada NFC mavjud emas"
+    : NFC_UNSUPPORTED_ERROR;
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message === NFC_PROTECTED_TAG_ERROR) {
+    return NFC_PROTECTED_TAG_ERROR;
+  }
+
+  const fallback = getMessagesLanguage() === 'uz'
+    ? "NFC xatosi. Qayta urinib ko'ring"
+    : 'Ошибка NFC. Повторите попытку';
+  return toUserErrorMessage(error, fallback);
+}
 
 function parseTag(rawTag: any): NFCTag {
   const records = rawTag?.ndefMessage ?? [];
@@ -135,7 +146,7 @@ export function useNFC(): UseNfcResult {
     });
     if (!isSupported) {
       setState('idle');
-      setError(NFC_UNSUPPORTED_ERROR);
+      setError(unsupportedNfcMessage());
       return;
     }
 
@@ -165,7 +176,7 @@ export function useNFC(): UseNfcResult {
       });
       if (!isSupported) {
         setState('idle');
-        setError(NFC_UNSUPPORTED_ERROR);
+        setError(unsupportedNfcMessage());
         return;
       }
 
@@ -209,7 +220,7 @@ export function useNFC(): UseNfcResult {
     });
     if (!isSupported) {
       setState('idle');
-      setError(NFC_UNSUPPORTED_ERROR);
+      setError(unsupportedNfcMessage());
       return;
     }
 
@@ -239,7 +250,7 @@ export function useNFC(): UseNfcResult {
       });
       if (!isSupported) {
         setState('idle');
-        setError(NFC_UNSUPPORTED_ERROR);
+        setError(unsupportedNfcMessage());
         return;
       }
 

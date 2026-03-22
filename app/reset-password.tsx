@@ -9,6 +9,7 @@ import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { AuthSessionError, resetPasswordWithApi } from '@/services/authSession';
 import { validateConfirmPassword, validateEmail, validateOtpCode, validatePassword } from '@/services/authValidation';
 import { useThemeContext } from '@/theme/ThemeProvider';
+import { toUserErrorMessage } from '@/utils/errorMessages';
 
 function paramToString(value: string | string[] | undefined): string {
   if (Array.isArray(value)) {
@@ -76,10 +77,10 @@ export default function ResetPasswordPage(): React.JSX.Element {
       setInfo(result.message);
     } catch (e) {
       if (e instanceof AuthSessionError) {
-        setError(e.message);
+        setError(toUserErrorMessage(e, MESSAGES.auth.resetPasswordError));
         return;
       }
-      setError(e instanceof Error ? e.message : MESSAGES.auth.resetPasswordError);
+      setError(toUserErrorMessage(e, MESSAGES.auth.resetPasswordError));
     } finally {
       setLoading(false);
     }
