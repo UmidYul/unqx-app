@@ -1,6 +1,6 @@
 # UNQX Prelaunch Status
 
-Date: 2026-03-07
+Date: 2026-03-22
 
 ## Section 2 - App Store requirements
 - [x] NSUsageDescription texts made specific in `app.json`
@@ -31,7 +31,7 @@ Date: 2026-03-07
 - [ ] Camera permission pre-prompt not implemented because camera permission request flow is not present in current codebase
 
 ## Section 6 - Final checklist (code-level)
-- [x] TypeScript no errors (`npx tsc --noEmit`)
+- [ ] TypeScript verification currently blocked in this environment (missing local Expo deps: `expo/tsconfig.base`, `expo-router/types`); re-check after `npm ci`
 - [x] No TODO/FIXME in app/src code
 - [x] No unguarded `console.*` in app/src code
 - [x] iOS payment UX avoids direct Payme/Click wording in iOS order form
