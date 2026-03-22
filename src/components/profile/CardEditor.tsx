@@ -26,6 +26,7 @@ import { Camera, Plus, Trash2 } from 'lucide-react-native';
 
 import { ProfileCard, ThemeTokens } from '@/types';
 import { BUTTON_ICONS, inferButtonIcon, normalizeButtonIconKey } from '@/components/profile/buttonIcons';
+import { normalizeButtonUrl } from '@/components/profile/normalizeButtonUrl';
 import { CardPreview } from '@/components/profile/CardPreview';
 import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { runThrottled } from '@/utils/navigation';
@@ -482,13 +483,17 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
               const filteredButtons = Array.isArray(local.buttons)
                 ? local.buttons.filter((b) => b.label && b.url)
                 : [];
-              // Преобразуем кнопки в формат, который ожидает backend
-              const fixedButtons = filteredButtons.map((b) => ({
-                type: b.icon || 'other',
-                label: b.label,
-                value: b.url,
-                href: b.url,
-              }));
+              // Преобразуем кнопки в формат, который ожидает backend, нормализуем url
+              const fixedButtons = filteredButtons.map((b) => {
+                const type = b.icon || 'other';
+                const normalizedUrl = normalizeButtonUrl(type, b.url);
+                return {
+                  type,
+                  label: b.label,
+                  value: normalizedUrl,
+                  href: normalizedUrl,
+                };
+              });
               const payload = { ...local, buttons: fixedButtons };
               console.log('Saving card:', payload); // Для отладки
               onSave(payload);

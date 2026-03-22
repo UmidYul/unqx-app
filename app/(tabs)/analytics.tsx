@@ -26,6 +26,7 @@ import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { getUzbekistanWeekday } from '@/theme/tokens';
 import { resolveSource } from '@/utils/sourceConfig';
+import { uniqueBy } from '@/utils/uniqueBy';
 
 interface AnalyticsPayload {
   totalTaps: number;
@@ -221,7 +222,7 @@ export default function AnalyticsPage(): React.JSX.Element {
   }, []);
 
   const analytics = parseSummary(query.data ?? {});
-  const cityStats = React.useMemo(() => buildCityStats(analytics.geo, analytics.totalTaps), [analytics.geo, analytics.totalTaps]);
+  const cityStats = React.useMemo(() => uniqueBy(buildCityStats(analytics.geo, analytics.totalTaps), c => c.city.toLowerCase()), [analytics.geo, analytics.totalTaps]);
   const cityMax = React.useMemo(() => Math.max(...cityStats.map((item) => item.taps), 1), [cityStats]);
   const weekMax = Math.max(...analytics.weekTaps, 1);
   const isDark = tokens.text === '#f5f5f5';
@@ -351,7 +352,7 @@ export default function AnalyticsPage(): React.JSX.Element {
                 )}
 
                 <Label color={isDark ? 'rgba(255,255,255,0.52)' : tokens.textMuted}>{analyticsText.sources}</Label>
-                {analytics.sources.length > 0 ? analytics.sources.map((item, index) => (
+                {analytics.sources.length > 0 ? uniqueBy(analytics.sources, s => s.source).map((item, index) => (
                   <SourceRow
                     key={`${item.source}-${index}`}
                     source={item.source}

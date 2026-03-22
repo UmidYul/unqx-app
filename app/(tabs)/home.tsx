@@ -30,6 +30,7 @@ import {
 import { AnalyticsSummary, HomeUser, RecentTap } from '@/types';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { formatSlug } from '@/utils/avatar';
+import { uniqueBy } from '@/utils/uniqueBy';
 
 interface HomePayload {
   user: HomeUser;
@@ -395,7 +396,7 @@ export default function HomePage(): React.JSX.Element {
 
             <Label color={tokens.textMuted}>{MESSAGES.ui.home.recentTaps}</Label>
             {recent.length === 0 ? <Text style={[styles.recentEmpty, { color: tokens.textMuted }]}>{homeText.noEvents}</Text> : null}
-            {recent.map((item, index) => {
+            {uniqueBy(recent, r => normalizeRecentSlug(r.slug) || r.id).map((item, index, arr) => {
               const normalizedSlug = normalizeRecentSlug(item.slug);
               const isUnknown = item.name.trim().toLowerCase() === homeText.unknownName.trim().toLowerCase();
               const isClickable = Boolean(normalizedSlug) && !isUnknown;
@@ -409,13 +410,13 @@ export default function HomePage(): React.JSX.Element {
                       styles.recentRow,
                       {
                         borderBottomColor: tokens.border,
-                        borderBottomWidth: index === recent.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                        borderBottomWidth: index === arr.length - 1 ? 0 : StyleSheet.hairlineWidth,
                         opacity: isClickable ? 1 : 0.9,
                       },
                     ]}
                   >
                     <View style={styles.recentLeft}>
-                      <View style={[styles.avatar, { backgroundColor: `${tokens.accent}14` }]}>
+                      <View style={[styles.avatar, { backgroundColor: `${tokens.accent}14` }]}> 
                         <Text style={[styles.avatarText, { color: tokens.text }]}>{initialLetter(item.name)}</Text>
                       </View>
                       <View>
