@@ -118,6 +118,7 @@ const RU_MESSAGES = {
       OTP_INVALIDATED: 'Код сброшен после нескольких попыток. Запросите новый',
       RESET_TOKEN_INVALID: 'Неверный код для сброса пароля',
       RESET_TOKEN_EXPIRED: 'Код для сброса пароля истёк. Запросите новый',
+      WAF_BLOCKED: 'Сервер временно блокирует мобильный доступ. Обратитесь в поддержку',
     },
   },
   validation: {
@@ -283,6 +284,7 @@ const UZ_MESSAGES: MessageCatalog = {
       OTP_INVALIDATED: 'Bir necha urinishdan so\'ng kod bekor qilindi. Yangisini so\'rang',
       RESET_TOKEN_INVALID: 'Parol tiklash kodi noto\'g\'ri',
       RESET_TOKEN_EXPIRED: 'Parol tiklash kodi muddati tugagan. Yangisini so\'rang',
+      WAF_BLOCKED: 'Server mobil kirishni vaqtincha blokladi. Qo\'llab-quvvatlashga murojaat qiling',
     },
   },
   validation: {

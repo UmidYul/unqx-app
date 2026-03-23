@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Globe, Hash, Lock, Mail, MapPin, Phone, Star, UserCheck, UserPlus } from 'lucide-react-native';
+import { CheckCircle2, Globe, Hash, Lock, Mail, MapPin, Phone, Star, UserCheck, UserPlus } from 'lucide-react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
@@ -190,6 +190,26 @@ export default function ResidentProfilePage(): React.JSX.Element {
   const profile = profileQuery.data;
   const avatarImage = useRetryImageUri(profile?.avatarUrl);
   const contactAddress = React.useMemo(() => normalizeAddress(profile?.address ?? profile?.city), [profile?.address, profile?.city]);
+  const residentSlugs = React.useMemo(() => {
+    const set = new Set<string>();
+    const push = (value: unknown) => {
+      const normalized = normalizeResidentSlug(value);
+      if (normalized) {
+        set.add(normalized);
+      }
+    };
+
+    if (Array.isArray(profile?.slugs)) {
+      for (const candidate of profile.slugs) {
+        push(candidate);
+      }
+    }
+    push(profile?.slug);
+
+    return Array.from(set);
+  }, [profile?.slug, profile?.slugs]);
+  const hasVerifiedBadge = Boolean(profile?.verified || profile?.verifiedCompany);
+  const companyLabel = String(profile?.verifiedCompany ?? '').trim();
   const [privatePassword, setPrivatePassword] = React.useState('');
   const [privateError, setPrivateError] = React.useState('');
   const lockShake = useSharedValue(0);
@@ -530,11 +550,39 @@ export default function ResidentProfilePage(): React.JSX.Element {
                   )}
                 </View>
                 <View style={styles.heroBody}>
-                  <Text style={[styles.name, { color: tokens.text }]}>{profile.name}</Text>
+                  <View style={styles.nameRow}>
+                    <Text style={[styles.name, { color: tokens.text }]}>{profile.name}</Text>
+                    {hasVerifiedBadge ? <CheckCircle2 size={16} strokeWidth={1.8} color={tokens.textMuted} /> : null}
+                  </View>
+                  {companyLabel ? <Text style={[styles.verifiedCompany, { color: tokens.textMuted }]}>{companyLabel}</Text> : null}
                   {profile.username ? <Text style={[styles.meta, { color: tokens.textMuted }]}>{`@${profile.username}`}</Text> : null}
                   <Text style={[styles.slug, { color: tokens.textMuted }]}>
                     <Text style={styles.slugStrong}>{formatSlug(profile.slug)}</Text>
                   </Text>
+                  {residentSlugs.length > 1 ? (
+                    <View style={styles.slugList}>
+                      {residentSlugs.map((value) => {
+                        const active = value === profile.slug;
+                        return (
+                          <View
+                            key={`locked-slug-${value}`}
+                            style={[
+                              styles.slugListChip,
+                              {
+                                borderColor: active ? `${tokens.accent}88` : tokens.border,
+                                backgroundColor: active ? `${tokens.accent}16` : tokens.inputBg,
+                              },
+                            ]}
+                          >
+                            {active ? <CheckCircle2 size={12} strokeWidth={2} color={tokens.accent} /> : null}
+                            <Text style={[styles.slugListChipText, { color: active ? tokens.accent : tokens.textMuted }]}>
+                              {formatSlug(value)}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : null}
                 </View>
               </View>
 
@@ -617,11 +665,39 @@ export default function ResidentProfilePage(): React.JSX.Element {
                 )}
               </View>
               <View style={styles.heroBody}>
-                <Text style={[styles.name, { color: tokens.text }]}>{profile.name}</Text>
+                <View style={styles.nameRow}>
+                  <Text style={[styles.name, { color: tokens.text }]}>{profile.name}</Text>
+                  {hasVerifiedBadge ? <CheckCircle2 size={16} strokeWidth={1.8} color={tokens.textMuted} /> : null}
+                </View>
+                {companyLabel ? <Text style={[styles.verifiedCompany, { color: tokens.textMuted }]}>{companyLabel}</Text> : null}
                 {profile.role ? <Text style={[styles.roleText, { color: tokens.text }]}>{profile.role}</Text> : null}
                 <Text style={[styles.slug, { color: tokens.textMuted }]}>
                   <Text style={styles.slugStrong}>{formatSlug(profile.slug)}</Text>
                 </Text>
+                {residentSlugs.length > 1 ? (
+                  <View style={styles.slugList}>
+                    {residentSlugs.map((value) => {
+                      const active = value === profile.slug;
+                      return (
+                        <View
+                          key={`slug-${value}`}
+                          style={[
+                            styles.slugListChip,
+                            {
+                              borderColor: active ? `${tokens.accent}88` : tokens.border,
+                              backgroundColor: active ? `${tokens.accent}16` : tokens.inputBg,
+                            },
+                          ]}
+                        >
+                          {active ? <CheckCircle2 size={12} strokeWidth={2} color={tokens.accent} /> : null}
+                          <Text style={[styles.slugListChipText, { color: active ? tokens.accent : tokens.textMuted }]}>
+                            {formatSlug(value)}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
                 <View style={styles.pillRow}>
                   <Pill
                     color={profile.tag === 'premium' ? tokens.amber : tokens.textMuted}
@@ -631,7 +707,7 @@ export default function ResidentProfilePage(): React.JSX.Element {
                   </Pill>
                   <Pill color={tokens.textMuted} bg={tokens.inputBg}>{`${profile.taps ?? 0} ${profileText.taps}`}</Pill>
                 </View>
-                {profile.city ? <Text style={[styles.meta, { color: tokens.textMuted }]}>{profile.city}</Text> : null}
+                {profile.city && profile.city !== companyLabel ? <Text style={[styles.meta, { color: tokens.textMuted }]}>{profile.city}</Text> : null}
                 {typeof profile.slugPrice === 'number' && Number.isFinite(profile.slugPrice) ? (
                   <View style={styles.hashRow}>
                     <Hash size={13} strokeWidth={1.7} color={tokens.textMuted} />
@@ -866,6 +942,20 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontFamily: 'Inter_600SemiBold',
   },
+  nameRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  verifiedCompany: {
+    marginTop: 4,
+    textAlign: 'center',
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    letterSpacing: 0.2,
+  },
   roleText: {
     marginTop: 4,
     textAlign: 'center',
@@ -881,6 +971,27 @@ const styles = StyleSheet.create({
   slugStrong: {
     fontFamily: 'Inter_600SemiBold',
     letterSpacing: 1.1,
+  },
+  slugList: {
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    justifyContent: 'center',
+  },
+  slugListChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minHeight: 24,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  slugListChipText: {
+    fontSize: 11,
+    fontFamily: 'Inter_500Medium',
+    letterSpacing: 0.2,
   },
   pillRow: {
     marginTop: 10,

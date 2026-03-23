@@ -82,7 +82,6 @@ const DEFAULT_CARD: ProfileCard = {
   postcode: '',
   extraPhone: '',
   tags: [],
-  customColor: '#111111',
   showBranding: true,
   phone: '',
   telegram: '',
@@ -178,6 +177,7 @@ function normalizeCardTheme(rawTheme: unknown): ProfileCard['theme'] {
   if (raw === 'golden_noir') return 'golden_noir';
   if (raw === 'aurora_codex') return 'aurora_codex';
   if (raw === 'nebula_glass') return 'nebula_glass';
+  if (raw === 'velours') return 'velours';
   return 'default_dark';
 }
 
@@ -195,7 +195,6 @@ function parseProfileCard(raw: unknown): ProfileCard {
     postcode: card?.postcode ?? '',
     extraPhone: card?.extraPhone ?? '',
     tags: Array.isArray(card?.tags) ? card.tags.map((item: any) => String(item)).filter(Boolean) : [],
-    customColor: card?.customColor ?? '#111111',
     showBranding: typeof card?.showBranding === 'boolean' ? card.showBranding : true,
     phone: card?.phone ?? card?.extraPhone ?? sourceUser?.phone ?? '',
     telegram: card?.telegram ?? '',
@@ -543,7 +542,6 @@ export default function ProfilePage(): React.JSX.Element {
           postcode: nextCard.postcode ?? '',
           extraPhone: nextCard.extraPhone ?? nextCard.phone ?? '',
           tags: Array.isArray(nextCard.tags) ? nextCard.tags : [],
-          customColor: nextCard.customColor ?? null,
           showBranding: typeof nextCard.showBranding === 'boolean' ? nextCard.showBranding : true,
           email: nextCard.email,
           phone: nextCard.phone,
@@ -762,7 +760,23 @@ export default function ProfilePage(): React.JSX.Element {
         throw new ApiError('Slug is required', 400, 'SLUG_REQUIRED');
       }
 
-      await apiClient.patch('/profile/card/status', { status: nextStatus });
+      try {
+        await apiClient.patch('/profile/card/status', { status: nextStatus });
+      } catch (error) {
+        const isEndpointMissing = error instanceof ApiError && (error.status === 404 || error.status === 405);
+        if (!isEndpointMissing) {
+          throw error;
+        }
+
+        const uniqueSlugs = Array.from(new Set(ownedSlugStatuses.map((item) => item.fullSlug).filter(Boolean)));
+        if (!uniqueSlugs.length) {
+          throw new ApiError('Slug is required', 400, 'SLUG_REQUIRED');
+        }
+        await Promise.all(
+          uniqueSlugs.map((slug) =>
+            apiClient.patch(`/profile/slugs/${encodeURIComponent(slug)}/status`, { status: nextStatus })),
+        );
+      }
 
       return { nextStatus };
     },

@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Award, Download, Search, Star, TrendingUp, UserX } from 'lucide-react-native';
+import { Award, CheckCircle2, Download, Search, Star, TrendingUp, UserX } from 'lucide-react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -63,6 +63,8 @@ function parseContacts(raw: unknown): Contact[] {
       const lastSeen = String(item?.lastSeen ?? item?.time ?? item?.lastTapAt ?? item?.latestTapAt ?? item?.viewedAt ?? '').trim();
       const saved = Boolean(item?.saved);
       const subscribed = Boolean(item?.subscribed);
+      const verifiedCompany = String(item?.verifiedCompany ?? item?.company ?? item?.companyName ?? '').trim();
+      const verified = Boolean(item?.isVerified ?? item?.verified ?? verifiedCompany);
 
       // Contacts tab should show only explicitly added people.
       if (!saved && !subscribed) {
@@ -78,6 +80,8 @@ function parseContacts(raw: unknown): Contact[] {
         lastSeen,
         saved,
         subscribed,
+        verified,
+        verifiedCompany: verifiedCompany || undefined,
       };
 
       const avatarUrl = resolvePersonAvatar(item);
@@ -159,7 +163,10 @@ function parseResidents(raw: unknown): Resident[] {
   source.forEach((entry: any) => {
     const name = String(entry?.name ?? entry?.displayName ?? entry?.ownerName ?? 'Unknown');
     const avatarUrl = resolvePersonAvatar(entry);
-    const city = String(entry?.city ?? entry?.verifiedCompany ?? '');
+    const cityRaw = String(entry?.city ?? '').trim();
+    const verifiedCompany = String(entry?.verifiedCompany ?? entry?.company ?? entry?.companyName ?? '').trim() || cityRaw;
+    const verified = Boolean(entry?.isVerified ?? entry?.verified ?? verifiedCompany);
+    const city = verified ? '' : cityRaw;
     const tag = entry?.tag ?? entry?.plan ?? 'basic';
     const taps = Number(entry?.taps ?? entry?.views ?? entry?.count ?? 0);
     const subscribed = Boolean(entry?.subscribed);
@@ -176,6 +183,8 @@ function parseResidents(raw: unknown): Resident[] {
         slugs: slugs.length > 0 ? slugs : [primarySlug],
         avatarUrl,
         city,
+        verified,
+        verifiedCompany: verifiedCompany || undefined,
         tag,
         taps,
         subscribed,
@@ -193,6 +202,12 @@ function parseResidents(raw: unknown): Resident[] {
     }
     if (!existing.city && city) {
       existing.city = city;
+    }
+    if (!existing.verified && verified) {
+      existing.verified = true;
+    }
+    if (!existing.verifiedCompany && verifiedCompany) {
+      existing.verifiedCompany = verifiedCompany;
     }
     if (tag === 'premium') {
       existing.tag = 'premium';
@@ -644,11 +659,17 @@ export default function PeoplePage(): React.JSX.Element {
                               />
                               <View style={styles.contactBody}>
                                 <View style={styles.contactHead}>
-                                  <Text style={[styles.contactName, { color: tokens.text }]}>{person.name}</Text>
+                                  <View style={styles.contactNameRow}>
+                                    <Text style={[styles.contactName, { color: tokens.text }]} numberOfLines={1}>{person.name}</Text>
+                                    {person.verified ? <CheckCircle2 size={13} strokeWidth={1.8} color={tokens.textMuted} /> : null}
+                                  </View>
                                   <Pill color={person.tag === 'premium' ? tokens.amber : tokens.textMuted} bg={person.tag === 'premium' ? tokens.amberBg : tokens.surface}>
                                     {person.tag === 'premium' ? peopleText.premium : peopleText.basic}
                                   </Pill>
                                 </View>
+                                {person.verifiedCompany ? (
+                                  <Text style={[styles.contactCompany, { color: tokens.textMuted }]} numberOfLines={1}>{person.verifiedCompany}</Text>
+                                ) : null}
                                 <Text style={[styles.contactMeta, { color: tokens.textMuted }]}>{`${formatSlug(person.slug)} · ${person.taps ?? 0} ${peopleText.taps}`}</Text>
                               </View>
                             </AnimatedPressable>
@@ -769,8 +790,15 @@ export default function PeoplePage(): React.JSX.Element {
                                         textStyle={styles.residentAvatarText}
                                       />
                                       <View style={styles.residentHeadBody}>
-                                        <Text style={[styles.residentName, { color: tokens.text }]} numberOfLines={1}>{resident.name}</Text>
-                                        {resident.city ? (
+                                        <View style={styles.residentNameRow}>
+                                          <Text style={[styles.residentName, { color: tokens.text }]} numberOfLines={1}>{resident.name}</Text>
+                                          {resident.verified ? <CheckCircle2 size={13} strokeWidth={1.8} color={tokens.textMuted} /> : null}
+                                        </View>
+                                        {resident.verifiedCompany ? (
+                                          <Text style={[styles.residentCompany, { color: tokens.textMuted }]} numberOfLines={1}>
+                                            {resident.verifiedCompany}
+                                          </Text>
+                                        ) : resident.city ? (
                                           <Text style={[styles.residentCity, { color: tokens.textMuted }]} numberOfLines={1}>
                                             {resident.city}
                                           </Text>
@@ -1066,6 +1094,19 @@ const styles = StyleSheet.create({
   contactName: {
     fontSize: 13,
     fontFamily: 'Inter_600SemiBold',
+    flexShrink: 1,
+  },
+  contactNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 1,
+  },
+  contactCompany: {
+    fontSize: 10,
+    fontFamily: 'Inter_500Medium',
+    marginBottom: 2,
+    letterSpacing: 0.2,
   },
   contactMeta: {
     fontSize: 11,
@@ -1135,6 +1176,17 @@ const styles = StyleSheet.create({
   residentName: {
     fontSize: 13,
     fontFamily: 'Inter_600SemiBold',
+    flexShrink: 1,
+  },
+  residentNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  residentCompany: {
+    fontSize: 10,
+    fontFamily: 'Inter_500Medium',
+    letterSpacing: 0.2,
   },
   residentCity: {
     fontSize: 10,

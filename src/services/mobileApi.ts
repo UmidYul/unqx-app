@@ -219,9 +219,20 @@ function parseResidentSlugs(raw: unknown, fallbackSlug: string): string[] {
   const set = new Set<string>();
 
   for (const item of source) {
-    const normalized = normalizeResidentSlug(item);
-    if (normalized) {
-      set.add(normalized);
+    if (typeof item === 'string') {
+      const normalized = normalizeResidentSlug(item);
+      if (normalized) {
+        set.add(normalized);
+      }
+      continue;
+    }
+
+    if (item && typeof item === 'object') {
+      const candidate = (item as any)?.fullSlug ?? (item as any)?.slug ?? (item as any)?.code ?? (item as any)?.unq;
+      const normalized = normalizeResidentSlug(candidate);
+      if (normalized) {
+        set.add(normalized);
+      }
     }
   }
 
@@ -276,6 +287,13 @@ function mapResidentProfile(raw: any): ResidentProfile {
   const slug = normalizeResidentSlug(source?.slug) || 'UNQ000';
   const slugs = parseResidentSlugs(source?.slugs, slug);
   const addressRaw = source?.address ?? source?.location ?? source?.addressLine ?? source?.addressText ?? source?.street;
+  const explicitVerifiedCompany = String(
+    source?.verifiedCompany ?? source?.company ?? source?.companyName ?? raw?.verifiedCompany ?? '',
+  ).trim();
+  const city = source?.city ? String(source.city).trim() : '';
+  const verifiedCompany = explicitVerifiedCompany || city;
+  const verified = Boolean(source?.isVerified ?? source?.verified ?? raw?.isVerified ?? raw?.ownerIsVerified ?? verifiedCompany);
+  const resolvedCity = city && city !== verifiedCompany ? city : '';
 
   return {
     name: String(source?.name ?? 'Unknown'),
@@ -286,7 +304,7 @@ function mapResidentProfile(raw: any): ResidentProfile {
       : undefined,
     avatarUrl: resolveAssetUrl(source?.avatarUrl ? String(source.avatarUrl) : undefined),
     address: addressRaw ? String(addressRaw) : undefined,
-    city: source?.city ? String(source.city) : undefined,
+    city: resolvedCity || undefined,
     tag: String(source?.tag ?? 'basic'),
     taps: Number(source?.taps ?? 0),
     role: source?.role ? String(source.role) : undefined,
@@ -305,6 +323,8 @@ function mapResidentProfile(raw: any): ResidentProfile {
     saved: Boolean(source?.saved),
     subscribed: Boolean(source?.subscribed),
     username: source?.username ? String(source.username) : undefined,
+    verified,
+    verifiedCompany: verifiedCompany || undefined,
     isPrivate: Boolean(source?.isPrivate ?? raw?.privateAccess?.required),
     isLocked: Boolean(source?.isLocked ?? (raw?.privateAccess?.required && !raw?.privateAccess?.granted)),
     lockedMessage: source?.lockedMessage ? String(source.lockedMessage) : undefined,
@@ -988,8 +1008,6 @@ export async function subscribeContactLike(slug: string): Promise<unknown> {
 
 export async function fetchProfileLike(): Promise<unknown> {
   const cached = readCache<unknown>('profile');
-  if (cached) return cached;
-
   try {
     const bootstrap = await apiClient.get<any>('/profile/bootstrap');
     const effectivePlan = resolveEffectivePlan(bootstrap);
@@ -1029,20 +1047,34 @@ export async function fetchProfileLike(): Promise<unknown> {
 
     return writeCache('profile', bootstrap);
   } catch (error) {
-    if (!isFallbackError(error)) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
       throw error;
     }
 
-    const bootstrap = await apiClient.getFirst<any>(['/profile/bootstrap', '/auth/me', '/me']);
-    if (bootstrap?.card || bootstrap?.profileCard || bootstrap?.slugs) {
-      return writeCache('profile', bootstrap);
+    if (!isFallbackError(error)) {
+      if (cached) {
+        return cached;
+      }
+      throw error;
     }
 
-    if (bootstrap?.user) {
-      return writeCache('profile', bootstrap);
-    }
+    try {
+      const bootstrap = await apiClient.getFirst<any>(['/profile/bootstrap', '/auth/me', '/me']);
+      if (bootstrap?.card || bootstrap?.profileCard || bootstrap?.slugs) {
+        return writeCache('profile', bootstrap);
+      }
 
-    return writeCache('profile', { user: bootstrap?.user ?? bootstrap });
+      if (bootstrap?.user) {
+        return writeCache('profile', bootstrap);
+      }
+
+      return writeCache('profile', { user: bootstrap?.user ?? bootstrap });
+    } catch (fallbackError) {
+      if (cached) {
+        return cached;
+      }
+      throw fallbackError;
+    }
   }
 }
 
@@ -1067,7 +1099,6 @@ export async function saveProfileCardLike(card: ProfileCard): Promise<unknown> {
     email: normalizedEmail || null,
     extraPhone: normalizeProfileString(rawCard?.extraPhone) || normalizedPhone,
     theme: normalizedTheme,
-    customColor: normalizeProfileString(rawCard?.customColor),
     tags,
     showBranding: typeof rawCard?.showBranding === 'boolean' ? rawCard.showBranding : true,
   };

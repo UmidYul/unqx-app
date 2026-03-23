@@ -68,6 +68,16 @@ function isJsonResponse(contentType: string | null): boolean {
   return !!contentType && contentType.includes('application/json');
 }
 
+function isWafBlockedPayload(payload: unknown): payload is { message: string } {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const message = typeof (payload as Record<string, unknown>).message === 'string'
+    ? String((payload as Record<string, unknown>).message)
+    : '';
+  return /access denied by imunify360/i.test(message);
+}
+
 function canFallback(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 404 || error.status === 405);
 }
@@ -126,7 +136,9 @@ async function parseApiError(response: Response, endpoint: string, method: strin
 
   if (isJsonResponse(contentType)) {
     const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    const message = typeof payload?.error === 'string' ? payload.error : 'Request failed';
+    const message = typeof payload?.error === 'string'
+      ? payload.error
+      : (typeof payload?.message === 'string' ? payload.message : 'Request failed');
     const code = typeof payload?.code === 'string' ? payload.code : null;
     throw new ApiError(message, response.status, code, payload);
   }
@@ -262,7 +274,11 @@ async function request<T>(method: string, path: string, options: RequestOptions 
     return (await response.text()) as T;
   }
 
-  return (await response.json()) as T;
+  const payload = (await response.json()) as unknown;
+  if (isWafBlockedPayload(payload)) {
+    throw new ApiError(payload.message, 403, 'WAF_BLOCKED', payload as Record<string, unknown>);
+  }
+  return payload as T;
 }
 
 async function requestFirst<T>(

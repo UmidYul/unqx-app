@@ -305,13 +305,6 @@ export async function loginWithApi(
     const token = await persistAuth(payload);
     const authenticated = Boolean(payload?.authenticated || payload?.ok || payload?.user);
 
-    if (authenticated || token) {
-      await setSignedFlag(true);
-      if (!applySentryUserFromPayload(payload)) {
-        await syncSentryUserFromApi();
-      }
-    }
-
     if (!token && payload?.code === 'UNVERIFIED') {
       return {
         requiresVerification: true,
@@ -320,9 +313,38 @@ export async function loginWithApi(
       };
     }
 
-    return {
-      requiresVerification: false,
-    };
+    if (authenticated || token) {
+      let sessionReady = Boolean(token);
+      if (!sessionReady) {
+        sessionReady = await hasAuthenticatedSession();
+        if (!sessionReady) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 200);
+          });
+          sessionReady = await hasAuthenticatedSession();
+        }
+      }
+
+      if (!sessionReady) {
+        await setSignedFlag(false);
+        throw new AuthSessionError(MESSAGES.auth.loginError, 'AUTH_SESSION_NOT_READY', 401);
+      }
+
+      await setSignedFlag(true);
+      if (!applySentryUserFromPayload(payload)) {
+        await syncSentryUserFromApi();
+      }
+
+      return {
+        requiresVerification: false,
+      };
+    }
+
+    throw new AuthSessionError(
+      payload?.error || payload?.message || MESSAGES.auth.loginError,
+      payload?.code || 'AUTH_FAILED',
+      401,
+    );
   } catch (error) {
     if (error instanceof ApiError && error.code === 'UNVERIFIED') {
       return {

@@ -129,6 +129,8 @@ export interface Contact {
   subscribed?: boolean;
   email?: string;
   telegram?: string;
+  verified?: boolean;
+  verifiedCompany?: string;
 }
 
 export interface Resident {
@@ -137,6 +139,8 @@ export interface Resident {
   slugs?: string[];
   avatarUrl?: string;
   city?: string;
+  verified?: boolean;
+  verifiedCompany?: string;
   tag?: 'premium' | 'basic' | string;
   taps?: number;
   subscribed?: boolean;
@@ -165,6 +169,8 @@ export interface ResidentProfile {
   saved?: boolean;
   subscribed?: boolean;
   username?: string;
+  verified?: boolean;
+  verifiedCompany?: string;
   isPrivate?: boolean;
   isLocked?: boolean;
   lockedMessage?: string;
@@ -214,7 +220,6 @@ export interface ProfileCard {
   postcode?: string;
   extraPhone?: string;
   tags?: string[];
-  customColor?: string;
   showBranding?: boolean;
   phone: string;
   telegram: string;
@@ -231,7 +236,8 @@ export interface ProfileCard {
     | 'midnight_obsidian'
     | 'golden_noir'
     | 'aurora_codex'
-    | 'nebula_glass';
+    | 'nebula_glass'
+    | 'velours';
   buttons: CardButton[];
 }
 

@@ -37,6 +37,7 @@ const THEME_OPTIONS: Array<{ id: string; label: string; swatch: string; premium?
   { id: 'golden_noir', label: 'Noir Aureate', swatch: '#141a27', premium: true },
   { id: 'aurora_codex', label: 'Aurora Scriptum', swatch: '#efe1c2', premium: true },
   { id: 'nebula_glass', label: 'Liquid Glass', swatch: '#1c1c1e', premium: true },
+  { id: 'velours', label: 'Velours Luxe', swatch: '#2d0a12', premium: true },
 ];
 
 export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, onPreview, onSave }: CardEditorProps): React.JSX.Element {
@@ -64,7 +65,6 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
       address: 'Manzil',
       postcode: 'Indeks',
       extraPhone: "Qo'shimcha telefon",
-      accentColor: 'Aksent rang',
       hideBranding: 'UNQX brendingini yashirish',
       cardTheme: 'Vizitka mavzusi',
       premiumThemesHint: 'Premium mavzular faqat Premium tarifda mavjud',
@@ -97,7 +97,6 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
       address: 'Адрес',
       postcode: 'Индекс',
       extraPhone: 'Доп. телефон',
-      accentColor: 'Кастомный цвет акцента',
       hideBranding: 'Скрыть брендинг UNQX',
       cardTheme: 'Тема визитки',
       premiumThemesHint: 'Премиум-темы доступны только на тарифе Premium',
@@ -123,7 +122,6 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
     address: card.address || '',
     postcode: card.postcode || '',
     extraPhone: card.extraPhone || '',
-    customColor: card.customColor || '#111111',
     showBranding: card.showBranding !== undefined ? card.showBranding : true,
   });
   const [tagInput, setTagInput] = React.useState('');
@@ -159,7 +157,6 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
         address: card.address || '',
         postcode: card.postcode || '',
         extraPhone: card.extraPhone || '',
-        customColor: card.customColor || '#111111',
         showBranding: card.showBranding !== undefined ? card.showBranding : true,
         buttons: Array.isArray(card.buttons) ? card.buttons : [],
       });
@@ -412,17 +409,9 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
             </View>
           </View>
 
-          {/* Кастомный цвет акцента и брендинг */}
+          {/* Брендинг */}
           <View style={styles.block}>
-            <Text style={[styles.blockLabel, { color: tokens.textMuted }]}>{text.accentColor}</Text>
-            <TextInput
-              value={local.customColor}
-              onChangeText={(v) => updateField('customColor', v)}
-              placeholder='#111111'
-              placeholderTextColor={tokens.textMuted}
-              style={[styles.fieldInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text, width: 120 }]}
-            />
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Switch
                 value={local.showBranding}
                 onValueChange={(v) => updateField('showBranding', v)}

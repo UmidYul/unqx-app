@@ -131,6 +131,18 @@ function resolvePreviewTheme(theme: ProfileCard['theme']): {
       buttonText: '#f7f7fb',
     };
   }
+  if (theme === 'velours') {
+    return {
+      cardBg: '#2d0a12',
+      avatarBg: '#220609',
+      avatarText: '#c9a55a',
+      name: '#f5e8e8',
+      job: '#d8b6bf',
+      slug: '#c9a55a',
+      buttonBg: '#3a0e18',
+      buttonText: '#f5e8e8',
+    };
+  }
 
   return {
     cardBg: '#111111',
