@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Linking, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ChevronRight, QrCode, Share2 } from 'lucide-react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
@@ -30,15 +30,27 @@ import { ApiError, nfcApi, apiClient } from '@/lib/apiClient';
 import { queryKeys } from '@/lib/queryKeys';
 import { storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import {
+  addPrivateAccessPasswordLike,
+  changePrivateAccessPasswordLike,
+  deletePrivateAccessPasswordLike,
   createWristbandOrderLike,
   fetchWristbandOrdersLike,
   fetchAnalyticsDashboardLike,
+  fetchPrivateAccessSettingsLike,
   fetchProfileLike,
   saveProfileCardLike,
   trackWristbandOrderLike,
 } from '@/services/mobileApi';
 import { signOut } from '@/services/authSession';
-import { NFCHistoryItem, ProfileCard, ThemeTokens, WristbandOrder, WristbandStatus } from '@/types';
+import {
+  NFCHistoryItem,
+  PrivateAccessLog,
+  PrivateAccessPassword,
+  ProfileCard,
+  ThemeTokens,
+  WristbandOrder,
+  WristbandStatus,
+} from '@/types';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { getUzbekistanHour, resolveThemeByHour } from '@/theme/tokens';
 import { formatSlug } from '@/utils/avatar';
@@ -50,6 +62,15 @@ interface WristbandTag {
   name: string;
   linkedSlug?: string;
   status?: string;
+}
+
+type CardVisibilityStatus = 'active' | 'paused' | 'private';
+
+interface OwnedSlugStatusItem {
+  fullSlug: string;
+  isPrimary: boolean;
+  status: CardVisibilityStatus;
+  pauseMessage: string;
 }
 
 const DEFAULT_CARD: ProfileCard = {
@@ -66,7 +87,7 @@ const DEFAULT_CARD: ProfileCard = {
   phone: '',
   telegram: '',
   email: '',
-  slug: 'UNQ001',
+  slug: '',
   avatarUrl: undefined,
   theme: 'default_dark',
   buttons: [
@@ -78,10 +99,71 @@ const DEFAULT_CARD: ProfileCard = {
 
 const BIOMETRIC_TIMEOUT_OPTIONS_MS = [0, 30_000, 60_000, 5 * 60_000] as const;
 
+function normalizeOwnedSlug(value: unknown): string {
+  const normalized = String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  return /^[A-Z]{3}\d{3}$/.test(normalized) ? normalized : '';
+}
+
+function normalizeCardVisibilityStatus(value: unknown): CardVisibilityStatus {
+  const raw = String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+  if (raw === 'paused') return 'paused';
+  if (raw === 'private') return 'private';
+  if (raw === 'approved') return 'active';
+  return 'active';
+}
+
+function parseOwnedSlugStatuses(raw: unknown): OwnedSlugStatusItem[] {
+  const payload = raw as { slugs?: any[]; user?: any };
+  const source = Array.isArray(payload?.slugs)
+    ? payload.slugs
+    : Array.isArray(payload?.user?.slugs)
+      ? payload.user.slugs
+      : [];
+
+  return source
+    .map((item: any): OwnedSlugStatusItem | null => {
+      const normalizedSlug = normalizeOwnedSlug(item?.fullSlug ?? item?.slug);
+      if (!normalizedSlug) {
+        return null;
+      }
+
+      return {
+        fullSlug: normalizedSlug,
+        isPrimary: Boolean(item?.isPrimary),
+        status: normalizeCardVisibilityStatus(item?.status),
+        pauseMessage: String(item?.pauseMessage ?? ''),
+      };
+    })
+    .filter((item: OwnedSlugStatusItem | null): item is OwnedSlugStatusItem => item !== null);
+}
+
 function pickPrimarySlug(raw: any): string {
   const slugs = Array.isArray(raw?.slugs) ? raw.slugs : [];
   const primary = slugs.find((item: any) => item?.isPrimary);
-  return String(primary?.fullSlug ?? slugs[0]?.fullSlug ?? raw?.selectedSlug ?? raw?.slug ?? raw?.username ?? DEFAULT_CARD.slug);
+  const sourceUser = raw?.user ?? {};
+  const candidates = [
+    primary?.fullSlug,
+    primary?.slug,
+    slugs[0]?.fullSlug,
+    slugs[0]?.slug,
+    raw?.selectedSlug,
+    sourceUser?.selectedSlug,
+  ];
+
+  for (const value of candidates) {
+    const normalized = normalizeOwnedSlug(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return '';
 }
 
 function normalizeCardTheme(rawTheme: unknown): ProfileCard['theme'] {
@@ -174,7 +256,7 @@ function parseHistory(raw: unknown): NFCHistoryItem[] {
 
   return source.map((item: any, index) => ({
     id: String(item?.id ?? `h-${index}`),
-    slug: String(item?.slug ?? 'UNQ000'),
+    slug: String(item?.slug ?? ''),
     uid: item?.uid,
     type: item?.type === 'write' || item?.type === 'verify' || item?.type === 'lock' ? item.type : 'read',
     timestamp: String(item?.timestamp ?? item?.createdAt ?? ''),
@@ -212,6 +294,20 @@ function parseOrders(raw: unknown): WristbandOrder[] {
     });
 }
 
+function formatDateTimeShort(value: string | null | undefined, isUz: boolean): string {
+  const parsed = Date.parse(String(value ?? ''));
+  if (!Number.isFinite(parsed)) {
+    return isUz ? '—' : '—';
+  }
+  return new Date(parsed).toLocaleString(isUz ? 'uz-UZ' : 'ru-RU', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function Toggle({ value, onPress, tokens }: { value: boolean; onPress: () => void; tokens: ThemeTokens }): React.JSX.Element {
   const progress = useSharedValue(value ? 1 : 0);
 
@@ -246,9 +342,16 @@ export default function ProfilePage(): React.JSX.Element {
   const [previewCard, setPreviewCard] = React.useState<ProfileCard | null>(null);
   const [shareVisible, setShareVisible] = React.useState(false);
   const [qrVisible, setQrVisible] = React.useState(false);
+  const [cardVisibilityModalVisible, setCardVisibilityModalVisible] = React.useState(false);
   const [wristbandVisible, setWristbandVisible] = React.useState(false);
   const [languageModalVisible, setLanguageModalVisible] = React.useState(false);
   const [biometricTimeoutModalVisible, setBiometricTimeoutModalVisible] = React.useState(false);
+  const [privateAccessModalVisible, setPrivateAccessModalVisible] = React.useState(false);
+  const [privatePasswordLabelInput, setPrivatePasswordLabelInput] = React.useState('');
+  const [privatePasswordValueInput, setPrivatePasswordValueInput] = React.useState('');
+  const [changePasswordId, setChangePasswordId] = React.useState<string | null>(null);
+  const [changeOldPassword, setChangeOldPassword] = React.useState('');
+  const [changeNewPassword, setChangeNewPassword] = React.useState('');
 
   React.useEffect(() => {
     const raw = Array.isArray(params.showQr) ? params.showQr[0] : params.showQr;
@@ -317,8 +420,28 @@ export default function ProfilePage(): React.JSX.Element {
   });
 
   const card = React.useMemo(() => (meQuery.data ? parseProfileCard(meQuery.data) : null), [meQuery.data]);
+  const ownedSlugStatuses = React.useMemo(() => parseOwnedSlugStatuses(meQuery.data), [meQuery.data]);
   const userPlan = React.useMemo(() => parseUserPlan(meQuery.data), [meQuery.data]);
+  const hasOwnedSlug = React.useMemo(() => Boolean(card?.slug && normalizeOwnedSlug(card.slug)), [card?.slug]);
   const hasCardAccess = userPlan === 'basic' || userPlan === 'premium';
+  const canUseCardFeatures = hasCardAccess && hasOwnedSlug;
+  const privateAccessQuery = useQuery({
+    queryKey: ['profile-private-access'],
+    queryFn: fetchPrivateAccessSettingsLike,
+    enabled: canUseCardFeatures,
+    retry: false,
+  });
+  const currentCardVisibility = React.useMemo<CardVisibilityStatus>(() => {
+    if (!ownedSlugStatuses.length) {
+      return 'active';
+    }
+    const primary = ownedSlugStatuses.find((item) => item.isPrimary) ?? ownedSlugStatuses[0];
+    return normalizeCardVisibilityStatus(primary?.status);
+  }, [ownedSlugStatuses]);
+  const hasMixedCardVisibility = React.useMemo(() => {
+    const statuses = new Set(ownedSlugStatuses.map((item) => normalizeCardVisibilityStatus(item.status)));
+    return statuses.size > 1;
+  }, [ownedSlugStatuses]);
   const avatarImage = useRetryImageUri(card?.avatarUrl);
   const totalTaps = React.useMemo(() => parseTotalTaps(analyticsQuery.data), [analyticsQuery.data]);
   const wristbandStatus = React.useMemo(
@@ -328,6 +451,16 @@ export default function ProfilePage(): React.JSX.Element {
   const tags = React.useMemo(() => parseTags(tagsQuery.data), [tagsQuery.data]);
   const history = React.useMemo(() => parseHistory(historyQuery.data), [historyQuery.data]);
   const orders = React.useMemo(() => parseOrders(ordersQuery.data), [ordersQuery.data]);
+  const privatePasswords = React.useMemo<PrivateAccessPassword[]>(
+    () => (Array.isArray(privateAccessQuery.data?.passwords) ? privateAccessQuery.data.passwords : []),
+    [privateAccessQuery.data?.passwords],
+  );
+  const privateAccessLogs = React.useMemo<PrivateAccessLog[]>(
+    () => (Array.isArray(privateAccessQuery.data?.logs) ? privateAccessQuery.data.logs : []),
+    [privateAccessQuery.data?.logs],
+  );
+  const privatePasswordMinLength = Number(privateAccessQuery.data?.minLength ?? 4) || 4;
+  const privatePasswordLimit = Number(privateAccessQuery.data?.limit ?? 10) || 10;
   const order = React.useMemo<WristbandOrder | null>(() => {
     if (orderQuery.data) {
       return parseOrder(orderQuery.data);
@@ -336,9 +469,34 @@ export default function ProfilePage(): React.JSX.Element {
   }, [orderQuery.data]);
   const loading = !card && (meQuery.isLoading || analyticsQuery.isLoading || tagsQuery.isLoading || historyQuery.isLoading);
   const isRefreshing = meQuery.isRefetching || wristbandQuery.isRefetching;
+
+  React.useEffect(() => {
+    if (!canUseCardFeatures) {
+      if (qrVisible) setQrVisible(false);
+      if (shareVisible) setShareVisible(false);
+      if (privateAccessModalVisible) setPrivateAccessModalVisible(false);
+    }
+  }, [canUseCardFeatures, privateAccessModalVisible, qrVisible, shareVisible]);
+
+  React.useEffect(() => {
+    if (privateAccessModalVisible) {
+      return;
+    }
+    setPrivatePasswordLabelInput('');
+    setPrivatePasswordValueInput('');
+    setChangePasswordId(null);
+    setChangeOldPassword('');
+    setChangeNewPassword('');
+  }, [privateAccessModalVisible]);
+
   const onRefresh = React.useCallback(async () => {
-    await Promise.all([meQuery.refetch(), wristbandQuery.refetch(), ordersQuery.refetch()]);
-  }, [meQuery, ordersQuery, wristbandQuery]);
+    await Promise.all([
+      meQuery.refetch(),
+      wristbandQuery.refetch(),
+      ordersQuery.refetch(),
+      canUseCardFeatures ? privateAccessQuery.refetch() : Promise.resolve(null),
+    ]);
+  }, [canUseCardFeatures, meQuery, ordersQuery, privateAccessQuery, wristbandQuery]);
 
   React.useEffect(() => {
     const wristbandParam = Array.isArray(params.wristband) ? params.wristband[0] : params.wristband;
@@ -542,15 +700,153 @@ export default function ProfilePage(): React.JSX.Element {
     },
   });
 
+  const addPrivatePasswordMutation = useMutation({
+    networkMode: 'online',
+    mutationFn: (payload: { label?: string; password: string }) => addPrivateAccessPasswordLike(payload),
+    onSuccess: async () => {
+      setPrivatePasswordLabelInput('');
+      setPrivatePasswordValueInput('');
+      setError(null);
+      toast.success(isUz ? 'Parol qo‘shildi' : 'Пароль добавлен');
+      await privateAccessQuery.refetch();
+    },
+    onError: (error) => {
+      const message = toUserErrorMessage(error, isUz ? 'Parol qo‘shib bo‘lmadi' : 'Не удалось добавить пароль');
+      setError(message);
+      toast.error(MESSAGES.toast.saveFailed, message);
+    },
+  });
+
+  const changePrivatePasswordMutation = useMutation({
+    networkMode: 'online',
+    mutationFn: (payload: { id: string; oldPassword: string; newPassword: string }) => changePrivateAccessPasswordLike(payload),
+    onSuccess: async () => {
+      setChangePasswordId(null);
+      setChangeOldPassword('');
+      setChangeNewPassword('');
+      setError(null);
+      toast.success(isUz ? 'Parol yangilandi' : 'Пароль обновлён');
+      await privateAccessQuery.refetch();
+    },
+    onError: (error) => {
+      const message = toUserErrorMessage(error, isUz ? 'Parolni yangilab bo‘lmadi' : 'Не удалось обновить пароль');
+      setError(message);
+      toast.error(MESSAGES.toast.saveFailed, message);
+    },
+  });
+
+  const deletePrivatePasswordMutation = useMutation({
+    networkMode: 'online',
+    mutationFn: (id: string) => deletePrivateAccessPasswordLike(id),
+    onSuccess: async () => {
+      if (changePasswordId) {
+        setChangePasswordId(null);
+        setChangeOldPassword('');
+        setChangeNewPassword('');
+      }
+      setError(null);
+      toast.success(isUz ? 'Parol o‘chirildi' : 'Пароль удалён');
+      await privateAccessQuery.refetch();
+    },
+    onError: (error) => {
+      const message = toUserErrorMessage(error, isUz ? 'Parolni o‘chirib bo‘lmadi' : 'Не удалось удалить пароль');
+      setError(message);
+      toast.error(MESSAGES.toast.saveFailed, message);
+    },
+  });
+
+  const updateCardVisibilityMutation = useMutation({
+    networkMode: 'offlineFirst',
+    mutationFn: async (nextStatus: CardVisibilityStatus) => {
+      if (!ownedSlugStatuses.length) {
+        throw new ApiError('Slug is required', 400, 'SLUG_REQUIRED');
+      }
+
+      await apiClient.patch('/profile/card/status', { status: nextStatus });
+
+      return { nextStatus };
+    },
+    onMutate: async (nextStatus) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.me });
+      const previous = queryClient.getQueryData(queryKeys.me);
+
+      queryClient.setQueryData(queryKeys.me, (old: any) => {
+        if (!old || typeof old !== 'object') {
+          return old;
+        }
+
+        const patchSlugs = (slugs: unknown): unknown => {
+          if (!Array.isArray(slugs)) {
+            return slugs;
+          }
+          return slugs.map((item: any) => ({
+            ...item,
+            status: nextStatus,
+          }));
+        };
+
+        return {
+          ...old,
+          slugs: patchSlugs(old?.slugs),
+          user: old?.user
+            ? {
+              ...old.user,
+              slugs: patchSlugs(old.user.slugs),
+            }
+            : old?.user,
+        };
+      });
+
+      return { previous };
+    },
+    onSuccess: () => {
+      setCardVisibilityModalVisible(false);
+      setError(null);
+      toast.success(isUz ? 'Vizitka holati yangilandi' : 'Статус визитки обновлён');
+    },
+    onError: (error, _nextStatus, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.me, context.previous);
+      }
+
+      if (error instanceof ApiError && error.code === 'PLAN_REQUIRED') {
+        notifyPlanAndSlugRequired();
+        return;
+      }
+
+      const message = toUserErrorMessage(error, isUz ? 'Holatni yangilab bo‘lmadi' : 'Не удалось обновить статус');
+      setError(message);
+      toast.error(MESSAGES.toast.saveFailed, message);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.homeSummary });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.homeRecent });
+    },
+  });
+
+  const openPricingPage = React.useCallback(async () => {
+    try {
+      await Linking.openURL('https://unqx.uz/#pricing');
+    } catch {
+      toast.error(isUz ? 'Havolani ochib bo\'lmadi' : 'Не удалось открыть ссылку');
+    }
+  }, [isUz]);
+
+  const notifyPlanAndSlugRequired = React.useCallback(() => {
+    const title = isUz ? 'SLUG va tarif kerak' : 'Нужны slug и тариф';
+    const subtitle = isUz
+      ? 'Vizitka, QR va ulashish uchun avval SLUG egallab tarifni faollashtiring'
+      : 'Чтобы пользоваться визиткой, QR и шарингом, сначала купите slug и активируйте тариф';
+    setError(title);
+    toast.error(title, subtitle);
+    void openPricingPage();
+  }, [isUz, openPricingPage]);
+
   const handleSaveCard = React.useCallback(
     (nextCard: ProfileCard) => {
-      if (!hasCardAccess) {
-        const title = isUz ? 'Tarif faollashtirilmagan' : 'Тариф не активирован';
-        const subtitle = isUz
-          ? 'Vizitkani tahrirlash uchun avval tarif sotib oling'
-          : 'Чтобы редактировать визитку, сначала купите тариф';
-        setError(title);
-        toast.error(title, subtitle);
+      if (!canUseCardFeatures) {
+        notifyPlanAndSlugRequired();
         return;
       }
       if (!isOnline) {
@@ -559,21 +855,174 @@ export default function ProfilePage(): React.JSX.Element {
       }
       saveCardMutation.mutate(nextCard);
     },
-    [hasCardAccess, isOnline, isUz, saveCardMutation],
+    [canUseCardFeatures, isOnline, notifyPlanAndSlugRequired, saveCardMutation],
   );
 
   const handleOpenCardEditor = React.useCallback(() => {
-    if (!hasCardAccess) {
-      const title = isUz ? 'Tarif faollashtirilmagan' : 'Тариф не активирован';
-      const subtitle = isUz
-        ? 'Vizitkani tahrirlash uchun avval tarif sotib oling'
-        : 'Чтобы редактировать визитку, сначала купите тариф';
-      setError(title);
-      toast.error(title, subtitle);
+    if (!canUseCardFeatures) {
+      notifyPlanAndSlugRequired();
       return;
     }
     setEditorVisible(true);
-  }, [hasCardAccess, isUz]);
+  }, [canUseCardFeatures, notifyPlanAndSlugRequired]);
+
+  const handleOpenCardVisibility = React.useCallback(() => {
+    if (!canUseCardFeatures) {
+      notifyPlanAndSlugRequired();
+      return;
+    }
+
+    if (!ownedSlugStatuses.length) {
+      const message = isUz ? 'Slug topilmadi' : 'Slug не найден';
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
+    setCardVisibilityModalVisible(true);
+  }, [canUseCardFeatures, isUz, notifyPlanAndSlugRequired, ownedSlugStatuses.length]);
+
+  const handleOpenPrivateAccess = React.useCallback(() => {
+    if (!canUseCardFeatures) {
+      notifyPlanAndSlugRequired();
+      return;
+    }
+    setPrivateAccessModalVisible(true);
+    if (!privateAccessQuery.data && !privateAccessQuery.isFetching) {
+      void privateAccessQuery.refetch();
+    }
+  }, [canUseCardFeatures, notifyPlanAndSlugRequired, privateAccessQuery]);
+
+  const handleAddPrivatePassword = React.useCallback(() => {
+    if (!canUseCardFeatures) {
+      notifyPlanAndSlugRequired();
+      return;
+    }
+    if (!isOnline) {
+      toast.info(MESSAGES.toast.offlineQueued);
+      return;
+    }
+
+    const password = String(privatePasswordValueInput || '').trim();
+    const label = String(privatePasswordLabelInput || '').trim();
+    if (privatePasswords.length >= privatePasswordLimit) {
+      toast.error(isUz ? `Limit ${privatePasswordLimit} ta` : `Достигнут лимит ${privatePasswordLimit}`);
+      return;
+    }
+    if (password.length < privatePasswordMinLength) {
+      toast.error(isUz ? `Kamida ${privatePasswordMinLength} ta belgi` : `Минимум ${privatePasswordMinLength} символа`);
+      return;
+    }
+
+    addPrivatePasswordMutation.mutate({ label, password });
+  }, [
+    addPrivatePasswordMutation,
+    canUseCardFeatures,
+    isOnline,
+    isUz,
+    notifyPlanAndSlugRequired,
+    privatePasswordLabelInput,
+    privatePasswordLimit,
+    privatePasswordMinLength,
+    privatePasswordValueInput,
+    privatePasswords.length,
+  ]);
+
+  const handleStartChangePrivatePassword = React.useCallback((id: string) => {
+    setChangePasswordId(id);
+    setChangeOldPassword('');
+    setChangeNewPassword('');
+  }, []);
+
+  const handleCancelChangePrivatePassword = React.useCallback(() => {
+    setChangePasswordId(null);
+    setChangeOldPassword('');
+    setChangeNewPassword('');
+  }, []);
+
+  const handleSaveChangePrivatePassword = React.useCallback(() => {
+    if (!changePasswordId) {
+      return;
+    }
+    if (!isOnline) {
+      toast.info(MESSAGES.toast.offlineQueued);
+      return;
+    }
+
+    const oldPassword = String(changeOldPassword || '').trim();
+    const newPassword = String(changeNewPassword || '').trim();
+    if (!oldPassword) {
+      toast.error(isUz ? 'Eski parolni kiriting' : 'Введите старый пароль');
+      return;
+    }
+    if (newPassword.length < privatePasswordMinLength) {
+      toast.error(isUz ? `Kamida ${privatePasswordMinLength} ta belgi` : `Минимум ${privatePasswordMinLength} символа`);
+      return;
+    }
+
+    changePrivatePasswordMutation.mutate({
+      id: changePasswordId,
+      oldPassword,
+      newPassword,
+    });
+  }, [
+    changeNewPassword,
+    changeOldPassword,
+    changePasswordId,
+    changePrivatePasswordMutation,
+    isOnline,
+    isUz,
+    privatePasswordMinLength,
+  ]);
+
+  const handleDeletePrivatePassword = React.useCallback((id: string) => {
+    if (!isOnline) {
+      toast.info(MESSAGES.toast.offlineQueued);
+      return;
+    }
+    deletePrivatePasswordMutation.mutate(id);
+  }, [deletePrivatePasswordMutation, isOnline]);
+
+  const handleSelectCardVisibility = React.useCallback((nextStatus: CardVisibilityStatus) => {
+    if (!canUseCardFeatures) {
+      notifyPlanAndSlugRequired();
+      return;
+    }
+    if (!ownedSlugStatuses.length) {
+      const message = isUz ? 'Slug topilmadi' : 'Slug не найден';
+      setError(message);
+      toast.error(message);
+      return;
+    }
+    if (!isOnline) {
+      toast.info(MESSAGES.toast.offlineQueued);
+      return;
+    }
+    updateCardVisibilityMutation.mutate(nextStatus);
+  }, [
+    canUseCardFeatures,
+    isOnline,
+    isUz,
+    notifyPlanAndSlugRequired,
+    ownedSlugStatuses.length,
+    updateCardVisibilityMutation,
+  ]);
+
+  const handleOpenQr = React.useCallback(() => {
+    if (!canUseCardFeatures) {
+      notifyPlanAndSlugRequired();
+      return;
+    }
+    setQrVisible(true);
+  }, [canUseCardFeatures, notifyPlanAndSlugRequired]);
+
+  const handleOpenShare = React.useCallback(() => {
+    if (!canUseCardFeatures) {
+      notifyPlanAndSlugRequired();
+      return;
+    }
+    setShareVisible(true);
+  }, [canUseCardFeatures, notifyPlanAndSlugRequired]);
 
   const handleRenameTag = React.useCallback(
     (uid: string, name: string) => {
@@ -707,16 +1156,51 @@ export default function ProfilePage(): React.JSX.Element {
       premium: 'Premium',
       basic: 'Asosiy',
       noPlan: 'Tarif tanlanmagan',
+      slugNotSelected: 'Slug hali tanlanmagan',
       nfcActive: '● NFC faol',
       qrTitle: 'QR-kod',
       qrSub: "Yuklab olish yoki ko'rsatish",
       shareTitle: 'Ulashish',
       shareSub: 'WhatsApp, Telegram...',
+      cardLockedSub: 'Vizitka uchun avval SLUG va tarif kerak',
       editCard: 'Vizitkani tahrirlash',
       editCardSub: "Ism, havolalar, mavzu, tugmalar",
       wristband: 'Bilaguzuk va teglar',
       wristbandSub: 'Holat, tarix, buyurtma',
       settings: 'Sozlamalar',
+      cardVisibility: 'Vizitka holati',
+      cardVisibilitySubActive: 'Faol: ochiq va to‘liq ko‘rinadi',
+      cardVisibilitySubPaused: 'Pauza: tashrif buyuruvchilar pauza sahifasini ko‘radi',
+      cardVisibilitySubPrivate: 'Maxfiy: indekslanmaydi, faqat havola orqali',
+      cardVisibilityMixed: 'Slug holatlari turlicha, bir xil holat qo‘llanadi',
+      cardVisibilityModalTitle: 'Vizitka holatini tanlang',
+      cardVisibilityModalHint: 'Tanlangan holat barcha sluglarga bir xil qo‘llanadi',
+      cardVisibilityActive: 'Faol',
+      cardVisibilityPaused: 'Pauza',
+      cardVisibilityPrivate: 'Maxfiy',
+      privateAccess: 'Maxfiy kirish parollari',
+      privateAccessLockedSub: 'Parollar bilan yopiq vizitkani boshqarish',
+      privateAccessModalTitle: 'Maxfiy kirish',
+      privateAccessModalHint: 'Parollar 5 daqiqalik kirish beradi. Bir nechta parol yaratish mumkin.',
+      privateAccessLabelPlaceholder: 'Yorliq (ixtiyoriy)',
+      privateAccessPasswordPlaceholder: 'Yangi parol',
+      privateAccessAdd: 'Qo‘shish',
+      privateAccessPasswordLimit: 'Parollar',
+      privateAccessPasswords: 'Parollar ro‘yxati',
+      privateAccessEmpty: 'Hali parol qo‘shilmagan.',
+      privateAccessNoLabel: 'Yorliqsiz',
+      privateAccessCreatedAt: 'Yaratilgan',
+      privateAccessLastUsedAt: 'Oxirgi foydalanish',
+      privateAccessChange: 'Parolni almashtirish',
+      privateAccessDelete: 'O‘chirish',
+      privateAccessOldPlaceholder: 'Eski parol',
+      privateAccessNewPlaceholder: 'Yangi parol',
+      privateAccessSave: 'Saqlash',
+      privateAccessCancel: 'Bekor qilish',
+      privateAccessLogs: 'Kim ochgan',
+      privateAccessLogsEmpty: 'Hali ochilishlar yo‘q.',
+      privateAccessLogFrom: 'Slug',
+      privateAccessLogDevice: 'Qurilma',
       theme: 'Mavzu',
       autoTheme: 'Avto-mavzu (vaqt bo\'yicha)',
       autoThemeHours: 'Qorong\'i 20:00-08:00 (UZT)',
@@ -757,16 +1241,51 @@ export default function ProfilePage(): React.JSX.Element {
       premium: 'Премиум',
       basic: 'Базовый',
       noPlan: 'Тариф не выбран',
+      slugNotSelected: 'Slug пока не выбран',
       nfcActive: '● NFC активен',
       qrTitle: 'QR-код',
       qrSub: 'Скачать или показать',
       shareTitle: 'Поделиться',
       shareSub: 'WhatsApp, Telegram...',
+      cardLockedSub: 'Сначала купите slug и тариф',
       editCard: 'Редактировать визитку',
       editCardSub: 'Имя, ссылки, тема, кнопки',
       wristband: 'Браслет и метки',
       wristbandSub: 'Статус, история, заказ',
       settings: 'Настройки',
+      cardVisibility: 'Статус визитки',
+      cardVisibilitySubActive: 'Активна: полностью доступна',
+      cardVisibilitySubPaused: 'Пауза: посетители видят страницу паузы',
+      cardVisibilitySubPrivate: 'Приватная: не индексируется, доступ по ссылке',
+      cardVisibilityMixed: 'У slug разные статусы, применится единый',
+      cardVisibilityModalTitle: 'Выберите статус визитки',
+      cardVisibilityModalHint: 'Выбранный статус будет применён ко всем slug',
+      cardVisibilityActive: 'Активная',
+      cardVisibilityPaused: 'Пауза',
+      cardVisibilityPrivate: 'Приватная',
+      privateAccess: 'Пароли приватного доступа',
+      privateAccessLockedSub: 'Управление доступом к закрытой визитке',
+      privateAccessModalTitle: 'Приватный доступ',
+      privateAccessModalHint: 'Каждый пароль открывает визитку на 5 минут. Можно создать несколько паролей.',
+      privateAccessLabelPlaceholder: 'Метка (необязательно)',
+      privateAccessPasswordPlaceholder: 'Новый пароль',
+      privateAccessAdd: 'Добавить',
+      privateAccessPasswordLimit: 'Пароли',
+      privateAccessPasswords: 'Список паролей',
+      privateAccessEmpty: 'Пока нет паролей.',
+      privateAccessNoLabel: 'Без метки',
+      privateAccessCreatedAt: 'Создан',
+      privateAccessLastUsedAt: 'Последнее использование',
+      privateAccessChange: 'Сменить пароль',
+      privateAccessDelete: 'Удалить',
+      privateAccessOldPlaceholder: 'Старый пароль',
+      privateAccessNewPlaceholder: 'Новый пароль',
+      privateAccessSave: 'Сохранить',
+      privateAccessCancel: 'Отмена',
+      privateAccessLogs: 'Кто открывал',
+      privateAccessLogsEmpty: 'Пока нет открытий.',
+      privateAccessLogFrom: 'Slug',
+      privateAccessLogDevice: 'Устройство',
       theme: 'Тема',
       autoTheme: 'Авто-тема (по времени)',
       autoThemeHours: 'Тёмная 20:00-08:00 (UZT)',
@@ -808,6 +1327,28 @@ export default function ProfilePage(): React.JSX.Element {
     : theme === 'light'
       ? profileText.autoLight
       : profileText.autoDark;
+  const cardVisibilityLabel = currentCardVisibility === 'paused'
+    ? profileText.cardVisibilityPaused
+    : currentCardVisibility === 'private'
+      ? profileText.cardVisibilityPrivate
+      : profileText.cardVisibilityActive;
+  const cardVisibilitySub = !canUseCardFeatures
+    ? profileText.cardLockedSub
+    : hasMixedCardVisibility
+      ? profileText.cardVisibilityMixed
+      : currentCardVisibility === 'paused'
+        ? profileText.cardVisibilitySubPaused
+        : currentCardVisibility === 'private'
+          ? profileText.cardVisibilitySubPrivate
+          : profileText.cardVisibilitySubActive;
+  const privateAccessSub = !canUseCardFeatures
+    ? profileText.cardLockedSub
+    : privateAccessQuery.isFetching && !privateAccessQuery.data
+      ? (isUz ? 'Yuklanmoqda...' : 'Загрузка...')
+      : privateAccessQuery.isError
+        ? (isUz ? 'Yuklashda xato' : 'Ошибка загрузки')
+        : `${profileText.privateAccessPasswordLimit}: ${privatePasswords.length}/${privatePasswordLimit}`;
+  const privateLimitReached = privatePasswords.length >= privatePasswordLimit;
   const getBiometricTimeoutOptionLabel = React.useCallback((timeoutMs: number): string => {
     if (timeoutMs <= 0) {
       return isUz ? 'Darhol' : 'Сразу';
@@ -893,9 +1434,13 @@ export default function ProfilePage(): React.JSX.Element {
               )}
               <View style={styles.avatarBody}>
                 <Text style={[styles.name, { color: tokens.text }]}>{card.name}</Text>
-                <Text style={[styles.slug, { color: tokens.textMuted }]}>
-                  unqx.uz/<Text style={styles.slugStrong}>{formatSlug(card.slug)}</Text>
-                </Text>
+                {hasOwnedSlug ? (
+                  <Text style={[styles.slug, { color: tokens.textMuted }]}>
+                    unqx.uz/<Text style={styles.slugStrong}>{formatSlug(card.slug)}</Text>
+                  </Text>
+                ) : (
+                  <Text style={[styles.slug, { color: tokens.textMuted }]}>{profileText.slugNotSelected}</Text>
+                )}
                 <View style={styles.heroPills}>
                   <Pill color={userPlan === 'premium' ? tokens.amber : tokens.textMuted} bg={userPlan === 'premium' ? tokens.amberBg : tokens.surface}>
                     {userPlan === 'premium' ? profileText.premium : userPlan === 'basic' ? profileText.basic : profileText.noPlan}
@@ -908,32 +1453,30 @@ export default function ProfilePage(): React.JSX.Element {
             <View style={styles.shareGrid}>
               <AnimatedPressable
                 containerStyle={styles.shareHalf}
-                style={[styles.shareCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
-                onPress={() => setQrVisible(true)}
+                style={[styles.shareCard, { backgroundColor: tokens.surface, borderColor: tokens.border }, !canUseCardFeatures && { opacity: 0.6 }]}
+                onPress={handleOpenQr}
               >
                 <QrCode size={22} strokeWidth={1.5} color={tokens.text} />
                 <Text style={[styles.shareTitle, { color: tokens.text }]}>{profileText.qrTitle}</Text>
-                <Text style={[styles.shareSub, { color: tokens.textMuted }]}>{profileText.qrSub}</Text>
+                <Text style={[styles.shareSub, { color: tokens.textMuted }]}>{canUseCardFeatures ? profileText.qrSub : profileText.cardLockedSub}</Text>
               </AnimatedPressable>
               <AnimatedPressable
                 containerStyle={styles.shareHalf}
-                style={[styles.shareCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
-                onPress={() => setShareVisible(true)}
+                style={[styles.shareCard, { backgroundColor: tokens.surface, borderColor: tokens.border }, !canUseCardFeatures && { opacity: 0.6 }]}
+                onPress={handleOpenShare}
               >
                 <Share2 size={22} strokeWidth={1.5} color={tokens.text} />
                 <Text style={[styles.shareTitle, { color: tokens.text }]}>{profileText.shareTitle}</Text>
-                <Text style={[styles.shareSub, { color: tokens.textMuted }]}>{profileText.shareSub}</Text>
+                <Text style={[styles.shareSub, { color: tokens.textMuted }]}>{canUseCardFeatures ? profileText.shareSub : profileText.cardLockedSub}</Text>
               </AnimatedPressable>
             </View>
 
             {[
               {
                 label: profileText.editCard,
-                sub: hasCardAccess
+                sub: canUseCardFeatures
                   ? profileText.editCardSub
-                  : (isUz
-                    ? 'Tahrirlash uchun avval tarif sotib oling'
-                    : 'Для редактирования сначала купите тариф'),
+                  : profileText.cardLockedSub,
                 onPress: handleOpenCardEditor,
               },
             ].map((item) => (
@@ -948,6 +1491,26 @@ export default function ProfilePage(): React.JSX.Element {
 
             <Label color={tokens.textMuted}>{profileText.settings}</Label>
             <View style={[styles.settingsBox, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.cardVisibility}
+                sub={`${cardVisibilityLabel}. ${cardVisibilitySub}`}
+                right={updateCardVisibilityMutation.isPending
+                  ? <ActivityIndicator color={tokens.textMuted} />
+                  : <ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={() => {
+                  handleOpenCardVisibility();
+                }}
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.privateAccess}
+                sub={privateAccessSub}
+                right={(addPrivatePasswordMutation.isPending || changePrivatePasswordMutation.isPending || deletePrivatePasswordMutation.isPending || privateAccessQuery.isFetching)
+                  ? <ActivityIndicator color={tokens.textMuted} />
+                  : <ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={handleOpenPrivateAccess}
+              />
               <SettingsRow
                 tokens={tokens}
                 label={profileText.theme}
@@ -1100,8 +1663,54 @@ export default function ProfilePage(): React.JSX.Element {
           orderPending={createOrderMutation.isPending}
         />
 
-        <QRCodeModal visible={qrVisible} slug={card.slug} tokens={tokens} onClose={() => setQrVisible(false)} />
-        <ShareSheet visible={shareVisible} slug={card.slug} name={card.name} tokens={tokens} onClose={() => setShareVisible(false)} />
+        <QRCodeModal visible={qrVisible && canUseCardFeatures} slug={card.slug} tokens={tokens} onClose={() => setQrVisible(false)} />
+        <ShareSheet visible={shareVisible && canUseCardFeatures} slug={card.slug} name={card.name} tokens={tokens} onClose={() => setShareVisible(false)} />
+
+        <Modal
+          visible={cardVisibilityModalVisible}
+          transparent={false}
+          animationType='fade'
+          onRequestClose={() => setCardVisibilityModalVisible(false)}
+        >
+          <Pressable style={[styles.modalOverlay, { backgroundColor: tokens.bg }]} onPress={() => setCardVisibilityModalVisible(false)}>
+            <Pressable style={[styles.modalCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={() => undefined}>
+              <Text style={[styles.modalTitle, { color: tokens.text }]}>{profileText.cardVisibilityModalTitle}</Text>
+              <Text style={[styles.modalHint, { color: tokens.textMuted }]}>{profileText.cardVisibilityModalHint}</Text>
+
+              {([
+                { value: 'active', label: profileText.cardVisibilityActive, sub: profileText.cardVisibilitySubActive },
+                { value: 'paused', label: profileText.cardVisibilityPaused, sub: profileText.cardVisibilitySubPaused },
+                { value: 'private', label: profileText.cardVisibilityPrivate, sub: profileText.cardVisibilitySubPrivate },
+              ] as Array<{ value: CardVisibilityStatus; label: string; sub: string }>).map((item) => {
+                const selected = currentCardVisibility === item.value && !hasMixedCardVisibility;
+                return (
+                  <Pressable
+                    key={item.value}
+                    style={[styles.languageOption, { borderColor: tokens.border, backgroundColor: selected ? `${tokens.accent}14` : 'transparent' }]}
+                    onPress={() => {
+                      handleSelectCardVisibility(item.value);
+                    }}
+                    disabled={updateCardVisibilityMutation.isPending}
+                  >
+                    <View style={styles.actionBody}>
+                      <Text style={[styles.languageOptionLabel, { color: tokens.text }]}>{item.label}</Text>
+                      <Text style={[styles.settingsSub, { color: tokens.textMuted }]}>{item.sub}</Text>
+                    </View>
+                    {updateCardVisibilityMutation.isPending && currentCardVisibility !== item.value ? (
+                      <ActivityIndicator color={tokens.textMuted} />
+                    ) : (
+                      <Text style={[styles.languageOptionCheck, { color: selected ? tokens.accent : tokens.textMuted }]}>{selected ? '✓' : ''}</Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+
+              <Pressable style={[styles.modalCloseBtn, { borderColor: tokens.border }]} onPress={() => setCardVisibilityModalVisible(false)}>
+                <Text style={[styles.modalCloseText, { color: tokens.text }]}>{profileText.modalClose}</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <Modal
           visible={languageModalVisible}
@@ -1169,6 +1778,188 @@ export default function ProfilePage(): React.JSX.Element {
               })}
 
               <Pressable style={[styles.modalCloseBtn, { borderColor: tokens.border }]} onPress={() => setBiometricTimeoutModalVisible(false)}>
+                <Text style={[styles.modalCloseText, { color: tokens.text }]}>{profileText.modalClose}</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
+          visible={privateAccessModalVisible}
+          transparent={false}
+          animationType='fade'
+          onRequestClose={() => setPrivateAccessModalVisible(false)}
+        >
+          <Pressable style={[styles.modalOverlay, { backgroundColor: tokens.bg }]} onPress={() => setPrivateAccessModalVisible(false)}>
+            <Pressable style={[styles.modalCard, styles.privateModalCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={() => undefined}>
+              <Text style={[styles.modalTitle, { color: tokens.text }]}>{profileText.privateAccessModalTitle}</Text>
+              <Text style={[styles.modalHint, { color: tokens.textMuted }]}>{profileText.privateAccessModalHint}</Text>
+
+              <ScrollView
+                style={styles.privateModalScroll}
+                contentContainerStyle={styles.privateModalContent}
+                keyboardShouldPersistTaps='handled'
+                nestedScrollEnabled
+              >
+                <View style={styles.privateAddWrap}>
+                  <TextInput
+                    value={privatePasswordLabelInput}
+                    onChangeText={setPrivatePasswordLabelInput}
+                    placeholder={profileText.privateAccessLabelPlaceholder}
+                    placeholderTextColor={tokens.textMuted}
+                    style={[styles.privateInput, { borderColor: tokens.border, backgroundColor: tokens.inputBg, color: tokens.text }]}
+                  />
+                  <TextInput
+                    value={privatePasswordValueInput}
+                    onChangeText={setPrivatePasswordValueInput}
+                    secureTextEntry
+                    autoCapitalize='none'
+                    autoCorrect={false}
+                    placeholder={profileText.privateAccessPasswordPlaceholder}
+                    placeholderTextColor={tokens.textMuted}
+                    style={[styles.privateInput, { borderColor: tokens.border, backgroundColor: tokens.inputBg, color: tokens.text }]}
+                  />
+                  <Pressable
+                    style={[
+                      styles.privateAddButton,
+                      {
+                        borderColor: tokens.border,
+                        opacity: addPrivatePasswordMutation.isPending || privateLimitReached ? 0.6 : 1,
+                      },
+                    ]}
+                    disabled={addPrivatePasswordMutation.isPending || privateLimitReached}
+                    onPress={handleAddPrivatePassword}
+                  >
+                    {addPrivatePasswordMutation.isPending ? (
+                      <ActivityIndicator size='small' color={tokens.text} />
+                    ) : (
+                      <Text style={[styles.privateAddButtonText, { color: tokens.text }]}>{profileText.privateAccessAdd}</Text>
+                    )}
+                  </Pressable>
+                </View>
+
+                <Text style={[styles.privateCountText, { color: tokens.textMuted }]}>
+                  {`${profileText.privateAccessPasswordLimit}: ${privatePasswords.length}/${privatePasswordLimit}`}
+                </Text>
+
+                <Text style={[styles.privateSectionTitle, { color: tokens.text }]}>{profileText.privateAccessPasswords}</Text>
+                {privatePasswords.length ? (
+                  privatePasswords.map((item) => {
+                    const id = String(item.id || '');
+                    const isChanging = changePasswordId === id;
+                    const isDeleting = deletePrivatePasswordMutation.isPending && deletePrivatePasswordMutation.variables === id;
+                    const label = String(item.label || '').trim() || profileText.privateAccessNoLabel;
+                    return (
+                      <View key={id} style={[styles.privateItem, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
+                        <View style={styles.privateItemTop}>
+                          <View style={styles.privateItemBody}>
+                            <Text style={[styles.privateItemLabel, { color: tokens.text }]}>{label}</Text>
+                            <Text style={[styles.privateItemMeta, { color: tokens.textMuted }]}>
+                              {`${profileText.privateAccessCreatedAt}: ${formatDateTimeShort(item.createdAt, isUz)}`}
+                            </Text>
+                            <Text style={[styles.privateItemMeta, { color: tokens.textMuted }]}>
+                              {`${profileText.privateAccessLastUsedAt}: ${formatDateTimeShort(item.lastUsedAt, isUz)}`}
+                            </Text>
+                          </View>
+                          <View style={styles.privateItemActions}>
+                            <Pressable
+                              style={[styles.privateTinyButton, { borderColor: tokens.border }]}
+                              onPress={() => {
+                                if (isChanging) {
+                                  handleCancelChangePrivatePassword();
+                                } else {
+                                  handleStartChangePrivatePassword(id);
+                                }
+                              }}
+                            >
+                              <Text style={[styles.privateTinyButtonText, { color: tokens.text }]}>{profileText.privateAccessChange}</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.privateTinyButton, { borderColor: tokens.border, opacity: isDeleting ? 0.6 : 1 }]}
+                              disabled={isDeleting}
+                              onPress={() => handleDeletePrivatePassword(id)}
+                            >
+                              {isDeleting ? (
+                                <ActivityIndicator size='small' color={tokens.red} />
+                              ) : (
+                                <Text style={[styles.privateTinyButtonText, { color: tokens.red }]}>{profileText.privateAccessDelete}</Text>
+                              )}
+                            </Pressable>
+                          </View>
+                        </View>
+                        {isChanging ? (
+                          <View style={styles.privateChangeWrap}>
+                            <TextInput
+                              value={changeOldPassword}
+                              onChangeText={setChangeOldPassword}
+                              secureTextEntry
+                              autoCapitalize='none'
+                              autoCorrect={false}
+                              placeholder={profileText.privateAccessOldPlaceholder}
+                              placeholderTextColor={tokens.textMuted}
+                              style={[styles.privateInput, { borderColor: tokens.border, backgroundColor: tokens.surface, color: tokens.text }]}
+                            />
+                            <TextInput
+                              value={changeNewPassword}
+                              onChangeText={setChangeNewPassword}
+                              secureTextEntry
+                              autoCapitalize='none'
+                              autoCorrect={false}
+                              placeholder={profileText.privateAccessNewPlaceholder}
+                              placeholderTextColor={tokens.textMuted}
+                              style={[styles.privateInput, { borderColor: tokens.border, backgroundColor: tokens.surface, color: tokens.text }]}
+                            />
+                            <View style={styles.privateChangeActions}>
+                              <Pressable
+                                style={[styles.privateTinyButton, { borderColor: tokens.border, opacity: changePrivatePasswordMutation.isPending ? 0.6 : 1 }]}
+                                disabled={changePrivatePasswordMutation.isPending}
+                                onPress={handleSaveChangePrivatePassword}
+                              >
+                                {changePrivatePasswordMutation.isPending ? (
+                                  <ActivityIndicator size='small' color={tokens.text} />
+                                ) : (
+                                  <Text style={[styles.privateTinyButtonText, { color: tokens.text }]}>{profileText.privateAccessSave}</Text>
+                                )}
+                              </Pressable>
+                              <Pressable
+                                style={[styles.privateTinyButton, { borderColor: tokens.border }]}
+                                onPress={handleCancelChangePrivatePassword}
+                              >
+                                <Text style={[styles.privateTinyButtonText, { color: tokens.textMuted }]}>{profileText.privateAccessCancel}</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={[styles.privateEmptyText, { color: tokens.textMuted }]}>{profileText.privateAccessEmpty}</Text>
+                )}
+
+                <Text style={[styles.privateSectionTitle, { color: tokens.text }]}>{profileText.privateAccessLogs}</Text>
+                {privateAccessLogs.length ? (
+                  privateAccessLogs.map((item) => {
+                    const label = String(item.passwordLabel || '').trim() || profileText.privateAccessNoLabel;
+                    return (
+                      <View key={item.id} style={[styles.privateLogItem, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
+                        <Text style={[styles.privateItemLabel, { color: tokens.text }]}>{label}</Text>
+                        <Text style={[styles.privateItemMeta, { color: tokens.textMuted }]}>
+                          {`${profileText.privateAccessLogFrom}: ${formatSlug(item.slug || card.slug || '')}`}
+                        </Text>
+                        <Text style={[styles.privateItemMeta, { color: tokens.textMuted }]}>
+                          {`${profileText.privateAccessLogDevice}: ${String(item.device || '—')}`}
+                        </Text>
+                        <Text style={[styles.privateItemMeta, { color: tokens.textMuted }]}>{formatDateTimeShort(item.createdAt, isUz)}</Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={[styles.privateEmptyText, { color: tokens.textMuted }]}>{profileText.privateAccessLogsEmpty}</Text>
+                )}
+              </ScrollView>
+
+              <Pressable style={[styles.modalCloseBtn, { borderColor: tokens.border }]} onPress={() => setPrivateAccessModalVisible(false)}>
                 <Text style={[styles.modalCloseText, { color: tokens.text }]}>{profileText.modalClose}</Text>
               </Pressable>
             </Pressable>
@@ -1429,6 +2220,105 @@ const styles = StyleSheet.create({
   settingsMuted: {
     fontSize: 16,
     fontFamily: 'Inter_500Medium',
+  },
+  privateModalCard: {
+    maxHeight: '86%',
+  },
+  privateModalScroll: {
+    maxHeight: 520,
+  },
+  privateModalContent: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  privateAddWrap: {
+    gap: 8,
+  },
+  privateInput: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  privateAddButton: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  privateAddButtonText: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  privateCountText: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+  },
+  privateSectionTitle: {
+    marginTop: 2,
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  privateItem: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+  },
+  privateItemTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  privateItemBody: {
+    flex: 1,
+  },
+  privateItemLabel: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  privateItemMeta: {
+    marginTop: 2,
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+  },
+  privateItemActions: {
+    gap: 6,
+    alignItems: 'flex-end',
+  },
+  privateTinyButton: {
+    minHeight: 34,
+    borderWidth: 1,
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  privateTinyButtonText: {
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  privateChangeWrap: {
+    gap: 8,
+  },
+  privateChangeActions: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  privateEmptyText: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  privateLogItem: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
   },
   logoutBtn: {
     minHeight: 48,

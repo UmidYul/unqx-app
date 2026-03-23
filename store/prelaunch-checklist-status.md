@@ -31,7 +31,7 @@ Date: 2026-03-22
 - [ ] Camera permission pre-prompt not implemented because camera permission request flow is not present in current codebase
 
 ## Section 6 - Final checklist (code-level)
-- [ ] TypeScript verification currently blocked in this environment (missing local Expo deps: `expo/tsconfig.base`, `expo-router/types`); re-check after `npm ci`
+- [x] TypeScript verification passed: `npx tsc --noEmit` (2026-03-22)
 - [x] No TODO/FIXME in app/src code
 - [x] No unguarded `console.*` in app/src code
 - [x] iOS payment UX avoids direct Payme/Click wording in iOS order form
@@ -41,5 +41,6 @@ Date: 2026-03-22
 - [x] Production EAS profile already aligned for store/app-bundle build
 - [ ] Run `eas build --platform ios --profile production` manually (requires Apple credentials)
 - [ ] Run `eas submit --platform ios` manually
+- [x] Local Android release bundle built successfully: `android/app/build/outputs/bundle/release/app-release.aab` (2026-03-22)
 - [ ] Run `eas build --platform android --profile production` manually
 - [ ] Run `eas submit --platform android` manually

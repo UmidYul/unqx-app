@@ -1,8 +1,12 @@
 import { apiClient, ApiError } from '@/lib/apiClient';
 import { resolveAssetUrl } from '@/lib/assetUrl';
+import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { ProfileCard, ResidentProfile } from '@/types';
 
 const memoryCache = new Map<string, { value: unknown; expiresAt: number }>();
+const ANALYTICS_TZ_OFFSET_HOURS = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PRIVATE_ACCESS_STORAGE_PREFIX = 'unqx.private_access.';
 
 function readCache<T>(key: string): T | null {
   const hit = memoryCache.get(key);
@@ -129,13 +133,21 @@ function normalizeSeries(raw: unknown, length: number): number[] {
   return [...Array.from({ length: Math.max(0, length - values.length) }, () => 0), ...values];
 }
 
-function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
+function toAnalyticsDateKey(date: Date): string {
+  const shifted = new Date(date.getTime() + ANALYTICS_TZ_OFFSET_HOURS * 60 * 60 * 1000);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function todayAnalyticsDateKey(): string {
+  return toAnalyticsDateKey(new Date());
 }
 
 function extractTodayFromViewsByDay(items: unknown): number {
   const list = Array.isArray(items) ? items : [];
-  const today = todayIsoDate();
+  const today = todayAnalyticsDateKey();
   for (const item of list) {
     if (String((item as any)?.date ?? '') === today) {
       return toFiniteNumber((item as any)?.value ?? 0, 0);
@@ -159,7 +171,7 @@ function normalizeGeoRows(input: unknown): Array<{ city: string; x: number; y: n
 
 function mapByDayToSeries(items: unknown[], length: number): number[] {
   const values = Array.from({ length }, () => 0);
-  const today = new Date();
+  const now = Date.now();
   const map = new Map<string, number>();
 
   if (Array.isArray(items)) {
@@ -173,9 +185,8 @@ function mapByDayToSeries(items: unknown[], length: number): number[] {
   }
 
   for (let i = length - 1; i >= 0; i -= 1) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - (length - 1 - i));
-    const key = d.toISOString().slice(0, 10);
+    const diffDays = length - 1 - i;
+    const key = toAnalyticsDateKey(new Date(now - diffDays * DAY_MS));
     values[i] = map.get(key) ?? 0;
   }
 
@@ -222,6 +233,44 @@ function parseResidentSlugs(raw: unknown, fallbackSlug: string): string[] {
   return Array.from(set);
 }
 
+function privateAccessStorageKey(slug: string): string {
+  return `${PRIVATE_ACCESS_STORAGE_PREFIX}${slug}`;
+}
+
+async function readPrivateAccessToken(slug: string): Promise<{ token: string; expiresAtMs: number } | null> {
+  const key = privateAccessStorageKey(slug);
+  const raw = await storageGetItem(key);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as { token?: unknown; expiresAt?: unknown };
+    const token = String(parsed?.token ?? '').trim();
+    const expiresAtRaw = String(parsed?.expiresAt ?? '').trim();
+    const expiresAtMs = Date.parse(expiresAtRaw);
+    if (!token || !Number.isFinite(expiresAtMs)) {
+      await storageDeleteItem(key);
+      return null;
+    }
+    if (expiresAtMs <= Date.now()) {
+      await storageDeleteItem(key);
+      return null;
+    }
+    return { token, expiresAtMs };
+  } catch {
+    await storageDeleteItem(key);
+    return null;
+  }
+}
+
+async function writePrivateAccessToken(slug: string, token: string, expiresAt: string): Promise<void> {
+  const key = privateAccessStorageKey(slug);
+  await storageSetItem(key, JSON.stringify({ token, expiresAt }));
+}
+
+async function clearPrivateAccessToken(slug: string): Promise<void> {
+  await storageDeleteItem(privateAccessStorageKey(slug));
+}
+
 function mapResidentProfile(raw: any): ResidentProfile {
   const source = raw?.profile ?? raw ?? {};
   const slug = normalizeResidentSlug(source?.slug) || 'UNQ000';
@@ -255,6 +304,13 @@ function mapResidentProfile(raw: any): ResidentProfile {
       : [],
     saved: Boolean(source?.saved),
     subscribed: Boolean(source?.subscribed),
+    username: source?.username ? String(source.username) : undefined,
+    isPrivate: Boolean(source?.isPrivate ?? raw?.privateAccess?.required),
+    isLocked: Boolean(source?.isLocked ?? (raw?.privateAccess?.required && !raw?.privateAccess?.granted)),
+    lockedMessage: source?.lockedMessage ? String(source.lockedMessage) : undefined,
+    privateAccessExpiresAt: source?.privateAccessExpiresAt
+      ? String(source.privateAccessExpiresAt)
+      : (raw?.privateAccess?.expiresAt ? String(raw.privateAccess.expiresAt) : null),
   };
 }
 
@@ -773,9 +829,27 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
     throw new ApiError('Slug is required', 400, 'VALIDATION_ERROR');
   }
 
+  const privateAccess = await readPrivateAccessToken(normalizedSlug);
+  const privateAccessHeaders = privateAccess?.token
+    ? { 'x-card-access-token': privateAccess.token }
+    : undefined;
+
   try {
-    const direct = await apiClient.get<any>(`/directory/${encodeURIComponent(normalizedSlug)}`);
-    return mapResidentProfile(direct);
+    const direct = await apiClient.get<any>(`/directory/${encodeURIComponent(normalizedSlug)}`, {
+      headers: privateAccessHeaders,
+    });
+    const mapped = mapResidentProfile(direct);
+
+    if (mapped.isLocked) {
+      await clearPrivateAccessToken(normalizedSlug);
+      return mapped;
+    }
+
+    if (privateAccess?.token && mapped.privateAccessExpiresAt) {
+      await writePrivateAccessToken(normalizedSlug, privateAccess.token, mapped.privateAccessExpiresAt);
+    }
+
+    return mapped;
   } catch (error) {
     if (!isFallbackError(error)) {
       throw error;
@@ -816,6 +890,92 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
       subscribed: Boolean(matchDirectory?.subscribed ?? matchContacts?.subscribed),
     },
   });
+}
+
+export async function unlockResidentPrivateProfileLike(slug: string, password: string): Promise<{ expiresAt: string | null }> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  const normalizedPassword = String(password ?? '').trim();
+  if (!normalizedSlug || !normalizedPassword) {
+    throw new ApiError('Slug and password are required', 400, 'VALIDATION_ERROR');
+  }
+
+  const payload = await apiClient.post<any>(`/directory/${encodeURIComponent(normalizedSlug)}/unlock`, {
+    password: normalizedPassword,
+  });
+
+  const token = String(payload?.token ?? '').trim();
+  const expiresAt = String(payload?.expiresAt ?? '').trim();
+
+  if (token && expiresAt) {
+    await writePrivateAccessToken(normalizedSlug, token, expiresAt);
+    return { expiresAt };
+  }
+
+  await clearPrivateAccessToken(normalizedSlug);
+  return { expiresAt: expiresAt || null };
+}
+
+export async function clearResidentPrivateAccessLike(slug: string): Promise<void> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  if (!normalizedSlug) return;
+  await clearPrivateAccessToken(normalizedSlug);
+}
+
+export async function fetchPrivateAccessSettingsLike(): Promise<{
+  passwords: Array<{ id: string; label: string; createdAt: string | null; lastUsedAt: string | null }>;
+  logs: Array<{ id: string; slug: string; passwordLabel: string; device: string; userAgent: string | null; createdAt: string | null }>;
+  minLength: number;
+  limit: number;
+}> {
+  const [passwordsPayload, logsPayload] = await Promise.all([
+    apiClient.get<any>('/profile/privacy/passwords'),
+    apiClient.get<any>('/profile/privacy/access-logs', { query: { limit: 20 } }),
+  ]);
+
+  const passwords = Array.isArray(passwordsPayload?.items)
+    ? passwordsPayload.items.map((item: any) => ({
+      id: String(item?.id ?? ''),
+      label: String(item?.label ?? ''),
+      createdAt: item?.createdAt ? String(item.createdAt) : null,
+      lastUsedAt: item?.lastUsedAt ? String(item.lastUsedAt) : null,
+    })).filter((item: { id: string }) => Boolean(item.id))
+    : [];
+
+  const logs = Array.isArray(logsPayload?.items)
+    ? logsPayload.items.map((item: any) => ({
+      id: String(item?.id ?? ''),
+      slug: normalizeResidentSlug(item?.slug),
+      passwordLabel: String(item?.passwordLabel ?? ''),
+      device: String(item?.device ?? ''),
+      userAgent: item?.userAgent ? String(item.userAgent) : null,
+      createdAt: item?.createdAt ? String(item.createdAt) : null,
+    })).filter((item: { id: string }) => Boolean(item.id))
+    : [];
+
+  return {
+    passwords,
+    logs,
+    minLength: Number(passwordsPayload?.minLength ?? 4) || 4,
+    limit: Number(passwordsPayload?.limit ?? 10) || 10,
+  };
+}
+
+export async function addPrivateAccessPasswordLike(input: { label?: string; password: string }): Promise<void> {
+  await apiClient.post('/profile/privacy/passwords', {
+    label: String(input.label ?? '').trim(),
+    password: String(input.password ?? ''),
+  });
+}
+
+export async function changePrivateAccessPasswordLike(input: { id: string; oldPassword: string; newPassword: string }): Promise<void> {
+  await apiClient.post(`/profile/privacy/passwords/${encodeURIComponent(input.id)}/change`, {
+    oldPassword: String(input.oldPassword ?? ''),
+    newPassword: String(input.newPassword ?? ''),
+  });
+}
+
+export async function deletePrivateAccessPasswordLike(id: string): Promise<void> {
+  await apiClient.delete(`/profile/privacy/passwords/${encodeURIComponent(id)}`);
 }
 
 export async function saveContactLike(slug: string): Promise<unknown> {

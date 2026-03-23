@@ -10,6 +10,7 @@ const AUTH_SIGNED_KEY = 'unqx.auth.signed';
 
 const TOKEN_KEYS = ['token', 'accessToken', 'bearer', 'jwt', 'authToken', 'idToken'] as const;
 const REFRESH_TOKEN_KEYS = ['refreshToken', 'refresh_token', 'refresh'] as const;
+const TOKEN_ENVELOPE_KEYS = ['data', 'auth', 'session', 'result', 'payload'] as const;
 
 const AUTH_CODE_MESSAGES: Record<string, string> = MESSAGES.auth.codeMessages;
 
@@ -43,46 +44,59 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function findToken(value: unknown): string | null {
-  if (!value) {
-    return null;
-  }
-
-  if (typeof value === 'string') {
-    const candidate = value.trim();
-    if (candidate.length > 20 && !candidate.includes(' ')) {
-      return candidate;
-    }
-    return null;
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const nested = findToken(item);
-      if (nested) return nested;
-    }
-    return null;
-  }
-
+function findFirstStringInKnownEnvelopes(value: unknown, keys: readonly string[]): string | null {
   if (!isObject(value)) {
     return null;
   }
 
-  for (const key of TOKEN_KEYS) {
-    const direct = value[key];
-    if (typeof direct === 'string' && direct.trim()) {
-      return direct.trim();
-    }
+  const direct = findFirstStringByKeys(value, keys);
+  if (direct) {
+    return direct;
   }
 
-  for (const nestedValue of Object.values(value)) {
-    const nested = findToken(nestedValue);
-    if (nested) {
-      return nested;
+  for (const envelopeKey of TOKEN_ENVELOPE_KEYS) {
+    const envelope = value[envelopeKey];
+    if (!envelope) {
+      continue;
+    }
+
+    if (Array.isArray(envelope)) {
+      for (const item of envelope) {
+        if (!isObject(item)) {
+          continue;
+        }
+        const nested = findFirstStringByKeys(item, keys);
+        if (nested) {
+          return nested;
+        }
+      }
+      continue;
+    }
+
+    if (isObject(envelope)) {
+      const nested = findFirstStringByKeys(envelope, keys);
+      if (nested) {
+        return nested;
+      }
+
+      // Some backends return one more level of wrappers inside known auth envelopes.
+      for (const nestedValue of Object.values(envelope)) {
+        if (!isObject(nestedValue)) {
+          continue;
+        }
+        const deepNested = findFirstStringByKeys(nestedValue, keys);
+        if (deepNested) {
+          return deepNested;
+        }
+      }
     }
   }
 
   return null;
+}
+
+function findToken(value: unknown): string | null {
+  return findFirstStringInKnownEnvelopes(value, TOKEN_KEYS);
 }
 
 async function setSignedFlag(value: boolean): Promise<void> {
@@ -95,21 +109,22 @@ async function setSignedFlag(value: boolean): Promise<void> {
 
 export async function isSignedIn(): Promise<boolean> {
   const token = await getAuthToken();
-  if (token) {
-    return true;
-  }
-
   const signed = await storageGetItem(AUTH_SIGNED_KEY);
-  if (signed !== '1') {
+  if (!token && signed !== '1') {
     return false;
   }
 
-  // Validate persisted signed flag against real server session (cookie-based auth).
+  // Always validate cached auth state against server session before declaring authenticated.
   try {
     await apiClient.getFirst(['/me', '/auth/me']);
+    await setSignedFlag(true);
     return true;
-  } catch {
-    await setSignedFlag(false);
+  } catch (error) {
+    const isInvalidSession = error instanceof ApiError && (error.status === 401 || error.status === 403);
+    if (isInvalidSession) {
+      await secureStorage.clear().catch(() => undefined);
+      await setSignedFlag(false);
+    }
     return false;
   }
 }
@@ -120,7 +135,7 @@ async function persistAuth(payload: unknown): Promise<string | null> {
     await setAuthToken(token);
   }
 
-  const refreshToken = findFirstStringByKeys(payload, REFRESH_TOKEN_KEYS);
+  const refreshToken = findFirstStringInKnownEnvelopes(payload, REFRESH_TOKEN_KEYS);
   if (refreshToken) {
     await secureStorage.setRefreshToken(refreshToken);
   }
@@ -330,6 +345,8 @@ export async function registerWithApi(input: {
 }): Promise<{ signedIn: boolean; message?: string; email?: string }> {
   try {
     const payload = await apiClient.post<any>('/auth/register', input);
+    const hasEmail = Boolean(String(input.email ?? '').trim());
+    const redirectTo = String(payload?.redirectTo ?? '').trim().toLowerCase();
     const token = await persistAuth(payload);
     if (token || payload?.user || payload?.authenticated === true) {
       await setSignedFlag(true);
@@ -360,10 +377,29 @@ export async function registerWithApi(input: {
           email: loginResult.email ?? (input.email ?? undefined),
         };
       }
+
+      // Some deployments create the account first, then allow login slightly later.
+      if (!hasEmail) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 250);
+        });
+        const retryLoginResult = await loginWithApi(input.login, input.password).catch(() => null);
+        if (retryLoginResult && !retryLoginResult.requiresVerification) {
+          return { signedIn: true };
+        }
+      }
+    }
+
+    if (hasEmail && redirectTo.includes('verify-email')) {
+      await setSignedFlag(false);
+      return {
+        signedIn: false,
+        message: payload?.message || MESSAGES.auth.registerDoneVerify,
+        email: input.email ?? undefined,
+      };
     }
 
     await setSignedFlag(false);
-    const hasEmail = Boolean(String(input.email ?? '').trim());
     return {
       signedIn: false,
       message: payload?.message || (hasEmail ? MESSAGES.auth.registerDoneVerify : MESSAGES.auth.registerDoneLogin),

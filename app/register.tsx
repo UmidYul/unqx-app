@@ -235,8 +235,15 @@ export default function RegisterPage(): React.JSX.Element {
         return;
       }
 
-      setInfo(result.message ?? MESSAGES.auth.registerDoneVerify);
-      setVerifyEmail(result.email ?? normalizedEmail ?? '');
+      const nextVerifyEmail = String(result.email ?? normalizedEmail ?? '').trim().toLowerCase();
+      setVerifyEmail(nextVerifyEmail);
+
+      if (nextVerifyEmail) {
+        safeReplace(`/verify-email?email=${encodeURIComponent(nextVerifyEmail)}`);
+        return;
+      }
+
+      safeReplace('/(tabs)/home');
     } catch (e) {
       if (e instanceof AuthSessionError) {
         setError(toUserErrorMessage(e, MESSAGES.auth.registerError));

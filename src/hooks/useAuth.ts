@@ -18,10 +18,20 @@ export function useAuth() {
 
   useEffect(() => {
     let mounted = true;
-    void Promise.all([secureStorage.getToken(), isSignedIn()]).then(([token, signed]) => {
-      if (!mounted) return;
-      setState({ token, isLoading: false, isAuthenticated: signed });
-    });
+    const bootstrap = async () => {
+      let token: string | null = null;
+      let signed = false;
+      try {
+        [token, signed] = await Promise.all([secureStorage.getToken(), isSignedIn()]);
+      } catch {
+        token = null;
+        signed = false;
+      } finally {
+        if (!mounted) return;
+        setState({ token, isLoading: false, isAuthenticated: signed });
+      }
+    };
+    void bootstrap();
 
     return () => {
       mounted = false;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BarChart2, PenLine, TrendingUp, Wifi } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,6 +31,7 @@ import {
 import { AnalyticsSummary, HomeUser, RecentTap } from '@/types';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { formatSlug } from '@/utils/avatar';
+import { toast } from '@/utils/toast';
 import { uniqueBy } from '@/utils/uniqueBy';
 
 interface HomePayload {
@@ -39,11 +40,39 @@ interface HomePayload {
   recent: RecentTap[];
 }
 
+function normalizeOwnedSlug(value: unknown): string {
+  const normalized = String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  return /^[A-Z]{3}\d{3}$/.test(normalized) ? normalized : '';
+}
+
+function resolvePrimarySlug(payload: { user?: any; slugs?: any[]; selectedSlug?: string }, source: any): string {
+  const slugs = Array.isArray(payload?.slugs) ? payload.slugs : Array.isArray(source?.slugs) ? source.slugs : [];
+  const primary = slugs.find((item: any) => item?.isPrimary);
+  const candidates = [
+    primary?.fullSlug,
+    primary?.slug,
+    slugs[0]?.fullSlug,
+    slugs[0]?.slug,
+    payload?.selectedSlug,
+    source?.selectedSlug,
+  ];
+
+  for (const value of candidates) {
+    const slug = normalizeOwnedSlug(value);
+    if (slug) {
+      return slug;
+    }
+  }
+
+  return '';
+}
+
 function parseUser(raw: unknown): HomeUser {
   const payload = raw as { user?: any; slugs?: any[]; selectedSlug?: string };
   const source = payload?.user ?? payload;
-  const slugs = Array.isArray(payload?.slugs) ? payload.slugs : Array.isArray(source?.slugs) ? source.slugs : [];
-  const primarySlug = slugs.find((item: any) => item?.isPrimary)?.fullSlug ?? slugs[0]?.fullSlug ?? payload?.selectedSlug;
   const normalizedPlan = String(source?.effectivePlan ?? source?.plan ?? 'none').trim().toLowerCase();
   const plan = normalizedPlan === 'premium' || normalizedPlan === 'basic' || normalizedPlan === 'none'
     ? normalizedPlan
@@ -51,7 +80,7 @@ function parseUser(raw: unknown): HomeUser {
   return {
     id: source?.id,
     name: source?.name ?? source?.displayName ?? source?.firstName ?? 'UNQX User',
-    slug: source?.slug ?? primarySlug ?? source?.username ?? 'UNQX001',
+    slug: resolvePrimarySlug(payload, source),
     plan,
   };
 }
@@ -142,6 +171,9 @@ export default function HomePage(): React.JSX.Element {
       premium: 'Premium',
       basic: 'Asosiy',
       noPlan: 'Tarif tanlanmagan',
+      slugNotSelected: 'SLUG tanlanmagan',
+      activationRequiredTitle: 'SLUG va tarif kerak',
+      activationRequiredSub: 'QR va ulashish uchun avval SLUG egallab tarifni faollashtiring',
       share: 'Ulashish',
       showQr: 'QR ko\'rsatish',
       today: 'Bugun',
@@ -157,6 +189,9 @@ export default function HomePage(): React.JSX.Element {
       premium: 'Премиум',
       basic: 'Базовый',
       noPlan: 'Тариф не выбран',
+      slugNotSelected: 'Slug не выбран',
+      activationRequiredTitle: 'Нужны slug и тариф',
+      activationRequiredSub: 'Чтобы открыть QR и поделиться визиткой, сначала купите slug и активируйте тариф',
       share: 'Поделиться',
       showQr: 'Показать QR',
       today: 'Сегодня',
@@ -308,7 +343,40 @@ export default function HomePage(): React.JSX.Element {
   const growthText = `${growth > 0 ? '+' : ''}${growth}% ${homeText.growthSuffix}`;
   const normalizedPlan = String(user.plan).toLowerCase();
   const isPremium = normalizedPlan === 'premium';
+  const hasCardAccess = normalizedPlan === 'basic' || normalizedPlan === 'premium';
+  const hasOwnedSlug = Boolean(user.slug);
+  const canShareCard = hasCardAccess && hasOwnedSlug;
   const planLabel = isPremium ? homeText.premium : normalizedPlan === 'basic' ? homeText.basic : homeText.noPlan;
+  const heroSlug = hasOwnedSlug ? formatSlug(user.slug) : homeText.slugNotSelected;
+
+  const openPricing = async () => {
+    try {
+      await Linking.openURL('https://unqx.uz/#pricing');
+    } catch {
+      toast.error(isUz ? 'Havolani ochib bo\'lmadi' : 'Не удалось открыть ссылку');
+    }
+  };
+
+  const handleRequirePlan = () => {
+    toast.error(homeText.activationRequiredTitle, homeText.activationRequiredSub);
+    void openPricing();
+  };
+
+  const handleOpenQr = () => {
+    if (!canShareCard) {
+      handleRequirePlan();
+      return;
+    }
+    setQrVisible(true);
+  };
+
+  const handleOpenShare = () => {
+    if (!canShareCard) {
+      handleRequirePlan();
+      return;
+    }
+    setShareVisible(true);
+  };
 
   return (
     <ErrorBoundary>
@@ -337,7 +405,7 @@ export default function HomePage(): React.JSX.Element {
               <Wifi size={120} strokeWidth={1.1} color='rgba(255,255,255,0.05)' style={styles.heroBgIcon} />
               <Text style={styles.heroKicker}>UNQX CARD</Text>
               <Text style={styles.heroName}>{user.name}</Text>
-              <Text style={styles.heroSlug}>{formatSlug(user.slug)}</Text>
+              <Text style={styles.heroSlug}>{heroSlug}</Text>
 
               <View style={styles.heroPills}>
                 <BlurView intensity={28} tint='dark' style={styles.blurPill}>
@@ -350,14 +418,14 @@ export default function HomePage(): React.JSX.Element {
 
               <View style={styles.heroActions}>
                 <AnimatedPressable
-                  onPress={() => setShareVisible(true)}
+                  onPress={handleOpenShare}
                   style={styles.heroActionBtn}
                   containerStyle={styles.heroActionWrap}
                 >
                   <Text style={styles.heroActionText}>{homeText.share}</Text>
                 </AnimatedPressable>
                 <AnimatedPressable
-                  onPress={() => setQrVisible(true)}
+                  onPress={handleOpenQr}
                   style={styles.heroActionBtn}
                   containerStyle={styles.heroActionWrap}
                 >
@@ -446,8 +514,8 @@ export default function HomePage(): React.JSX.Element {
           </ScrollView>
         </ScreenTransition>
 
-        <QRCodeModal visible={qrVisible} onClose={() => setQrVisible(false)} tokens={tokens} slug={user.slug} />
-        <ShareSheet visible={shareVisible} onClose={() => setShareVisible(false)} tokens={tokens} slug={user.slug} name={user.name} />
+        <QRCodeModal visible={qrVisible && canShareCard} onClose={() => setQrVisible(false)} tokens={tokens} slug={user.slug} />
+        <ShareSheet visible={shareVisible && canShareCard} onClose={() => setShareVisible(false)} tokens={tokens} slug={user.slug} name={user.name} />
       </AppShell>
     </ErrorBoundary>
   );

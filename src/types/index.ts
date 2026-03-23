@@ -164,6 +164,27 @@ export interface ResidentProfile {
   }>;
   saved?: boolean;
   subscribed?: boolean;
+  username?: string;
+  isPrivate?: boolean;
+  isLocked?: boolean;
+  lockedMessage?: string;
+  privateAccessExpiresAt?: string | null;
+}
+
+export interface PrivateAccessPassword {
+  id: string;
+  label?: string;
+  createdAt?: string | null;
+  lastUsedAt?: string | null;
+}
+
+export interface PrivateAccessLog {
+  id: string;
+  slug: string;
+  passwordLabel?: string;
+  device?: string;
+  userAgent?: string | null;
+  createdAt?: string | null;
 }
 
 export interface LeaderboardEntry {

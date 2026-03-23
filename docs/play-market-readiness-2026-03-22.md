@@ -4,7 +4,7 @@
 
 ## Вердикт
 
-**Статус: Nearly ready (условно готово), но есть блокеры перед отправкой в production в Play Console.**
+**Статус: Ready for Play Console (кодовая часть подтверждена), остаются только ручные шаги в консоли.**
 
 Что уже готово на стороне репозитория:
 - Android package и versionCode заданы в `app.json`.
@@ -32,11 +32,16 @@
 - вручную выполнить `eas build --platform android --profile production`;
 - вручную выполнить `eas submit --platform android`.
 
-## Блокеры перед публикацией в Play Market
+### 4) Подтверждение технической готовности (в этой сессии)
+- TypeScript проверка пройдена: `npx tsc --noEmit` (22 марта 2026).
+- Expo-конфиг читается корректно: `npx expo config --type public` (ошибка `android.googleServicesFile` не воспроизвелась).
+- Локальный production bundle собран успешно: `android/app/build/outputs/bundle/release/app-release.aab`.
+- Размер собранного `.aab`: ~110.7 MB.
+
+## Что осталось перед публикацией в Play Market
 
 1. **Не заполнены вручную элементы Play Console** (Audience + графические ассеты).
-2. **Не подтверждён production-артефакт `.aab` в рамках этой проверки** (сборка/сабмит не запускались здесь).
-3. **Техническая проверка TypeScript в текущем окружении не прошла**, потому что отсутствуют необходимые локальные зависимости/база Expo tsconfig в среде выполнения (`expo/tsconfig.base`, `expo-router/types`). Это не обязательно дефект приложения, но в рамках этой сессии не удалось подтвердить пункт «0 TS ошибок».
+2. **Не выполнены ручные шаги EAS submit** (`eas submit --platform android`) в нужный трек (internal/closed testing или production).
 
 ## Рекомендованный минимальный план до сабмита (Play)
 
@@ -46,12 +51,13 @@
 2. Локально/в CI с установленными dependency:
    - `npm ci`
    - `npx tsc --noEmit`
-3. Выпустить Android build:
+3. Подготовить Android build:
    - `eas build --platform android --profile production`
+   - или использовать уже собранный локально `app-release.aab` и загрузить его вручную в Play Console
 4. Отправить в трек (internal/closed testing):
    - `eas submit --platform android`
 5. Проверить карточку приложения после загрузки (Data Safety, privacy policy URL, категория Business, контакты).
 
 ## Итог
 
-Если не учитывать проблемы из предыдущего code review, **репозиторий близок к публикации в Google Play**, но **не полностью готов к немедленному сабмиту** из-за незакрытых ручных шагов в Play Console и непроведённой production-сборки/сабмита в рамках текущей проверки.
+Если не учитывать проблемы из предыдущего code review, **репозиторий технически готов к публикации в Google Play**. До фактического релиза остались **только ручные действия в Play Console / EAS submit**.

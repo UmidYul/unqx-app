@@ -50,6 +50,27 @@ export function validateLogin(value: string): string | null {
   return null;
 }
 
+export function validateLoginOrEmail(value: string): string | null {
+  const input = value.trim();
+  if (!input) {
+    return MESSAGES.validation.loginRequired;
+  }
+
+  if (input.includes('@')) {
+    const emailError = validateEmail(input);
+    if (!emailError) {
+      return null;
+    }
+    return MESSAGES.validation.loginOrEmailInvalid;
+  }
+
+  const loginError = validateLogin(input);
+  if (!loginError) {
+    return null;
+  }
+  return MESSAGES.validation.loginOrEmailInvalid;
+}
+
 export function validatePassword(value: string): string | null {
   if (!value) {
     return MESSAGES.validation.passwordRequired;

@@ -8,12 +8,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
-import { Globe, Hash, Mail, MapPin, Phone, Star, UserCheck, UserPlus } from 'lucide-react-native';
+import { Globe, Hash, Lock, Mail, MapPin, Phone, Star, UserCheck, UserPlus } from 'lucide-react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { AppShell } from '@/components/AppShell';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -27,7 +28,14 @@ import { useExport } from '@/hooks/useExport';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { queryKeys } from '@/lib/queryKeys';
-import { fetchResidentProfileLike, saveContactLike, subscribeContactLike } from '@/services/mobileApi';
+import { ApiError } from '@/lib/apiClient';
+import {
+  clearResidentPrivateAccessLike,
+  fetchResidentProfileLike,
+  saveContactLike,
+  subscribeContactLike,
+  unlockResidentPrivateProfileLike,
+} from '@/services/mobileApi';
 import { ResidentProfile } from '@/types';
 import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThemeContext } from '@/theme/ThemeProvider';
@@ -126,6 +134,12 @@ export default function ResidentProfilePage(): React.JSX.Element {
       copyCardFailed: 'Kartani nusxalab bo\'lmadi',
       addedToContacts: 'Kontaktlarga qo\'shildi',
       removedFromContacts: 'Kontaktlardan olib tashlandi',
+      privateTitle: 'Yopiq akkaunt',
+      privateSubtitle: 'Ko\'rish uchun parol kiriting',
+      privatePlaceholder: 'Parol',
+      privateUnlock: 'Ochish',
+      privateUnlockFailed: 'Parol noto\'g\'ri',
+      privateUnlockExpired: 'Sessiya tugadi. Parolni qayta kiriting.',
     }
     : {
       title: 'Профиль',
@@ -154,6 +168,12 @@ export default function ResidentProfilePage(): React.JSX.Element {
       copyCardFailed: 'Не удалось скопировать карту',
       addedToContacts: 'Добавлено в контакты',
       removedFromContacts: 'Удалено из контактов',
+      privateTitle: 'Закрытый аккаунт',
+      privateSubtitle: 'Введите пароль для просмотра',
+      privatePlaceholder: 'Пароль',
+      privateUnlock: 'Открыть',
+      privateUnlockFailed: 'Неверный пароль',
+      privateUnlockExpired: 'Сеанс истёк. Введите пароль снова.',
     };
 
   const normalizedSlug = React.useMemo(() => {
@@ -170,6 +190,22 @@ export default function ResidentProfilePage(): React.JSX.Element {
   const profile = profileQuery.data;
   const avatarImage = useRetryImageUri(profile?.avatarUrl);
   const contactAddress = React.useMemo(() => normalizeAddress(profile?.address ?? profile?.city), [profile?.address, profile?.city]);
+  const [privatePassword, setPrivatePassword] = React.useState('');
+  const [privateError, setPrivateError] = React.useState('');
+  const lockShake = useSharedValue(0);
+  const lockShakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: lockShake.value }],
+  }));
+
+  const triggerLockShake = React.useCallback(() => {
+    lockShake.value = withSequence(
+      withTiming(-8, { duration: 45 }),
+      withTiming(8, { duration: 45 }),
+      withTiming(-6, { duration: 45 }),
+      withTiming(6, { duration: 45 }),
+      withTiming(0, { duration: 45 }),
+    );
+  }, [lockShake]);
 
   const saveMutation = useMutation({
     networkMode: 'offlineFirst',
@@ -227,9 +263,87 @@ export default function ResidentProfilePage(): React.JSX.Element {
     },
   });
 
+  const unlockMutation = useMutation({
+    networkMode: 'online',
+    mutationFn: () => unlockResidentPrivateProfileLike(normalizedSlug, privatePassword),
+    onSuccess: async () => {
+      setPrivateError('');
+      setPrivatePassword('');
+      await profileQuery.refetch();
+    },
+    onError: (error) => {
+      const code = error instanceof ApiError ? error.code : null;
+      setPrivateError(code === 'PRIVATE_ACCESS_INVALID_PASSWORD' ? profileText.privateUnlockFailed : profileText.loadFailed);
+      triggerLockShake();
+    },
+  });
+
   const onRefresh = React.useCallback(async () => {
     await profileQuery.refetch();
   }, [profileQuery]);
+
+  React.useEffect(() => {
+    if (!normalizedSlug || !profile?.isPrivate || profile?.isLocked) {
+      return;
+    }
+    const expiresAtMs = Date.parse(String(profile.privateAccessExpiresAt ?? ''));
+    if (!Number.isFinite(expiresAtMs)) {
+      return;
+    }
+
+    const remaining = expiresAtMs - Date.now();
+    if (remaining <= 0) {
+      void clearResidentPrivateAccessLike(normalizedSlug).then(() => profileQuery.refetch());
+      setPrivateError(profileText.privateUnlockExpired);
+      return;
+    }
+
+    const timerId = setTimeout(() => {
+      void clearResidentPrivateAccessLike(normalizedSlug).then(() => profileQuery.refetch());
+      setPrivateError(profileText.privateUnlockExpired);
+    }, remaining + 20);
+
+    return () => clearTimeout(timerId);
+  }, [
+    normalizedSlug,
+    profile?.isPrivate,
+    profile?.isLocked,
+    profile?.privateAccessExpiresAt,
+    profileQuery,
+    profileText.privateUnlockExpired,
+  ]);
+
+  React.useEffect(() => {
+    if (!profile?.isLocked) {
+      setPrivateError('');
+      setPrivatePassword('');
+    }
+  }, [profile?.isLocked]);
+
+  const handleUnlockPrivateProfile = React.useCallback(() => {
+    if (!normalizedSlug) {
+      return;
+    }
+    const password = privatePassword.trim();
+    if (!password) {
+      setPrivateError(profileText.privateUnlockFailed);
+      triggerLockShake();
+      return;
+    }
+    if (!isOnline) {
+      toast.info(MESSAGES.toast.offlineQueued);
+      return;
+    }
+    setPrivateError('');
+    unlockMutation.mutate();
+  }, [
+    isOnline,
+    normalizedSlug,
+    privatePassword,
+    profileText.privateUnlockFailed,
+    triggerLockShake,
+    unlockMutation,
+  ]);
 
   const handleExportProfileVcf = React.useCallback(() => {
     if (!profile) {
@@ -378,6 +492,91 @@ export default function ResidentProfilePage(): React.JSX.Element {
               void profileQuery.refetch();
             }}
           />
+        </AppShell>
+      </ErrorBoundary>
+    );
+  }
+
+  if (profile.isPrivate && profile.isLocked) {
+    return (
+      <ErrorBoundary>
+        <AppShell title={profileText.title} tokens={tokens}>
+          <ScreenTransition>
+            <ScrollView
+              contentContainerStyle={styles.content}
+              keyboardShouldPersistTaps='handled'
+              refreshControl={
+                <RefreshControl
+                  refreshing={profileQuery.isRefetching}
+                  onRefresh={() => void onRefresh()}
+                  tintColor={tokens.accent}
+                  colors={[tokens.accent]}
+                />
+              }
+            >
+              <View style={[styles.heroCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                <View style={styles.heroAvatarWrap}>
+                  {avatarImage.showImage && avatarImage.imageUri ? (
+                    <Image
+                      key={`${profile.avatarUrl}:${avatarImage.retryCount}`}
+                      source={{ uri: avatarImage.imageUri }}
+                      style={styles.avatarImage}
+                      onError={avatarImage.onError}
+                    />
+                  ) : (
+                    <View style={[styles.avatar, { backgroundColor: `${tokens.accent}1F` }]}>
+                      <Text style={[styles.avatarText, { color: tokens.accent }]}>{initial(profile.name)}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.heroBody}>
+                  <Text style={[styles.name, { color: tokens.text }]}>{profile.name}</Text>
+                  {profile.username ? <Text style={[styles.meta, { color: tokens.textMuted }]}>{`@${profile.username}`}</Text> : null}
+                  <Text style={[styles.slug, { color: tokens.textMuted }]}>
+                    <Text style={styles.slugStrong}>{formatSlug(profile.slug)}</Text>
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.lockCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                <View style={[styles.lockIconWrap, { borderColor: tokens.border, backgroundColor: `${tokens.accent}12` }]}>
+                  <Lock size={22} strokeWidth={1.8} color={tokens.text} />
+                </View>
+                <Text style={[styles.lockTitle, { color: tokens.text }]}>{profileText.privateTitle}</Text>
+                <Text style={[styles.lockSubtitle, { color: tokens.textMuted }]}>{profileText.privateSubtitle}</Text>
+                <Animated.View style={[styles.lockInputWrap, lockShakeStyle]}>
+                  <TextInput
+                    value={privatePassword}
+                    secureTextEntry
+                    autoCapitalize='none'
+                    autoCorrect={false}
+                    placeholder={profileText.privatePlaceholder}
+                    placeholderTextColor={tokens.textMuted}
+                    onChangeText={setPrivatePassword}
+                    style={[styles.lockInput, { borderColor: tokens.border, backgroundColor: tokens.inputBg, color: tokens.text }]}
+                  />
+                </Animated.View>
+                {privateError ? <Text style={[styles.lockError, { color: tokens.red }]}>{privateError}</Text> : null}
+                <AnimatedPressable
+                  style={[
+                    styles.lockButton,
+                    {
+                      backgroundColor: tokens.text,
+                      opacity: unlockMutation.isPending ? 0.7 : 1,
+                    },
+                  ]}
+                  disabled={unlockMutation.isPending}
+                  onPress={handleUnlockPrivateProfile}
+                >
+                  {unlockMutation.isPending ? (
+                    <ActivityIndicator size='small' color={tokens.phoneBg} />
+                  ) : (
+                    <Text style={[styles.lockButtonText, { color: tokens.phoneBg }]}>{profileText.privateUnlock}</Text>
+                  )}
+                </AnimatedPressable>
+              </View>
+            </ScrollView>
+          </ScreenTransition>
         </AppShell>
       </ErrorBoundary>
     );
@@ -792,5 +991,60 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
+  },
+  lockCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    gap: 10,
+  },
+  lockIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter_600SemiBold',
+    textAlign: 'center',
+  },
+  lockSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+  },
+  lockInputWrap: {
+    width: '100%',
+    marginTop: 4,
+  },
+  lockInput: {
+    width: '100%',
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+  },
+  lockError: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    textAlign: 'center',
+  },
+  lockButton: {
+    width: '100%',
+    minHeight: 46,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  lockButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
   },
 });

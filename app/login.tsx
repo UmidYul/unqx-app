@@ -8,7 +8,7 @@ import { MESSAGES } from '@/constants/messages';
 import { useAuthStatus } from '@/hooks/useAuthStatus';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { AuthSessionError, loginWithApi } from '@/services/authSession';
-import { validateEmail, validateLogin } from '@/services/authValidation';
+import { validateEmail, validateLoginOrEmail } from '@/services/authValidation';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { toUserErrorMessage } from '@/utils/errorMessages';
 
@@ -26,7 +26,7 @@ export default function LoginPage(): React.JSX.Element {
 
   const submit = React.useCallback(async () => {
     const normalizedLogin = login.trim();
-    const loginError = validateLogin(normalizedLogin);
+    const loginError = validateLoginOrEmail(normalizedLogin);
     if (loginError) {
       setError(loginError);
       return;
@@ -84,7 +84,7 @@ export default function LoginPage(): React.JSX.Element {
           <TextInput
             value={login}
             onChangeText={setLogin}
-            placeholder={MESSAGES.ui.auth.loginPlaceholder}
+            placeholder={MESSAGES.ui.auth.loginOrEmailPlaceholder}
             placeholderTextColor={tokens.textMuted}
             autoCapitalize='none'
             autoCorrect={false}
