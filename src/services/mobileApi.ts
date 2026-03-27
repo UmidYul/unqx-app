@@ -286,6 +286,7 @@ function mapResidentProfile(raw: any): ResidentProfile {
   const source = raw?.profile ?? raw ?? {};
   const slug = normalizeResidentSlug(source?.slug) || 'UNQ000';
   const slugs = parseResidentSlugs(source?.slugs, slug);
+  const slugsRaw = Array.isArray(source?.slugs) ? source.slugs : [];
   const addressRaw = source?.address ?? source?.location ?? source?.addressLine ?? source?.addressText ?? source?.street;
   const explicitVerifiedCompany = String(
     source?.verifiedCompany ?? source?.company ?? source?.companyName ?? raw?.verifiedCompany ?? '',
@@ -294,6 +295,33 @@ function mapResidentProfile(raw: any): ResidentProfile {
   const verifiedCompany = explicitVerifiedCompany || city;
   const verified = Boolean(source?.isVerified ?? source?.verified ?? raw?.isVerified ?? raw?.ownerIsVerified ?? verifiedCompany);
   const resolvedCity = city && city !== verifiedCompany ? city : '';
+  const tags = Array.isArray(source?.tags)
+    ? source.tags.map((item: unknown) => String(item ?? '').trim()).filter(Boolean)
+    : [];
+  const score = Number(source?.score ?? source?.unqScore ?? source?.scoreValue);
+  const topPercent = Number(
+    source?.topPercent
+    ?? source?.top
+    ?? source?.percentile
+    ?? source?.ratingTopPercent
+    ?? source?.ratingPercent,
+  );
+  const leaderboardPosition = Number(source?.leaderboardPosition ?? source?.rank ?? source?.position ?? source?.place);
+  const scoreProgress = Number(source?.scoreProgress ?? source?.scorePercent ?? source?.progressPercent);
+  const slugsTotalPriceExplicit = Number(source?.totalSlugsPrice ?? source?.slugsTotalPrice ?? source?.totalSlugPrice);
+  const slugsTotalPriceFromItems = slugsRaw.reduce((sum: number, item: any) => {
+    if (!item || typeof item !== 'object') {
+      return sum;
+    }
+    const price = Number(item?.slugPrice ?? item?.price ?? item?.cost ?? item?.amount);
+    return Number.isFinite(price) ? sum + price : sum;
+  }, 0);
+  const fallbackSingleSlugPrice = Number(source?.slugPrice ?? source?.price);
+  const totalSlugsPrice = Number.isFinite(slugsTotalPriceExplicit)
+    ? slugsTotalPriceExplicit
+    : (slugsTotalPriceFromItems > 0
+      ? slugsTotalPriceFromItems
+      : (slugs.length <= 1 && Number.isFinite(fallbackSingleSlugPrice) ? fallbackSingleSlugPrice : NaN));
 
   return {
     name: String(source?.name ?? 'Unknown'),
@@ -302,11 +330,21 @@ function mapResidentProfile(raw: any): ResidentProfile {
     slugPrice: Number.isFinite(Number(source?.slugPrice ?? source?.price))
       ? Number(source?.slugPrice ?? source?.price)
       : undefined,
+    totalSlugsPrice: Number.isFinite(totalSlugsPrice) ? totalSlugsPrice : undefined,
+    postcode: source?.postcode ? String(source.postcode) : undefined,
+    hashtag: source?.hashtag ? String(source.hashtag) : undefined,
+    tags,
     avatarUrl: resolveAssetUrl(source?.avatarUrl ? String(source.avatarUrl) : undefined),
     address: addressRaw ? String(addressRaw) : undefined,
     city: resolvedCity || undefined,
     tag: String(source?.tag ?? 'basic'),
+    plan: source?.plan ? String(source.plan) : undefined,
     taps: Number(source?.taps ?? 0),
+    score: Number.isFinite(score) ? score : undefined,
+    topPercent: Number.isFinite(topPercent) ? topPercent : undefined,
+    leaderboardPosition: Number.isFinite(leaderboardPosition) ? leaderboardPosition : undefined,
+    scoreProgress: Number.isFinite(scoreProgress) ? scoreProgress : undefined,
+    rarity: source?.rarity ? String(source.rarity) : (source?.scoreRarity ? String(source.scoreRarity) : undefined),
     role: source?.role ? String(source.role) : undefined,
     bio: source?.bio ? String(source.bio) : undefined,
     email: source?.email ? String(source.email) : undefined,
