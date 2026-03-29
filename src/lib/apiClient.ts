@@ -7,6 +7,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://unqx.uz/ap
 const TOKEN_KEY = 'unqx.auth.bearer';
 const REFRESH_TOKEN_KEY = 'unqx.auth.refresh';
 const CSRF_BOOTSTRAP_PATH = '/auth/me';
+const CSRF_BOOTSTRAP_PATHS = ['/auth/me', '/mobile-auth/me', '/account/me', '/entry/me'] as const;
 const MOBILE_CLIENT_HEADER = 'x-unqx-mobile-client';
 const WAF_BLOCK_PATTERNS: RegExp[] = [
   /imunify360/i,
@@ -116,35 +117,51 @@ function isWriteMethod(method: string): boolean {
   return method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
 }
 
-async function ensureCsrfToken(forceRefresh = false): Promise<string | null> {
+async function ensureCsrfToken(forceRefresh = false, requestId?: string): Promise<string | null> {
   if (!forceRefresh && csrfTokenCache) {
     return csrfTokenCache;
   }
 
-  try {
-    const response = await fetch(buildUrl(CSRF_BOOTSTRAP_PATH), {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-      },
-      credentials: 'include',
-    });
+  const rid = requestId || createRequestId();
+  const candidates = forceRefresh ? CSRF_BOOTSTRAP_PATHS : ([CSRF_BOOTSTRAP_PATH, ...CSRF_BOOTSTRAP_PATHS] as const);
+  const uniqueCandidates = Array.from(new Set(candidates));
 
-    if (!response.ok) {
-      return null;
+  for (const path of uniqueCandidates) {
+    try {
+      const response = await fetch(buildUrl(path), {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          [MOBILE_CLIENT_HEADER]: '1',
+          'x-request-id': rid,
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        addSentryBreadcrumb({
+          category: 'auth',
+          level: response.status === 403 ? 'warning' : 'info',
+          message: `CSRF bootstrap failed: GET ${path} (${response.status})`,
+          data: { requestId: rid },
+        });
+        continue;
+      }
+
+      const payload = (await response.json().catch(() => null)) as { csrfToken?: unknown } | null;
+      const token = typeof payload?.csrfToken === 'string' ? payload.csrfToken.trim() : '';
+      if (!token) {
+        continue;
+      }
+
+      csrfTokenCache = token;
+      return token;
+    } catch {
+      continue;
     }
-
-    const payload = (await response.json().catch(() => null)) as { csrfToken?: unknown } | null;
-    const token = typeof payload?.csrfToken === 'string' ? payload.csrfToken.trim() : '';
-    if (!token) {
-      return null;
-    }
-
-    csrfTokenCache = token;
-    return token;
-  } catch {
-    return null;
   }
+
+  return null;
 }
 
 function createWafApiError(params: {
@@ -295,7 +312,7 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   }
 
   if (isWriteMethod(method) && !headers.has('x-csrf-token')) {
-    const csrfToken = await ensureCsrfToken();
+    const csrfToken = await ensureCsrfToken(false, requestId);
     if (csrfToken) {
       headers.set('x-csrf-token', csrfToken);
     }
@@ -345,7 +362,7 @@ async function request<T>(method: string, path: string, options: RequestOptions 
       attempt === 0 &&
       isWriteMethod(method)
     ) {
-      const refreshed = await ensureCsrfToken(true);
+      const refreshed = await ensureCsrfToken(true, requestId);
       if (refreshed) {
         headers.set('x-csrf-token', refreshed);
         continue;

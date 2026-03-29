@@ -15,7 +15,7 @@ const TOKEN_ENVELOPE_KEYS = ['data', 'auth', 'session', 'result', 'payload'] as 
 
 const AUTH_CODE_MESSAGES: Record<string, string> = MESSAGES.auth.codeMessages;
 const AUTH_PRIMARY_PREFIX = '/auth/';
-const AUTH_FALLBACK_PREFIX = '/mobile-auth/';
+const AUTH_FALLBACK_PREFIXES = ['/mobile-auth/', '/account/', '/entry/'] as const;
 
 export class AuthSessionError extends Error {
   code: string | null;
@@ -197,7 +197,9 @@ function buildAuthPathCandidates(path: string): string[] {
   if (!suffix) {
     return [path];
   }
-  return [path, `${AUTH_FALLBACK_PREFIX}${suffix}`];
+
+  const variants = [path, ...AUTH_FALLBACK_PREFIXES.map((prefix) => `${prefix}${suffix}`)];
+  return Array.from(new Set(variants));
 }
 
 function wait(ms: number): Promise<void> {
@@ -216,7 +218,13 @@ async function getAuthWithWafFallback<T>(
   for (let idx = 0; idx < candidates.length; idx += 1) {
     const targetPath = candidates[idx];
     try {
-      return await apiClient.get<T>(targetPath, options);
+      return await apiClient.get<T>(targetPath, {
+        ...options,
+        headers: {
+          ...(options.headers ?? {}),
+          'x-unqx-auth-candidate': targetPath,
+        },
+      });
     } catch (error) {
       lastError = error;
       const hasNext = idx < candidates.length - 1;
@@ -243,7 +251,11 @@ async function postAuthWithWafFallback<T>(path: string, body?: ApiBody): Promise
   for (let idx = 0; idx < candidates.length; idx += 1) {
     const targetPath = candidates[idx];
     try {
-      return await apiClient.post<T>(targetPath, body);
+      return await apiClient.post<T>(targetPath, body, {
+        headers: {
+          'x-unqx-auth-candidate': targetPath,
+        },
+      });
     } catch (error) {
       lastError = error;
       const hasNext = idx < candidates.length - 1;
