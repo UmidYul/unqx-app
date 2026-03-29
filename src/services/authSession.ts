@@ -15,7 +15,12 @@ const TOKEN_ENVELOPE_KEYS = ['data', 'auth', 'session', 'result', 'payload'] as 
 
 const AUTH_CODE_MESSAGES: Record<string, string> = MESSAGES.auth.codeMessages;
 const AUTH_PRIMARY_PREFIX = '/auth/';
-const AUTH_FALLBACK_PREFIXES = ['/mobile-auth/', '/account/', '/entry/'] as const;
+const AUTH_FALLBACK_PREFIXES = ['/mobile-auth/', '/account/', '/entry/', '/access/'] as const;
+const AUTH_PATH_ALIASES: Partial<Record<string, readonly string[]>> = {
+  '/auth/login': ['/auth/login', '/auth/open'],
+  '/auth/me': ['/auth/me', '/auth/status'],
+  '/auth/logout': ['/auth/logout', '/auth/close'],
+};
 
 export class AuthSessionError extends Error {
   code: string | null;
@@ -190,15 +195,24 @@ function isWafBlockedError(error: unknown): error is ApiError {
 }
 
 function buildAuthPathCandidates(path: string): string[] {
-  if (!path.startsWith(AUTH_PRIMARY_PREFIX)) {
-    return [path];
-  }
-  const suffix = path.slice(AUTH_PRIMARY_PREFIX.length);
-  if (!suffix) {
-    return [path];
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const aliases = AUTH_PATH_ALIASES[normalizedPath] ?? [normalizedPath];
+  const variants: string[] = [];
+
+  for (const alias of aliases) {
+    variants.push(alias);
+    if (!alias.startsWith(AUTH_PRIMARY_PREFIX)) {
+      continue;
+    }
+    const suffix = alias.slice(AUTH_PRIMARY_PREFIX.length);
+    if (!suffix) {
+      continue;
+    }
+    for (const prefix of AUTH_FALLBACK_PREFIXES) {
+      variants.push(`${prefix}${suffix}`);
+    }
   }
 
-  const variants = [path, ...AUTH_FALLBACK_PREFIXES.map((prefix) => `${prefix}${suffix}`)];
   return Array.from(new Set(variants));
 }
 
@@ -273,6 +287,53 @@ async function postAuthWithWafFallback<T>(path: string, body?: ApiBody): Promise
   }
 
   throw lastError instanceof Error ? lastError : new Error('Auth request failed');
+}
+
+async function postLoginWithWafFallback<T>(input: {
+  login: string;
+  password: string;
+  rememberMe: boolean;
+}): Promise<T> {
+  const candidates = buildAuthPathCandidates('/auth/login');
+  let lastError: unknown = null;
+
+  for (let idx = 0; idx < candidates.length; idx += 1) {
+    const targetPath = candidates[idx];
+    const body = targetPath.endsWith('/open')
+      ? {
+        identifier: input.login,
+        secret: input.password,
+        r: input.rememberMe ? 1 : 0,
+      }
+      : {
+        login: input.login,
+        password: input.password,
+        rememberMe: input.rememberMe,
+      };
+
+    try {
+      return await apiClient.post<T>(targetPath, body, {
+        headers: {
+          'x-unqx-auth-candidate': targetPath,
+        },
+      });
+    } catch (error) {
+      lastError = error;
+      const hasNext = idx < candidates.length - 1;
+      if (!(hasNext && isWafBlockedError(error))) {
+        throw error;
+      }
+
+      addSentryBreadcrumb({
+        category: 'auth',
+        level: 'warning',
+        message: `WAF fallback retry: POST ${targetPath} -> ${candidates[idx + 1]}`,
+      });
+      await wait(220);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Auth login failed');
 }
 
 function buildAvailabilityField(provided: boolean): AvailabilityFieldResult {
@@ -414,7 +475,7 @@ export async function loginWithApi(
   password: string,
 ): Promise<{ requiresVerification: boolean; message?: string; email?: string }> {
   try {
-    const payload = await postAuthWithWafFallback<any>('/auth/login', {
+    const payload = await postLoginWithWafFallback<any>({
       login,
       password,
       rememberMe: true,

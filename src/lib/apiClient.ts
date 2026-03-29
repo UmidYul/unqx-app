@@ -7,7 +7,18 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://unqx.uz/ap
 const TOKEN_KEY = 'unqx.auth.bearer';
 const REFRESH_TOKEN_KEY = 'unqx.auth.refresh';
 const CSRF_BOOTSTRAP_PATH = '/auth/me';
-const CSRF_BOOTSTRAP_PATHS = ['/auth/me', '/mobile-auth/me', '/account/me', '/entry/me'] as const;
+const CSRF_BOOTSTRAP_PATHS = [
+  '/auth/me',
+  '/auth/status',
+  '/mobile-auth/me',
+  '/mobile-auth/status',
+  '/account/me',
+  '/account/status',
+  '/entry/me',
+  '/entry/status',
+  '/access/me',
+  '/access/status',
+] as const;
 const MOBILE_CLIENT_HEADER = 'x-unqx-mobile-client';
 const WAF_BLOCK_PATTERNS: RegExp[] = [
   /imunify360/i,
