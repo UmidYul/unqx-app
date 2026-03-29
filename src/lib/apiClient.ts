@@ -38,6 +38,12 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
 let authTokenCache: string | null = null;
 let csrfTokenCache: string | null = null;
 
+function createRequestId(): string {
+  const ts = Date.now().toString(36);
+  const random = Math.random().toString(36).slice(2, 10);
+  return `rn-${ts}-${random}`;
+}
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
 }
@@ -177,14 +183,26 @@ export async function getAuthToken(): Promise<string | null> {
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
   const endpoint = path.startsWith('/') ? path : `/${path}`;
   const headers = new Headers(options.headers || {});
+  const requestId = createRequestId();
   const token = await resolveAuthToken();
 
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
+  if (!headers.has('x-request-id')) {
+    headers.set('x-request-id', requestId);
+  }
+
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
+  }
+
+  if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
+    headers.set('Cache-Control', 'no-cache');
+  }
+  if ((method === 'GET' || method === 'HEAD') && !headers.has('Pragma')) {
+    headers.set('Pragma', 'no-cache');
   }
 
   if (isWriteMethod(method) && !headers.has('x-csrf-token')) {
