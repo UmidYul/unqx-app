@@ -77,6 +77,7 @@ export const API_PATHS = {
     analytics: "/profile/analytics",
     verification: "/profile/verification",
     verificationRequest: "/profile/verification-request",
+    reportViolation: "/profile/report-violation",
     welcomeDismiss: "/profile/welcome-dismiss",
   },
   cards: {

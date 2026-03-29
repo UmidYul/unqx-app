@@ -29,6 +29,14 @@ function invalidateCache(keys: string[]): void {
   }
 }
 
+export function clearMobileApiCache(keys?: string[]): void {
+  if (Array.isArray(keys) && keys.length > 0) {
+    invalidateCache(keys);
+    return;
+  }
+  memoryCache.clear();
+}
+
 function isFallbackError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 404 || error.status === 405 || error.status === 501);
 }
@@ -1210,6 +1218,25 @@ export async function saveProfileCardLike(card: ProfileCard): Promise<unknown> {
     invalidateCache(['profile', 'current-user']);
     return saved;
   }
+}
+
+export async function submitViolationReportLike(input: { type: string; message: string }): Promise<unknown> {
+  const type = String(input.type ?? '')
+    .trim()
+    .toLowerCase()
+    .slice(0, 40);
+  const message = String(input.message ?? '')
+    .trim()
+    .slice(0, 3000);
+
+  if (!message) {
+    throw new ApiError('Message is required', 400, 'VALIDATION_ERROR');
+  }
+
+  return apiClient.post('/profile/report-violation', {
+    type: type || 'other',
+    message,
+  });
 }
 
 export async function createWristbandOrderLike(payload: { address: string; quantity: number }): Promise<unknown> {

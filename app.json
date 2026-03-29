@@ -3,7 +3,7 @@
     "name": "UNQX",
     "slug": "unqx-app",
     "scheme": "unqxapp",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,7 +15,7 @@
     "ios": {
       "bundleIdentifier": "uz.unqx.app",
       "supportsTablet": false,
-      "buildNumber": "1",
+      "buildNumber": "4",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NFCReaderUsageDescription": "UNQX использует NFC для чтения меток других пользователей, записи вашей ссылки unqx.uz/SLUG и проверки состояния тега.",
@@ -52,7 +52,7 @@
         "android.permission.USE_FINGERPRINT"
       ],
       "googleServicesFile": "./google-services.json",
-      "versionCode": 1,
+      "versionCode": 5,
       "package": "uz.unqx.app"
     },
     "web": {

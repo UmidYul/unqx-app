@@ -1,8 +1,9 @@
 import { ApiError, apiClient, getAuthToken, setAuthToken } from '@/lib/apiClient';
 import { captureSentryException, setSentryUser } from '@/lib/sentry';
 import { MESSAGES } from '@/constants/messages';
-import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
+import { storageDeleteItem, storageSetItem } from '@/lib/secureStorage';
 import { clearPersistedQueryCache } from '@/lib/queryClient';
+import { clearMobileApiCache } from '@/services/mobileApi';
 import { secureStorage } from '@/utils/secureStorage';
 import { toUserErrorMessage } from '@/utils/errorMessages';
 
@@ -109,21 +110,31 @@ async function setSignedFlag(value: boolean): Promise<void> {
 
 export async function isSignedIn(): Promise<boolean> {
   const token = await getAuthToken();
-  const signed = await storageGetItem(AUTH_SIGNED_KEY);
-  if (!token && signed !== '1') {
+  if (!token) {
+    await markSignedOutSession();
     return false;
   }
 
-  // Always validate cached auth state against server session before declaring authenticated.
+  // Mobile auth must be token-driven. Do not trust cookie-only sessions.
   try {
-    await apiClient.getFirst(['/me', '/auth/me']);
+    const payload = await apiClient.getFirst<any>(['/auth/me', '/me']);
+    const authenticated = typeof payload?.authenticated === 'boolean'
+      ? payload.authenticated
+      : Boolean(payload?.user || payload?.id);
+
+    if (!authenticated) {
+      await secureStorage.clear().catch(() => undefined);
+      await markSignedOutSession();
+      return false;
+    }
+
     await setSignedFlag(true);
     return true;
   } catch (error) {
     const isInvalidSession = error instanceof ApiError && (error.status === 401 || error.status === 403);
     if (isInvalidSession) {
       await secureStorage.clear().catch(() => undefined);
-      await setSignedFlag(false);
+      await markSignedOutSession();
     }
     return false;
   }
@@ -218,6 +229,21 @@ async function hasAuthenticatedSession(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function clearSessionDataCaches(): Promise<void> {
+  await clearPersistedQueryCache().catch(() => undefined);
+  clearMobileApiCache();
+}
+
+async function markSignedInSession(): Promise<void> {
+  await clearSessionDataCaches();
+  await setSignedFlag(true);
+}
+
+async function markSignedOutSession(): Promise<void> {
+  await clearSessionDataCaches();
+  await setSignedFlag(false);
 }
 
 export async function checkRegistrationAvailability(input: {
@@ -326,11 +352,11 @@ export async function loginWithApi(
       }
 
       if (!sessionReady) {
-        await setSignedFlag(false);
+        await markSignedOutSession();
         throw new AuthSessionError(MESSAGES.auth.loginError, 'AUTH_SESSION_NOT_READY', 401);
       }
 
-      await setSignedFlag(true);
+      await markSignedInSession();
       if (!applySentryUserFromPayload(payload)) {
         await syncSentryUserFromApi();
       }
@@ -371,7 +397,7 @@ export async function registerWithApi(input: {
     const redirectTo = String(payload?.redirectTo ?? '').trim().toLowerCase();
     const token = await persistAuth(payload);
     if (token || payload?.user || payload?.authenticated === true) {
-      await setSignedFlag(true);
+      await markSignedInSession();
       if (!applySentryUserFromPayload(payload)) {
         await syncSentryUserFromApi();
       }
@@ -382,7 +408,7 @@ export async function registerWithApi(input: {
     if (payload?.ok === true) {
       const sessionReady = await hasAuthenticatedSession();
       if (sessionReady) {
-        await setSignedFlag(true);
+        await markSignedInSession();
         await syncSentryUserFromApi();
         return { signedIn: true };
       }
@@ -392,7 +418,7 @@ export async function registerWithApi(input: {
         return { signedIn: true };
       }
       if (loginResult?.requiresVerification) {
-        await setSignedFlag(false);
+        await markSignedOutSession();
         return {
           signedIn: false,
           message: loginResult.message ?? MESSAGES.auth.unverifiedEmail,
@@ -413,7 +439,7 @@ export async function registerWithApi(input: {
     }
 
     if (hasEmail && redirectTo.includes('verify-email')) {
-      await setSignedFlag(false);
+      await markSignedOutSession();
       return {
         signedIn: false,
         message: payload?.message || MESSAGES.auth.registerDoneVerify,
@@ -421,7 +447,7 @@ export async function registerWithApi(input: {
       };
     }
 
-    await setSignedFlag(false);
+    await markSignedOutSession();
     return {
       signedIn: false,
       message: payload?.message || (hasEmail ? MESSAGES.auth.registerDoneVerify : MESSAGES.auth.registerDoneLogin),
@@ -457,7 +483,7 @@ export async function verifyEmailWithApi(email: string, code: string): Promise<{
     const token = await persistAuth(payload);
     const authenticated = Boolean(payload?.authenticated || payload?.ok || payload?.user);
     if (authenticated || token) {
-      await setSignedFlag(true);
+      await markSignedInSession();
       if (!applySentryUserFromPayload(payload)) {
         await syncSentryUserFromApi();
       }
@@ -498,7 +524,7 @@ export async function resetPasswordWithApi(input: {
   try {
     const payload = await apiClient.post<any>('/auth/reset-password', input);
     await secureStorage.clear();
-    await setSignedFlag(false);
+    await markSignedOutSession();
 
     return {
       ok: Boolean(payload?.ok ?? true),
@@ -517,7 +543,6 @@ export async function signOut(): Promise<void> {
   }
 
   await secureStorage.clear();
-  await clearPersistedQueryCache();
-  await setSignedFlag(false);
+  await markSignedOutSession();
   setSentryUser(null);
 }

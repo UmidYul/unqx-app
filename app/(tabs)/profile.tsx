@@ -39,6 +39,7 @@ import {
   fetchPrivateAccessSettingsLike,
   fetchProfileLike,
   saveProfileCardLike,
+  submitViolationReportLike,
   trackWristbandOrderLike,
 } from '@/services/mobileApi';
 import { signOut } from '@/services/authSession';
@@ -97,6 +98,16 @@ const DEFAULT_CARD: ProfileCard = {
 };
 
 const BIOMETRIC_TIMEOUT_OPTIONS_MS = [0, 30_000, 60_000, 5 * 60_000] as const;
+const VIOLATION_REPORT_TYPES = [
+  'child_safety',
+  'sexual_content',
+  'violence',
+  'fraud',
+  'hate_or_harassment',
+  'illegal_goods',
+  'other',
+] as const;
+type ViolationReportType = (typeof VIOLATION_REPORT_TYPES)[number];
 
 function normalizeOwnedSlug(value: unknown): string {
   const normalized = String(value ?? '')
@@ -185,7 +196,12 @@ function parseProfileCard(raw: unknown): ProfileCard {
   const payload = raw as { user?: any; card?: any; profileCard?: any; slugs?: any[]; selectedSlug?: string };
   const sourceUser = payload?.user ?? payload;
   const card = payload?.card ?? sourceUser?.card ?? sourceUser?.profileCard ?? payload?.profileCard ?? {};
-
+  // Проверяем наличие валидного id или slug
+  const userId = sourceUser?.id;
+  const slug = pickPrimarySlug(payload);
+  if (!userId && !slug) {
+    return null;
+  }
   return {
     name: card?.name ?? sourceUser?.name ?? sourceUser?.displayName ?? sourceUser?.firstName ?? DEFAULT_CARD.name,
     job: card?.job ?? card?.role ?? DEFAULT_CARD.job,
@@ -199,7 +215,7 @@ function parseProfileCard(raw: unknown): ProfileCard {
     phone: card?.phone ?? card?.extraPhone ?? sourceUser?.phone ?? '',
     telegram: card?.telegram ?? '',
     email: card?.email ?? sourceUser?.email ?? '',
-    slug: pickPrimarySlug(payload),
+    slug,
     avatarUrl: resolveAssetUrl(card?.avatarUrl ?? card?.avatar_url ?? sourceUser?.avatarUrl ?? sourceUser?.avatar_url),
     theme: normalizeCardTheme(card?.theme),
     buttons: Array.isArray(card?.buttons)
@@ -346,6 +362,9 @@ export default function ProfilePage(): React.JSX.Element {
   const [languageModalVisible, setLanguageModalVisible] = React.useState(false);
   const [biometricTimeoutModalVisible, setBiometricTimeoutModalVisible] = React.useState(false);
   const [privateAccessModalVisible, setPrivateAccessModalVisible] = React.useState(false);
+  const [violationModalVisible, setViolationModalVisible] = React.useState(false);
+  const [violationType, setViolationType] = React.useState<ViolationReportType>('child_safety');
+  const [violationMessage, setViolationMessage] = React.useState('');
   const [privatePasswordLabelInput, setPrivatePasswordLabelInput] = React.useState('');
   const [privatePasswordValueInput, setPrivatePasswordValueInput] = React.useState('');
   const [changePasswordId, setChangePasswordId] = React.useState<string | null>(null);
@@ -839,6 +858,23 @@ export default function ProfilePage(): React.JSX.Element {
     },
   });
 
+  const submitViolationReportMutation = useMutation({
+    networkMode: 'online',
+    mutationFn: (payload: { type: ViolationReportType; message: string }) => submitViolationReportLike(payload),
+    onSuccess: () => {
+      setViolationModalVisible(false);
+      setViolationType('child_safety');
+      setViolationMessage('');
+      setError(null);
+      toast.success(isUz ? 'Xabaringiz yuborildi' : 'Сообщение отправлено');
+    },
+    onError: (error) => {
+      const message = toUserErrorMessage(error, isUz ? 'Xabar yuborib bo‘lmadi' : 'Не удалось отправить сообщение');
+      setError(message);
+      toast.error(MESSAGES.toast.saveFailed, message);
+    },
+  });
+
   const openPricingPage = React.useCallback(async () => {
     try {
       await Linking.openURL('https://unqx.uz/#pricing');
@@ -906,6 +942,28 @@ export default function ProfilePage(): React.JSX.Element {
       void privateAccessQuery.refetch();
     }
   }, [canUseCardFeatures, notifyPlanAndSlugRequired, privateAccessQuery]);
+
+  const handleOpenViolationModal = React.useCallback(() => {
+    setViolationModalVisible(true);
+  }, []);
+
+  const handleSubmitViolationReport = React.useCallback(() => {
+    if (!isOnline) {
+      toast.info(MESSAGES.toast.offlineQueued);
+      return;
+    }
+
+    const normalizedMessage = violationMessage.trim();
+    if (normalizedMessage.length < 10) {
+      toast.error(isUz ? 'Kamida 10 ta belgi kiriting' : 'Введите минимум 10 символов');
+      return;
+    }
+
+    submitViolationReportMutation.mutate({
+      type: violationType,
+      message: normalizedMessage,
+    });
+  }, [isOnline, isUz, submitViolationReportMutation, violationMessage, violationType]);
 
   const handleAddPrivatePassword = React.useCallback(() => {
     if (!canUseCardFeatures) {
@@ -1230,6 +1288,21 @@ export default function ProfilePage(): React.JSX.Element {
       biometricTimeoutModalTitle: 'Biometriya vaqtini tanlang',
       language: 'Til',
       languageValue: "O'zbekcha",
+      reportViolation: 'Qoidabuzarlik haqida xabar berish',
+      reportViolationSub: 'Bolalar xavfsizligi yoki boshqa qonunbuzarlik haqida yuboring',
+      reportViolationModalTitle: 'Qoidabuzarlik haqida xabar',
+      reportViolationModalHint: 'Xabar adminlarga yuboriladi va tekshirish uchun saqlanadi.',
+      reportViolationTypeLabel: 'Qoidabuzarlik turi',
+      reportViolationMessageLabel: 'Xabar tafsilotlari',
+      reportViolationMessagePlaceholder: 'Nima bo‘lganini yozing...',
+      reportViolationSubmit: 'Yuborish',
+      violationTypeChildSafety: 'Bolalar xavfsizligi',
+      violationTypeSexualContent: 'Seksual kontent',
+      violationTypeViolence: 'Zo‘ravonlik',
+      violationTypeFraud: 'Firibgarlik',
+      violationTypeHateOrHarassment: 'Nafrat yoki tazyiq',
+      violationTypeIllegalGoods: 'Noqonuniy tovar/xizmat',
+      violationTypeOther: 'Boshqa',
       support: "Qo'llab-quvvatlash",
       terms: 'Foydalanuvchi shartlari',
       privacy: 'Maxfiylik siyosati',
@@ -1315,6 +1388,21 @@ export default function ProfilePage(): React.JSX.Element {
       biometricTimeoutModalTitle: 'Выберите время биометрии',
       language: 'Язык',
       languageValue: 'Русский',
+      reportViolation: 'Сообщить о правонарушении',
+      reportViolationSub: 'Отправить жалобу о безопасности детей или другом нарушении',
+      reportViolationModalTitle: 'Сообщение о правонарушении',
+      reportViolationModalHint: 'Сообщение уйдёт администраторам и сохранится для проверки.',
+      reportViolationTypeLabel: 'Тип правонарушения',
+      reportViolationMessageLabel: 'Описание',
+      reportViolationMessagePlaceholder: 'Опишите, что произошло...',
+      reportViolationSubmit: 'Отправить',
+      violationTypeChildSafety: 'Безопасность детей',
+      violationTypeSexualContent: 'Сексуальный контент',
+      violationTypeViolence: 'Насилие',
+      violationTypeFraud: 'Мошенничество',
+      violationTypeHateOrHarassment: 'Ненависть или травля',
+      violationTypeIllegalGoods: 'Незаконные товары/услуги',
+      violationTypeOther: 'Другое',
       support: 'Поддержка',
       terms: 'Пользовательское соглашение',
       privacy: 'Политика конфиденциальности',
@@ -1363,6 +1451,18 @@ export default function ProfilePage(): React.JSX.Element {
         ? (isUz ? 'Yuklashda xato' : 'Ошибка загрузки')
         : `${profileText.privateAccessPasswordLimit}: ${privatePasswords.length}/${privatePasswordLimit}`;
   const privateLimitReached = privatePasswords.length >= privatePasswordLimit;
+  const violationTypeOptions = React.useMemo<Array<{ value: ViolationReportType; label: string }>>(
+    () => [
+      { value: 'child_safety', label: profileText.violationTypeChildSafety },
+      { value: 'sexual_content', label: profileText.violationTypeSexualContent },
+      { value: 'violence', label: profileText.violationTypeViolence },
+      { value: 'fraud', label: profileText.violationTypeFraud },
+      { value: 'hate_or_harassment', label: profileText.violationTypeHateOrHarassment },
+      { value: 'illegal_goods', label: profileText.violationTypeIllegalGoods },
+      { value: 'other', label: profileText.violationTypeOther },
+    ],
+    [profileText],
+  );
   const getBiometricTimeoutOptionLabel = React.useCallback((timeoutMs: number): string => {
     if (timeoutMs <= 0) {
       return isUz ? 'Darhol' : 'Сразу';
@@ -1587,6 +1687,15 @@ export default function ProfilePage(): React.JSX.Element {
                 sub={profileText.languageValue}
                 right={<ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
                 onPress={() => setLanguageModalVisible(true)}
+              />
+              <SettingsRow
+                tokens={tokens}
+                label={profileText.reportViolation}
+                sub={profileText.reportViolationSub}
+                right={submitViolationReportMutation.isPending
+                  ? <ActivityIndicator color={tokens.textMuted} />
+                  : <ChevronRight size={14} strokeWidth={1.5} color={tokens.textMuted} />}
+                onPress={handleOpenViolationModal}
               />
               <SettingsRow
                 tokens={tokens}
@@ -1981,6 +2090,80 @@ export default function ProfilePage(): React.JSX.Element {
         </Modal>
 
         <Modal
+          visible={violationModalVisible}
+          transparent={false}
+          animationType='fade'
+          onRequestClose={() => setViolationModalVisible(false)}
+        >
+          <Pressable style={[styles.modalOverlay, { backgroundColor: tokens.bg }]} onPress={() => setViolationModalVisible(false)}>
+            <Pressable style={[styles.modalCard, styles.privateModalCard, styles.violationModalCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={() => undefined}>
+              <Text style={[styles.modalTitle, { color: tokens.text }]}>{profileText.reportViolationModalTitle}</Text>
+              <Text style={[styles.modalHint, { color: tokens.textMuted }]}>{profileText.reportViolationModalHint}</Text>
+
+              <ScrollView
+                style={styles.violationModalScroll}
+                contentContainerStyle={styles.violationModalContent}
+                keyboardShouldPersistTaps='handled'
+                nestedScrollEnabled
+              >
+                <Text style={[styles.privateSectionTitle, { color: tokens.text }]}>{profileText.reportViolationTypeLabel}</Text>
+                <View style={styles.violationTypeList}>
+                  {violationTypeOptions.map((item) => {
+                    const selected = item.value === violationType;
+                    return (
+                      <Pressable
+                        key={item.value}
+                        style={[styles.languageOption, { borderColor: tokens.border, backgroundColor: selected ? `${tokens.accent}14` : 'transparent' }]}
+                        onPress={() => setViolationType(item.value)}
+                        disabled={submitViolationReportMutation.isPending}
+                      >
+                        <Text style={[styles.languageOptionLabel, { color: tokens.text }]}>{item.label}</Text>
+                        <Text style={[styles.languageOptionCheck, { color: selected ? tokens.accent : tokens.textMuted }]}>{selected ? '✓' : ''}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Text style={[styles.privateSectionTitle, { color: tokens.text }]}>{profileText.reportViolationMessageLabel}</Text>
+                <TextInput
+                  value={violationMessage}
+                  onChangeText={setViolationMessage}
+                  multiline
+                  textAlignVertical='top'
+                  placeholder={profileText.reportViolationMessagePlaceholder}
+                  placeholderTextColor={tokens.textMuted}
+                  style={[styles.violationMessageInput, { borderColor: tokens.border, backgroundColor: tokens.inputBg, color: tokens.text }]}
+                  maxLength={3000}
+                  editable={!submitViolationReportMutation.isPending}
+                />
+
+                <Text style={[styles.privateCountText, { color: tokens.textMuted }]}>
+                  {`${violationMessage.trim().length}/3000`}
+                </Text>
+              </ScrollView>
+
+              <View style={styles.violationModalActions}>
+                <Pressable
+                  style={[styles.violationSubmitButton, { borderColor: tokens.border, opacity: submitViolationReportMutation.isPending ? 0.7 : 1 }]}
+                  disabled={submitViolationReportMutation.isPending}
+                  onPress={handleSubmitViolationReport}
+                >
+                  {submitViolationReportMutation.isPending ? (
+                    <ActivityIndicator size='small' color={tokens.text} />
+                  ) : (
+                    <Text style={[styles.privateAddButtonText, { color: tokens.text }]}>{profileText.reportViolationSubmit}</Text>
+                  )}
+                </Pressable>
+
+                <Pressable style={[styles.modalCloseBtn, { borderColor: tokens.border }]} onPress={() => setViolationModalVisible(false)}>
+                  <Text style={[styles.modalCloseText, { color: tokens.text }]}>{profileText.modalClose}</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
           visible={aboutModalVisible}
           transparent={false}
           animationType='fade'
@@ -2038,11 +2221,11 @@ function SettingsRow({
       onPress={onPress}
       style={[styles.settingsRow, { borderBottomColor: tokens.border, borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth }]}
     >
-      <View>
+      <View style={styles.settingsTextWrap}>
         <Text style={[styles.settingsTitle, { color: tokens.text }]}>{label}</Text>
         <Text style={[styles.settingsSub, { color: tokens.textMuted }]}>{sub}</Text>
       </View>
-      {right}
+      <View style={styles.settingsRight}>{right}</View>
     </Pressable>
   );
 }
@@ -2214,13 +2397,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 16,
+    overflow: 'hidden',
   },
   settingsRow: {
     minHeight: 58,
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
+  },
+  settingsTextWrap: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  settingsRight: {
+    minWidth: 24,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   settingsTitle: {
     fontSize: 14,
@@ -2334,6 +2529,41 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
   },
+  violationTypeList: {
+    gap: 8,
+  },
+  violationModalCard: {
+    maxHeight: '92%',
+    width: '100%',
+  },
+  violationModalScroll: {
+    flexShrink: 1,
+    maxHeight: 480,
+  },
+  violationModalContent: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  violationModalActions: {
+    gap: 8,
+  },
+  violationMessageInput: {
+    minHeight: 120,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  violationSubmitButton: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
   logoutBtn: {
     minHeight: 48,
     borderRadius: 12,
@@ -2363,6 +2593,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   modalCard: {
     borderWidth: 1,

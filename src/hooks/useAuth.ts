@@ -9,44 +9,85 @@ interface AuthState {
   isAuthenticated: boolean;
 }
 
+let sharedAuthState: AuthState = {
+  token: null,
+  isLoading: true,
+  isAuthenticated: false,
+};
+
+let bootstrapPromise: Promise<void> | null = null;
+const listeners = new Set<(state: AuthState) => void>();
+
+function emitAuthState(): void {
+  for (const listener of listeners) {
+    listener(sharedAuthState);
+  }
+}
+
+function setSharedAuthState(nextState: AuthState): void {
+  sharedAuthState = nextState;
+  emitAuthState();
+}
+
+async function bootstrapSharedAuthState(): Promise<void> {
+  if (bootstrapPromise) {
+    return bootstrapPromise;
+  }
+
+  bootstrapPromise = (async () => {
+    let token: string | null = null;
+    let signed = false;
+
+    try {
+      [token, signed] = await Promise.all([secureStorage.getToken(), isSignedIn()]);
+    } catch {
+      token = null;
+      signed = false;
+    }
+
+    setSharedAuthState({
+      token,
+      isLoading: false,
+      isAuthenticated: signed,
+    });
+  })();
+
+  try {
+    await bootstrapPromise;
+  } finally {
+    bootstrapPromise = null;
+  }
+}
+
 export function useAuth() {
-  const [state, setState] = useState<AuthState>({
-    token: null,
-    isLoading: true,
-    isAuthenticated: false,
-  });
+  const [state, setState] = useState<AuthState>(sharedAuthState);
 
   useEffect(() => {
-    let mounted = true;
-    const bootstrap = async () => {
-      let token: string | null = null;
-      let signed = false;
-      try {
-        [token, signed] = await Promise.all([secureStorage.getToken(), isSignedIn()]);
-      } catch {
-        token = null;
-        signed = false;
-      } finally {
-        if (!mounted) return;
-        setState({ token, isLoading: false, isAuthenticated: signed });
-      }
+    const listener = (nextState: AuthState) => {
+      setState(nextState);
     };
-    void bootstrap();
+
+    listeners.add(listener);
+    setState(sharedAuthState);
+
+    if (sharedAuthState.isLoading) {
+      void bootstrapSharedAuthState();
+    }
 
     return () => {
-      mounted = false;
+      listeners.delete(listener);
     };
   }, []);
 
   const login = useCallback(async (token: string, refreshToken: string) => {
     await secureStorage.setToken(token);
     await secureStorage.setRefreshToken(refreshToken);
-    setState({ token, isLoading: false, isAuthenticated: true });
+    setSharedAuthState({ token, isLoading: false, isAuthenticated: true });
   }, []);
 
   const logout = useCallback(async () => {
     await secureStorage.clear();
-    setState({ token: null, isLoading: false, isAuthenticated: false });
+    setSharedAuthState({ token: null, isLoading: false, isAuthenticated: false });
   }, []);
 
   return { ...state, login, logout };
