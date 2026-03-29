@@ -8,6 +8,12 @@ const TOKEN_KEY = 'unqx.auth.bearer';
 const REFRESH_TOKEN_KEY = 'unqx.auth.refresh';
 const CSRF_BOOTSTRAP_PATH = '/auth/me';
 const MOBILE_CLIENT_HEADER = 'x-unqx-mobile-client';
+const WAF_BLOCK_PATTERNS: RegExp[] = [
+  /imunify360/i,
+  /access\s+denied\s+by\s+imunify/i,
+  /webshield/i,
+  /forbidden\s+by\s+administrator/i,
+];
 
 export class ApiError extends Error implements ApiErrorShape {
   status: number;
@@ -75,14 +81,22 @@ function isJsonResponse(contentType: string | null): boolean {
   return !!contentType && contentType.includes('application/json');
 }
 
+function isWafBlockedText(value: unknown): boolean {
+  const text = typeof value === 'string' ? value : '';
+  if (!text) {
+    return false;
+  }
+  return WAF_BLOCK_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 function isWafBlockedPayload(payload: unknown): payload is { message: string } {
   if (!payload || typeof payload !== 'object') {
     return false;
   }
-  const message = typeof (payload as Record<string, unknown>).message === 'string'
-    ? String((payload as Record<string, unknown>).message)
-    : '';
-  return /access denied by imunify360/i.test(message);
+  const source = payload as Record<string, unknown>;
+  const message = typeof source.message === 'string' ? source.message : '';
+  const error = typeof source.error === 'string' ? source.error : '';
+  return isWafBlockedText(message) || isWafBlockedText(error);
 }
 
 function canFallback(error: unknown): boolean {
@@ -133,12 +147,47 @@ async function ensureCsrfToken(forceRefresh = false): Promise<string | null> {
   }
 }
 
-async function parseApiError(response: Response, endpoint: string, method: string): Promise<never> {
+function createWafApiError(params: {
+  endpoint: string;
+  method: string;
+  requestId: string;
+  message?: string;
+  payload?: Record<string, unknown> | null;
+}): ApiError {
+  const message = String(params.message || 'Access denied by Imunify360').trim() || 'Access denied by Imunify360';
+  const details: Record<string, unknown> = {
+    ...(params.payload ?? {}),
+    endpoint: params.endpoint,
+    method: params.method,
+    requestId: params.requestId,
+  };
+
+  addSentryBreadcrumb({
+    category: 'security',
+    level: 'warning',
+    message: `WAF blocked request: ${params.method} ${params.endpoint}`,
+    data: {
+      requestId: params.requestId,
+    },
+  });
+
+  return new ApiError(message, 403, 'WAF_BLOCKED', details);
+}
+
+async function parseApiError(
+  response: Response,
+  endpoint: string,
+  method: string,
+  requestId: string,
+): Promise<never> {
   const contentType = response.headers.get('content-type');
   addSentryBreadcrumb({
     category: 'api',
     level: 'error',
     message: `API error: ${method} ${endpoint} (${response.status})`,
+    data: {
+      requestId,
+    },
   });
 
   if (isJsonResponse(contentType)) {
@@ -147,11 +196,47 @@ async function parseApiError(response: Response, endpoint: string, method: strin
       ? payload.error
       : (typeof payload?.message === 'string' ? payload.message : 'Request failed');
     const code = typeof payload?.code === 'string' ? payload.code : null;
-    throw new ApiError(message, response.status, code, payload);
+    const details = {
+      ...(payload ?? {}),
+      endpoint,
+      method,
+      requestId,
+    } as Record<string, unknown>;
+    if (response.status === 403 && isWafBlockedPayload(payload)) {
+      throw createWafApiError({
+        endpoint,
+        method,
+        requestId,
+        message,
+        payload: details,
+      });
+    }
+    throw new ApiError(message, response.status, code, details);
   }
 
   const text = await response.text().catch(() => null);
-  throw new ApiError(text || response.statusText || 'Request failed', response.status, null);
+  if (response.status === 403 && isWafBlockedText(text)) {
+    throw createWafApiError({
+      endpoint,
+      method,
+      requestId,
+      message: typeof text === 'string' && text.trim() ? text : response.statusText,
+      payload: {
+        raw: typeof text === 'string' ? text.slice(0, 1200) : null,
+      },
+    });
+  }
+
+  throw new ApiError(
+    text || response.statusText || 'Request failed',
+    response.status,
+    null,
+    {
+      endpoint,
+      method,
+      requestId,
+    },
+  );
 }
 
 async function resolveAuthToken(): Promise<string | null> {
@@ -270,9 +355,9 @@ async function request<T>(method: string, path: string, options: RequestOptions 
     break;
   }
 
-  if (!response) {
-    throw new ApiError('Request failed', 500, null);
-  }
+    if (!response) {
+      throw new ApiError('Request failed', 500, null);
+    }
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -280,9 +365,9 @@ async function request<T>(method: string, path: string, options: RequestOptions 
       await storageDeleteItem(TOKEN_KEY).catch(() => undefined);
       await storageDeleteItem(REFRESH_TOKEN_KEY).catch(() => undefined);
     }
-    const error = await parseApiError(response, endpoint, method).catch((e) => e);
+    const error = await parseApiError(response, endpoint, method, requestId).catch((e) => e);
     captureSentryException(error, {
-      tags: { endpoint, method },
+      tags: { endpoint, method, requestId },
     });
     throw error;
   }
@@ -298,7 +383,13 @@ async function request<T>(method: string, path: string, options: RequestOptions 
 
   const payload = (await response.json()) as unknown;
   if (isWafBlockedPayload(payload)) {
-    throw new ApiError(payload.message, 403, 'WAF_BLOCKED', payload as Record<string, unknown>);
+    throw createWafApiError({
+      endpoint,
+      method,
+      requestId,
+      message: (payload as Record<string, unknown>).message as string | undefined,
+      payload: payload as Record<string, unknown>,
+    });
   }
   return payload as T;
 }

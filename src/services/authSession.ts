@@ -1,5 +1,5 @@
-import { ApiError, apiClient, getAuthToken, setAuthToken } from '@/lib/apiClient';
-import { captureSentryException, setSentryUser } from '@/lib/sentry';
+import { ApiError, apiClient, getAuthToken, setAuthToken, type ApiBody } from '@/lib/apiClient';
+import { addSentryBreadcrumb, captureSentryException, setSentryUser } from '@/lib/sentry';
 import { MESSAGES } from '@/constants/messages';
 import { storageDeleteItem, storageSetItem } from '@/lib/secureStorage';
 import { clearPersistedQueryCache } from '@/lib/queryClient';
@@ -14,6 +14,8 @@ const REFRESH_TOKEN_KEYS = ['refreshToken', 'refresh_token', 'refresh'] as const
 const TOKEN_ENVELOPE_KEYS = ['data', 'auth', 'session', 'result', 'payload'] as const;
 
 const AUTH_CODE_MESSAGES: Record<string, string> = MESSAGES.auth.codeMessages;
+const AUTH_PRIMARY_PREFIX = '/auth/';
+const AUTH_FALLBACK_PREFIX = '/mobile-auth/';
 
 export class AuthSessionError extends Error {
   code: string | null;
@@ -117,7 +119,7 @@ export async function isSignedIn(): Promise<boolean> {
 
   // Mobile auth must be token-driven. Do not trust cookie-only sessions.
   try {
-    const payload = await apiClient.getFirst<any>(['/auth/me', '/me']);
+    const payload = await getAuthWithWafFallback<any>('/auth/me');
     const authenticated = typeof payload?.authenticated === 'boolean'
       ? payload.authenticated
       : Boolean(payload?.user || payload?.id);
@@ -183,6 +185,84 @@ function toAuthError(error: unknown): AuthSessionError {
   return new AuthSessionError(authErrorMessage(error), null, 0);
 }
 
+function isWafBlockedError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.code === 'WAF_BLOCKED';
+}
+
+function buildAuthPathCandidates(path: string): string[] {
+  if (!path.startsWith(AUTH_PRIMARY_PREFIX)) {
+    return [path];
+  }
+  const suffix = path.slice(AUTH_PRIMARY_PREFIX.length);
+  if (!suffix) {
+    return [path];
+  }
+  return [path, `${AUTH_FALLBACK_PREFIX}${suffix}`];
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function getAuthWithWafFallback<T>(
+  path: string,
+  options: Parameters<typeof apiClient.get>[1] = {},
+): Promise<T> {
+  const candidates = buildAuthPathCandidates(path);
+  let lastError: unknown = null;
+
+  for (let idx = 0; idx < candidates.length; idx += 1) {
+    const targetPath = candidates[idx];
+    try {
+      return await apiClient.get<T>(targetPath, options);
+    } catch (error) {
+      lastError = error;
+      const hasNext = idx < candidates.length - 1;
+      if (!(hasNext && isWafBlockedError(error))) {
+        throw error;
+      }
+
+      addSentryBreadcrumb({
+        category: 'auth',
+        level: 'warning',
+        message: `WAF fallback retry: GET ${targetPath} -> ${candidates[idx + 1]}`,
+      });
+      await wait(220);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Auth request failed');
+}
+
+async function postAuthWithWafFallback<T>(path: string, body?: ApiBody): Promise<T> {
+  const candidates = buildAuthPathCandidates(path);
+  let lastError: unknown = null;
+
+  for (let idx = 0; idx < candidates.length; idx += 1) {
+    const targetPath = candidates[idx];
+    try {
+      return await apiClient.post<T>(targetPath, body);
+    } catch (error) {
+      lastError = error;
+      const hasNext = idx < candidates.length - 1;
+      if (!(hasNext && isWafBlockedError(error))) {
+        throw error;
+      }
+
+      addSentryBreadcrumb({
+        category: 'auth',
+        level: 'warning',
+        message: `WAF fallback retry: POST ${targetPath} -> ${candidates[idx + 1]}`,
+      });
+      await wait(220);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Auth request failed');
+}
+
 function buildAvailabilityField(provided: boolean): AvailabilityFieldResult {
   return {
     provided,
@@ -224,7 +304,7 @@ function extractEmailFromPayload(value: unknown): string | undefined {
 
 async function hasAuthenticatedSession(): Promise<boolean> {
   try {
-    const payload = await apiClient.get<any>('/auth/me');
+    const payload = await getAuthWithWafFallback<any>('/auth/me');
     return Boolean(payload?.authenticated);
   } catch {
     return false;
@@ -266,7 +346,7 @@ export async function checkRegistrationAvailability(input: {
   }
 
   try {
-    const payload = await apiClient.get<any>('/auth/check-availability', {
+    const payload = await getAuthWithWafFallback<any>('/auth/check-availability', {
       query: {
         login: hasLogin ? login : undefined,
         email: hasEmail ? email : undefined,
@@ -322,7 +402,7 @@ export async function loginWithApi(
   password: string,
 ): Promise<{ requiresVerification: boolean; message?: string; email?: string }> {
   try {
-    const payload = await apiClient.post<any>('/auth/login', {
+    const payload = await postAuthWithWafFallback<any>('/auth/login', {
       login,
       password,
       rememberMe: true,
@@ -392,7 +472,7 @@ export async function registerWithApi(input: {
   confirmPassword: string;
 }): Promise<{ signedIn: boolean; message?: string; email?: string }> {
   try {
-    const payload = await apiClient.post<any>('/auth/register', input);
+    const payload = await postAuthWithWafFallback<any>('/auth/register', input);
     const hasEmail = Boolean(String(input.email ?? '').trim());
     const redirectTo = String(payload?.redirectTo ?? '').trim().toLowerCase();
     const token = await persistAuth(payload);
@@ -460,7 +540,7 @@ export async function registerWithApi(input: {
 
 export async function sendEmailOtpWithApi(email: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const payload = await apiClient.post<any>('/auth/send-otp', {
+    const payload = await postAuthWithWafFallback<any>('/auth/send-otp', {
       email,
     });
 
@@ -475,7 +555,7 @@ export async function sendEmailOtpWithApi(email: string): Promise<{ ok: boolean;
 
 export async function verifyEmailWithApi(email: string, code: string): Promise<{ signedIn: boolean; message?: string }> {
   try {
-    const payload = await apiClient.post<any>('/auth/verify-email', {
+    const payload = await postAuthWithWafFallback<any>('/auth/verify-email', {
       email,
       code,
     });
@@ -503,7 +583,7 @@ export async function verifyEmailWithApi(email: string, code: string): Promise<{
 
 export async function forgotPasswordWithApi(email: string): Promise<{ message: string }> {
   try {
-    const payload = await apiClient.post<any>('/auth/forgot-password', {
+    const payload = await postAuthWithWafFallback<any>('/auth/forgot-password', {
       email,
     });
 
@@ -522,7 +602,7 @@ export async function resetPasswordWithApi(input: {
   confirmPassword: string;
 }): Promise<{ ok: boolean; message: string }> {
   try {
-    const payload = await apiClient.post<any>('/auth/reset-password', input);
+    const payload = await postAuthWithWafFallback<any>('/auth/reset-password', input);
     await secureStorage.clear();
     await markSignedOutSession();
 
@@ -537,7 +617,7 @@ export async function resetPasswordWithApi(input: {
 
 export async function signOut(): Promise<void> {
   try {
-    await apiClient.post('/auth/logout', {});
+    await postAuthWithWafFallback('/auth/logout', {});
   } catch {
     // noop
   }
