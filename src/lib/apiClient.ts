@@ -7,6 +7,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://unqx.uz/ap
 const TOKEN_KEY = 'unqx.auth.bearer';
 const REFRESH_TOKEN_KEY = 'unqx.auth.refresh';
 const CSRF_BOOTSTRAP_PATH = '/auth/me';
+const MOBILE_CLIENT_HEADER = 'x-unqx-mobile-client';
 
 export class ApiError extends Error implements ApiErrorShape {
   status: number;
@@ -192,6 +193,9 @@ async function request<T>(method: string, path: string, options: RequestOptions 
 
   if (!headers.has('x-request-id')) {
     headers.set('x-request-id', requestId);
+  }
+  if (!headers.has(MOBILE_CLIENT_HEADER)) {
+    headers.set(MOBILE_CLIENT_HEADER, '1');
   }
 
   if (!headers.has('Accept')) {

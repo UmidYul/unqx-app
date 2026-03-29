@@ -39,7 +39,15 @@ async function bootstrapSharedAuthState(): Promise<void> {
     let signed = false;
 
     try {
-      [token, signed] = await Promise.all([secureStorage.getToken(), isSignedIn()]);
+      // Keep auth bootstrap strictly sequential to avoid token/read races:
+      // if secure storage intermittently fails in one parallel branch, we can
+      // end up with signed=true and token=null (cookie fallback), which may
+      // surface another account.
+      signed = await isSignedIn();
+      token = signed ? await secureStorage.getToken() : null;
+      if (signed && !token) {
+        signed = false;
+      }
     } catch {
       token = null;
       signed = false;
