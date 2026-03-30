@@ -1,7 +1,7 @@
 import { ApiError, apiClient, getAuthToken, setAuthToken, type ApiBody } from '@/lib/apiClient';
 import { addSentryBreadcrumb, captureSentryException, setSentryUser } from '@/lib/sentry';
 import { MESSAGES } from '@/constants/messages';
-import { storageDeleteItem, storageSetItem } from '@/lib/secureStorage';
+import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { clearPersistedQueryCache } from '@/lib/queryClient';
 import { clearMobileApiCache } from '@/services/mobileApi';
 import { secureStorage } from '@/utils/secureStorage';
@@ -9,6 +9,7 @@ import { toUserErrorMessage } from '@/utils/errorMessages';
 import { emitAuthSignedIn, emitAuthSignedOut } from '@/lib/authStateEmitter';
 
 const AUTH_SIGNED_KEY = 'unqx.auth.signed';
+const AUTH_USER_ID_KEY = 'unqx.auth.user-id';
 
 const TOKEN_KEYS = ['token', 'accessToken', 'bearer', 'jwt', 'authToken', 'idToken'] as const;
 const REFRESH_TOKEN_KEYS = ['refreshToken', 'refresh_token', 'refresh'] as const;
@@ -134,6 +135,19 @@ export async function isSignedIn(): Promise<boolean> {
       await secureStorage.clear().catch(() => undefined);
       await markSignedOutSession();
       return false;
+    }
+
+    // Detect account switch: shared device or Expo Go shared storage can leave
+    // a previous user's token and cache in place. If the server confirms a
+    // different user ID than the one we last signed in as, purge every cache
+    // layer so the new session always starts from a clean slate.
+    const confirmedUserId = String(payload?.user?.id ?? payload?.id ?? '').trim();
+    if (confirmedUserId) {
+      const lastUserId = await storageGetItem(AUTH_USER_ID_KEY);
+      if (lastUserId && lastUserId !== confirmedUserId) {
+        await clearSessionDataCaches();
+      }
+      await storageSetItem(AUTH_USER_ID_KEY, confirmedUserId);
     }
 
     await setSignedFlag(true);
@@ -396,9 +410,12 @@ async function clearSessionDataCaches(): Promise<void> {
   clearMobileApiCache();
 }
 
-async function markSignedInSession(): Promise<void> {
+async function markSignedInSession(userId?: string | null): Promise<void> {
   await clearSessionDataCaches();
   await setSignedFlag(true);
+  if (userId) {
+    await storageSetItem(AUTH_USER_ID_KEY, userId).catch(() => undefined);
+  }
   const token = await getAuthToken();
   emitAuthSignedIn(token);
 }
@@ -406,6 +423,7 @@ async function markSignedInSession(): Promise<void> {
 async function markSignedOutSession(): Promise<void> {
   await clearSessionDataCaches();
   await setSignedFlag(false);
+  await storageDeleteItem(AUTH_USER_ID_KEY);
   emitAuthSignedOut();
 }
 
@@ -519,7 +537,8 @@ export async function loginWithApi(
         throw new AuthSessionError(MESSAGES.auth.loginError, 'AUTH_SESSION_NOT_READY', 401);
       }
 
-      await markSignedInSession();
+      const loginUserId = String(payload?.user?.id ?? '').trim() || null;
+      await markSignedInSession(loginUserId);
       if (!applySentryUserFromPayload(payload)) {
         await syncSentryUserFromApi();
       }
@@ -560,7 +579,8 @@ export async function registerWithApi(input: {
     const redirectTo = String(payload?.redirectTo ?? '').trim().toLowerCase();
     const token = await persistAuth(payload);
     if (token || payload?.user || payload?.authenticated === true) {
-      await markSignedInSession();
+      const registerUserId = String(payload?.user?.id ?? '').trim() || null;
+      await markSignedInSession(registerUserId);
       if (!applySentryUserFromPayload(payload)) {
         await syncSentryUserFromApi();
       }
@@ -646,7 +666,8 @@ export async function verifyEmailWithApi(email: string, code: string): Promise<{
     const token = await persistAuth(payload);
     const authenticated = Boolean(payload?.authenticated || payload?.ok || payload?.user);
     if (authenticated || token) {
-      await markSignedInSession();
+      const verifyUserId = String(payload?.user?.id ?? '').trim() || null;
+      await markSignedInSession(verifyUserId);
       if (!applySentryUserFromPayload(payload)) {
         await syncSentryUserFromApi();
       }
