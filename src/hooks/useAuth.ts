@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { onAuthStateChange } from '@/lib/authStateEmitter';
 import { secureStorage } from '@/utils/secureStorage';
 import { isSignedIn } from '@/services/authSession';
 
@@ -24,7 +25,7 @@ function emitAuthState(): void {
   }
 }
 
-function setSharedAuthState(nextState: AuthState): void {
+export function setSharedAuthState(nextState: AuthState): void {
   sharedAuthState = nextState;
   emitAuthState();
 }
@@ -67,12 +68,27 @@ async function bootstrapSharedAuthState(): Promise<void> {
   }
 }
 
+// Subscribe to auth state changes emitted from authSession.ts (login/logout).
+// This runs once at module load time so every component using useAuth reflects
+// sign-in / sign-out without needing a full bootstrap round-trip.
+onAuthStateChange((signedIn, token) => {
+  setSharedAuthState({
+    token: token ?? null,
+    isLoading: false,
+    isAuthenticated: signedIn,
+  });
+});
+
 export function useAuth() {
   const [state, setState] = useState<AuthState>(sharedAuthState);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     const listener = (nextState: AuthState) => {
-      setState(nextState);
+      if (mountedRef.current) {
+        setState(nextState);
+      }
     };
 
     listeners.add(listener);
@@ -83,13 +99,16 @@ export function useAuth() {
     }
 
     return () => {
+      mountedRef.current = false;
       listeners.delete(listener);
     };
   }, []);
 
-  const login = useCallback(async (token: string, refreshToken: string) => {
+  const login = useCallback(async (token: string, refreshToken?: string) => {
     await secureStorage.setToken(token);
-    await secureStorage.setRefreshToken(refreshToken);
+    if (refreshToken) {
+      await secureStorage.setRefreshToken(refreshToken);
+    }
     setSharedAuthState({ token, isLoading: false, isAuthenticated: true });
   }, []);
 

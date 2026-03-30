@@ -6,6 +6,10 @@ import { extractSlug } from '@/utils/links';
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://unqx.uz/api';
 const TOKEN_KEY = 'unqx.auth.bearer';
 const REFRESH_TOKEN_KEY = 'unqx.auth.refresh';
+// Impersonate a common mobile browser so hosting-level WAFs (Imunify360, etc.)
+// don't reject requests based on a non-browser User-Agent like "okhttp/4.x".
+const MOBILE_USER_AGENT =
+  'Mozilla/5.0 (Linux; Android 11; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 const CSRF_BOOTSTRAP_PATH = '/auth/me';
 const CSRF_BOOTSTRAP_PATHS = [
   '/auth/me',
@@ -143,6 +147,8 @@ async function ensureCsrfToken(forceRefresh = false, requestId?: string): Promis
         method: 'GET',
         headers: {
           Accept: 'application/json',
+          'Accept-Language': 'ru,uz;q=0.9,en;q=0.8',
+          'User-Agent': MOBILE_USER_AGENT,
           [MOBILE_CLIENT_HEADER]: '1',
           'x-request-id': rid,
         },
@@ -287,6 +293,9 @@ export async function setAuthToken(token: string): Promise<void> {
 
 export async function clearAuthToken(): Promise<void> {
   authTokenCache = null;
+  // Also clear the cached CSRF token so that after logout the next write request
+  // bootstraps a fresh CSRF tied to the new (unauthenticated) session.
+  csrfTokenCache = null;
   await storageDeleteItem(TOKEN_KEY);
 }
 
@@ -310,9 +319,16 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   if (!headers.has(MOBILE_CLIENT_HEADER)) {
     headers.set(MOBILE_CLIENT_HEADER, '1');
   }
+  // Override the platform default User-Agent so WAFs treat this as a browser request.
+  if (!headers.has('User-Agent')) {
+    headers.set('User-Agent', MOBILE_USER_AGENT);
+  }
 
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
+  }
+  if (!headers.has('Accept-Language')) {
+    headers.set('Accept-Language', 'ru,uz;q=0.9,en;q=0.8');
   }
 
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {

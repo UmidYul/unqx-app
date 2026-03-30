@@ -6,6 +6,7 @@ import { clearPersistedQueryCache } from '@/lib/queryClient';
 import { clearMobileApiCache } from '@/services/mobileApi';
 import { secureStorage } from '@/utils/secureStorage';
 import { toUserErrorMessage } from '@/utils/errorMessages';
+import { emitAuthSignedIn, emitAuthSignedOut } from '@/lib/authStateEmitter';
 
 const AUTH_SIGNED_KEY = 'unqx.auth.signed';
 
@@ -199,17 +200,23 @@ function buildAuthPathCandidates(path: string): string[] {
   const aliases = AUTH_PATH_ALIASES[normalizedPath] ?? [normalizedPath];
   const variants: string[] = [];
 
+  const authSuffixes = aliases
+    .filter((alias) => alias.startsWith(AUTH_PRIMARY_PREFIX))
+    .map((alias) => alias.slice(AUTH_PRIMARY_PREFIX.length))
+    .filter(Boolean);
+
+  if (authSuffixes.length > 0) {
+    const prefixes = [AUTH_PRIMARY_PREFIX, ...AUTH_FALLBACK_PREFIXES];
+    for (const prefix of prefixes) {
+      for (const suffix of authSuffixes) {
+        variants.push(`${prefix}${suffix}`);
+      }
+    }
+  }
+
   for (const alias of aliases) {
-    variants.push(alias);
     if (!alias.startsWith(AUTH_PRIMARY_PREFIX)) {
-      continue;
-    }
-    const suffix = alias.slice(AUTH_PRIMARY_PREFIX.length);
-    if (!suffix) {
-      continue;
-    }
-    for (const prefix of AUTH_FALLBACK_PREFIXES) {
-      variants.push(`${prefix}${suffix}`);
+      variants.push(alias);
     }
   }
 
@@ -392,11 +399,14 @@ async function clearSessionDataCaches(): Promise<void> {
 async function markSignedInSession(): Promise<void> {
   await clearSessionDataCaches();
   await setSignedFlag(true);
+  const token = await getAuthToken();
+  emitAuthSignedIn(token);
 }
 
 async function markSignedOutSession(): Promise<void> {
   await clearSessionDataCaches();
   await setSignedFlag(false);
+  emitAuthSignedOut();
 }
 
 export async function checkRegistrationAvailability(input: {
