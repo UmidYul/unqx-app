@@ -22,6 +22,7 @@ import { AppShell } from '@/components/AppShell';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/ErrorState';
 import { findButtonIcon, inferButtonIcon } from '@/components/profile/buttonIcons';
+import { resolvePreviewTheme } from '@/components/profile/CardPreview';
 import { ScreenTransition } from '@/components/ScreenTransition';
 import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 import { SkeletonBlock, SkeletonCircle } from '@/components/ui/skeleton';
@@ -39,6 +40,7 @@ import {
   unlockResidentPrivateProfileLike,
 } from '@/services/mobileApi';
 import { ResidentProfile } from '@/types';
+import type { ProfileCard } from '@/types';
 import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { formatSlug } from '@/utils/avatar';
@@ -132,6 +134,22 @@ function VerificationIcon({ color }: { color: string }): React.JSX.Element {
       />
     </Svg>
   );
+}
+
+function normalizeCardTheme(rawTheme: unknown): ProfileCard['theme'] {
+  const raw = String(rawTheme ?? '').trim().toLowerCase();
+  if (raw === 'default_dark' || raw === 'dark' || raw === 'light' || raw === 'gradient') return 'default_dark';
+  if (raw === 'arctic') return 'arctic';
+  if (raw === 'linen') return 'linen';
+  if (raw === 'marble') return 'marble';
+  if (raw === 'forest') return 'forest';
+  if (raw === 'royal_ivory' || raw === 'sage_luxe') return 'sage_luxe';
+  if (raw === 'midnight_obsidian') return 'midnight_obsidian';
+  if (raw === 'golden_noir') return 'golden_noir';
+  if (raw === 'aurora_codex') return 'aurora_codex';
+  if (raw === 'nebula_glass') return 'nebula_glass';
+  if (raw === 'velours') return 'velours';
+  return 'default_dark';
 }
 
 export default function ResidentProfilePage(): React.JSX.Element {
@@ -297,6 +315,20 @@ export default function ResidentProfilePage(): React.JSX.Element {
   const hasVerifiedBadge = Boolean(profile?.verified || profile?.verifiedCompany);
   const companyLabel = String(profile?.verifiedCompany ?? '').trim();
   const locale = isUz ? 'uz-UZ' : 'ru-RU';
+  const cardTheme = React.useMemo(
+    () => resolvePreviewTheme(normalizeCardTheme(profile?.theme)),
+    [profile?.theme],
+  );
+  const hasCardTheme = Boolean(profile?.theme);
+  const pageThemeOverride = React.useMemo(() => {
+    if (!hasCardTheme) return null;
+    return {
+      bg: cardTheme.cardBg,
+      text: cardTheme.name,
+      accent: cardTheme.slug,
+      border: cardTheme.buttonBg,
+    };
+  }, [hasCardTheme, cardTheme]);
   const runtimeProfile = profile as
     | (ResidentProfile & {
       tags?: unknown;
@@ -851,7 +883,7 @@ export default function ResidentProfilePage(): React.JSX.Element {
   if (profile.isPrivate && profile.isLocked) {
     return (
       <ErrorBoundary>
-        <AppShell title={profileText.title} tokens={tokens}>
+        <AppShell title={profileText.title} tokens={tokens} themeOverride={pageThemeOverride}>
           <ScreenTransition>
             <ScrollView
               contentContainerStyle={styles.content}
@@ -989,17 +1021,17 @@ export default function ResidentProfilePage(): React.JSX.Element {
                           <View
                             key={`locked-slug-${value}`}
                             style={[
-                            styles.slugListChip,
-                            {
-                              borderColor: active ? tokens.accent : tokens.border,
-                              backgroundColor: active ? tokens.surface : tokens.inputBg,
-                            },
-                          ]}
-                        >
-                          {active ? <Check size={12} strokeWidth={2} color={tokens.accent} /> : null}
-                          <Text style={[styles.slugListChipText, { color: active ? tokens.accent : tokens.textMuted }]}>
-                            {formatSlug(value)}
-                          </Text>
+                              styles.slugListChip,
+                              {
+                                borderColor: active ? tokens.accent : tokens.border,
+                                backgroundColor: active ? tokens.surface : tokens.inputBg,
+                              },
+                            ]}
+                          >
+                            {active ? <Check size={12} strokeWidth={2} color={tokens.accent} /> : null}
+                            <Text style={[styles.slugListChipText, { color: active ? tokens.accent : tokens.textMuted }]}>
+                              {formatSlug(value)}
+                            </Text>
                           </View>
                         );
                       })}
@@ -1054,7 +1086,7 @@ export default function ResidentProfilePage(): React.JSX.Element {
 
   return (
     <ErrorBoundary>
-      <AppShell title={profileText.title} tokens={tokens}>
+      <AppShell title={profileText.title} tokens={tokens} themeOverride={pageThemeOverride}>
         <ScreenTransition>
           <ScrollView
             contentContainerStyle={styles.content}
@@ -1063,62 +1095,62 @@ export default function ResidentProfilePage(): React.JSX.Element {
               <RefreshControl
                 refreshing={profileQuery.isRefetching}
                 onRefresh={() => void onRefresh()}
-                tintColor={tokens.accent}
-                colors={[tokens.accent]}
+                tintColor={hasCardTheme ? cardTheme.slug : tokens.accent}
+                colors={[hasCardTheme ? cardTheme.slug : tokens.accent]}
               />
             }
           >
             <View style={styles.slugLookupWrap}>
               <View style={styles.slugLookupTopRow}>
                 <AnimatedPressable
-                  style={[styles.backButton, { borderColor: tokens.border, backgroundColor: tokens.surface }]}
+                  style={[styles.backButton, { borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface }]}
                   onPress={() => router.back()}
                 >
-                  <ChevronLeft size={16} color={tokens.text} strokeWidth={1.8} />
-                  <Text style={[styles.backButtonText, { color: tokens.text }]}>{profileText.back}</Text>
+                  <ChevronLeft size={16} color={hasCardTheme ? cardTheme.buttonText : tokens.text} strokeWidth={1.8} />
+                  <Text style={[styles.backButtonText, { color: hasCardTheme ? cardTheme.buttonText : tokens.text }]}>{profileText.back}</Text>
                 </AnimatedPressable>
-                <View style={[styles.slugSearchBox, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
-                  <Text style={[styles.slugPrefix, { color: tokens.textMuted }]}>unqx.uz/</Text>
+                <View style={[styles.slugSearchBox, { borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface }]}>
+                  <Text style={[styles.slugPrefix, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>unqx.uz/</Text>
                   <TextInput
                     value={searchSlugValue}
                     onChangeText={handleSearchSlugChange}
                     placeholder={profileText.searchSlug}
-                    placeholderTextColor={tokens.textMuted}
+                    placeholderTextColor={hasCardTheme ? cardTheme.job : tokens.textMuted}
                     autoCapitalize='characters'
                     autoCorrect={false}
-                    style={[styles.slugSearchInput, { color: tokens.text }]}
+                    style={[styles.slugSearchInput, { color: hasCardTheme ? cardTheme.name : tokens.text }]}
                   />
                 </View>
                 <AnimatedPressable
-                  style={[styles.slugSearchAction, { borderColor: tokens.border, backgroundColor: tokens.surface }]}
+                  style={[styles.slugSearchAction, { borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface }]}
                   onPress={() => {
                     void handleLookupSlug();
                   }}
                 >
                   {lookupPending ? (
-                    <ActivityIndicator size='small' color={tokens.text} />
+                    <ActivityIndicator size='small' color={hasCardTheme ? cardTheme.buttonText : tokens.text} />
                   ) : (
-                    <Search size={16} color={tokens.text} strokeWidth={1.8} />
+                    <Search size={16} color={hasCardTheme ? cardTheme.buttonText : tokens.text} strokeWidth={1.8} />
                   )}
                 </AnimatedPressable>
               </View>
               {lookupResult ? (
-                <View style={[styles.lookupResultCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+                <View style={[styles.lookupResultCard, { borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface }]}>
                   {lookupResult.available ? (
                     <>
                       <View style={styles.lookupResultInfo}>
-                        <Text style={[styles.lookupSlug, { color: tokens.text }]}>{lookupResult.slug}</Text>
-                        <Text style={[styles.lookupStatus, { color: tokens.textMuted }]}>{profileText.slugAvailable}</Text>
+                        <Text style={[styles.lookupSlug, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{lookupResult.slug}</Text>
+                        <Text style={[styles.lookupStatus, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profileText.slugAvailable}</Text>
                       </View>
                       <View style={styles.lookupResultRight}>
                         <Text style={[styles.lookupPrice, { color: tokens.text }]}>{lookupPriceText}</Text>
                         <AnimatedPressable
-                          style={[styles.buyButton, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}
+                          style={[styles.buyButton, { borderColor: hasCardTheme ? cardTheme.cardBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.cardBg : tokens.inputBg }]}
                           onPress={() => {
                             void handleBuySlug();
                           }}
                         >
-                          <Text style={[styles.buyButtonText, { color: tokens.text }]}>{profileText.buySlug}</Text>
+                          <Text style={[styles.buyButtonText, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{profileText.buySlug}</Text>
                         </AnimatedPressable>
                       </View>
                     </>
@@ -1133,21 +1165,21 @@ export default function ResidentProfilePage(): React.JSX.Element {
                             onError={lookupAvatar.onError}
                           />
                         ) : (
-                          <View style={[styles.lookupAvatar, { backgroundColor: tokens.inputBg }]}>
-                            <Text style={[styles.lookupAvatarText, { color: tokens.textMuted }]}>
+                          <View style={[styles.lookupAvatar, { backgroundColor: hasCardTheme ? cardTheme.cardBg : tokens.inputBg }]}>
+                            <Text style={[styles.lookupAvatarText, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>
                               {initial(lookupResult.profile?.name ?? lookupResult.slug)}
                             </Text>
                           </View>
                         )}
                       </View>
                       <View style={styles.lookupResultInfo}>
-                        <Text style={[styles.lookupSlug, { color: tokens.text }]}>{lookupResult.slug}</Text>
-                        <Text style={[styles.lookupName, { color: tokens.textSub }]}>
+                        <Text style={[styles.lookupSlug, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{lookupResult.slug}</Text>
+                        <Text style={[styles.lookupName, { color: hasCardTheme ? cardTheme.job : tokens.textSub }]}>
                           {lookupResult.profile?.name || profileText.slugTaken}
                         </Text>
                       </View>
                       <View style={styles.lookupResultRight}>
-                        <Text style={[styles.lookupPrice, { color: tokens.text }]}>{lookupPriceText}</Text>
+                        <Text style={[styles.lookupPrice, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{lookupPriceText}</Text>
                       </View>
                     </>
                   )}
@@ -1155,14 +1187,14 @@ export default function ResidentProfilePage(): React.JSX.Element {
               ) : null}
             </View>
 
-            <View style={[styles.headerCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+            <View style={[styles.headerCard, { borderColor: hasCardTheme ? cardTheme.cardBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.cardBg : tokens.surface }]}>
               <LinearGradient
-                colors={[tokens.surface, tokens.inputBg]}
+                colors={hasCardTheme ? [cardTheme.cardBg, cardTheme.avatarBg] : [tokens.surface, tokens.inputBg]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.headerGradient}
               />
-              <View style={[styles.headerAvatarWrap, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
+              <View style={[styles.headerAvatarWrap, { borderColor: hasCardTheme ? cardTheme.avatarBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.avatarBg : tokens.inputBg }]}>
                 {avatarImage.showImage && avatarImage.imageUri ? (
                   <Image
                     key={`${profile.avatarUrl}:${avatarImage.retryCount}`}
@@ -1171,29 +1203,29 @@ export default function ResidentProfilePage(): React.JSX.Element {
                     onError={avatarImage.onError}
                   />
                 ) : (
-                  <View style={[styles.headerAvatarFallback, { backgroundColor: tokens.phoneBg }]}>
-                    <Text style={[styles.headerAvatarText, { color: tokens.textMuted }]}>{initial(profile.name)}</Text>
+                  <View style={[styles.headerAvatarFallback, { backgroundColor: hasCardTheme ? cardTheme.avatarBg : tokens.phoneBg }]}>
+                    <Text style={[styles.headerAvatarText, { color: hasCardTheme ? cardTheme.avatarText : tokens.textMuted }]}>{initial(profile.name)}</Text>
                   </View>
                 )}
               </View>
               <View style={styles.headerBlock}>
-                <Text style={[styles.fullName, { color: tokens.text }]}>{profile.name}</Text>
+                <Text style={[styles.fullName, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{profile.name}</Text>
                 {companyLabel || hasVerifiedBadge ? (
                   <View style={styles.companyRow}>
-                    {companyLabel ? <Text style={[styles.companyText, { color: tokens.textSub }]}>{companyLabel}</Text> : null}
+                    {companyLabel ? <Text style={[styles.companyText, { color: hasCardTheme ? cardTheme.job : tokens.textSub }]}>{companyLabel}</Text> : null}
                     {hasVerifiedBadge ? (
                       <View style={styles.verifiedBadge}>
-                        <VerificationIcon color={tokens.textMuted} />
+                        <VerificationIcon color={hasCardTheme ? cardTheme.slug : tokens.textMuted} />
                       </View>
                     ) : null}
                   </View>
                 ) : null}
-                {profile.role ? <Text style={[styles.roleLine, { color: tokens.textMuted }]}>{profile.role}</Text> : null}
-                {profile.bio ? <Text style={[styles.bioLine, { color: tokens.textMuted }]}>{profile.bio}</Text> : null}
+                {profile.role ? <Text style={[styles.roleLine, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profile.role}</Text> : null}
+                {profile.bio ? <Text style={[styles.bioLine, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profile.bio}</Text> : null}
                 {profileTags.length > 0 ? (
                   <View style={styles.tagInlineRow}>
                     {profileTags.map((tag, index) => (
-                      <Text key={`${tag}-${index}`} style={[styles.tagInlineText, { color: tokens.textMuted }]}>
+                      <Text key={`${tag}-${index}`} style={[styles.tagInlineText, { color: hasCardTheme ? cardTheme.slug : tokens.textMuted }]}>
                         {tag}
                       </Text>
                     ))}
@@ -1201,19 +1233,19 @@ export default function ResidentProfilePage(): React.JSX.Element {
                 ) : null}
                 <View style={styles.badgesRow}>
                   {resolvedLeaderboardPosition !== null && resolvedLeaderboardPosition > 0 ? (
-                    <View style={[styles.badgeChip, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
-                      <Text style={[styles.badgeChipText, { color: tokens.textMuted }]}>
+                    <View style={[styles.badgeChip, { borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.inputBg }]}>
+                      <Text style={[styles.badgeChipText, { color: hasCardTheme ? cardTheme.buttonText : tokens.textMuted }]}>
                         {`${profileText.badgeLeaderboard} #${Math.round(resolvedLeaderboardPosition)}`}
                       </Text>
                     </View>
                   ) : null}
-                  <View style={[styles.badgeChip, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
-                    <Text style={[styles.badgeChipText, { color: tokens.textMuted }]}>{`${profileText.badgePlan} ${planLabel}`}</Text>
+                  <View style={[styles.badgeChip, { borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.inputBg }]}>
+                    <Text style={[styles.badgeChipText, { color: hasCardTheme ? cardTheme.buttonText : tokens.textMuted }]}>{`${profileText.badgePlan} ${planLabel}`}</Text>
                   </View>
                 </View>
 
                 {totalPriceValue !== '—' ? (
-                  <Text style={[styles.planPriceLine, { color: tokens.textMuted }]}>
+                  <Text style={[styles.planPriceLine, { color: hasCardTheme ? cardTheme.slug : tokens.textMuted }]}>
                     {totalPriceValue}
                   </Text>
                 ) : null}
@@ -1229,12 +1261,14 @@ export default function ResidentProfilePage(): React.JSX.Element {
                             style={[
                               styles.headerSlugChip,
                               {
-                                borderColor: isActiveSlug ? tokens.accent : tokens.border,
-                                backgroundColor: tokens.inputBg,
+                                borderColor: hasCardTheme
+                                  ? (isActiveSlug ? cardTheme.slug : cardTheme.buttonBg)
+                                  : (isActiveSlug ? tokens.accent : tokens.border),
+                                backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.inputBg,
                               },
                             ]}
                           >
-                            <Text style={[styles.headerSlugChipText, { color: isActiveSlug ? tokens.text : tokens.textMuted }]}>
+                            <Text style={[styles.headerSlugChipText, { color: hasCardTheme ? (isActiveSlug ? cardTheme.slug : cardTheme.buttonText) : (isActiveSlug ? tokens.text : tokens.textMuted) }]}>
                               {formatSlug(value)}
                             </Text>
                           </View>
@@ -1250,30 +1284,30 @@ export default function ResidentProfilePage(): React.JSX.Element {
               style={[
                 styles.metricsStrip,
                 {
-                  backgroundColor: tokens.surface,
-                  borderColor: tokens.border,
+                  backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface,
+                  borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border,
                 },
               ]}
             >
               <View style={styles.metricCell}>
-                <Text style={[styles.metricValue, { color: tokens.text }]}>{formatCompact(viewsValue, locale)}</Text>
-                <Text style={[styles.metricLabel, { color: tokens.textMuted }]}>{profileText.views}</Text>
+                <Text style={[styles.metricValue, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{formatCompact(viewsValue, locale)}</Text>
+                <Text style={[styles.metricLabel, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profileText.views}</Text>
               </View>
-              <View style={[styles.metricDivider, { backgroundColor: tokens.border }]} />
+              <View style={[styles.metricDivider, { backgroundColor: hasCardTheme ? cardTheme.cardBg : tokens.border }]} />
               <View style={styles.metricCell}>
-                <Text style={[styles.metricValue, { color: tokens.text }]}>{scoreMetricValue}</Text>
-                <Text style={[styles.metricLabel, { color: tokens.textMuted }]}>{profileText.badgeScore}</Text>
+                <Text style={[styles.metricValue, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{scoreMetricValue}</Text>
+                <Text style={[styles.metricLabel, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profileText.badgeScore}</Text>
               </View>
-              <View style={[styles.metricDivider, { backgroundColor: tokens.border }]} />
+              <View style={[styles.metricDivider, { backgroundColor: hasCardTheme ? cardTheme.cardBg : tokens.border }]} />
               <View style={styles.metricCell}>
-                <Text style={[styles.metricValue, { color: tokens.text }]}>{ratingValue}</Text>
-                <Text style={[styles.metricLabel, { color: tokens.textMuted }]}>{profileText.rating}</Text>
+                <Text style={[styles.metricValue, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{ratingValue}</Text>
+                <Text style={[styles.metricLabel, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profileText.rating}</Text>
               </View>
             </View>
 
             {links.length > 0 ? (
               <>
-                <Text style={[styles.sectionLabel, { color: tokens.textMuted }]}>{profileText.links}</Text>
+                <Text style={[styles.sectionLabel, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profileText.links}</Text>
                 <View style={styles.linksStack}>
                   {links.map((button, index) => {
                     const iconKey = inferButtonIcon({ label: button.label, url: button.url, currentIcon: button.icon });
@@ -1284,16 +1318,16 @@ export default function ResidentProfilePage(): React.JSX.Element {
                         entering={FadeInDown.duration(180).delay(index * 35)}
                       >
                         <AnimatedPressable
-                          style={[styles.linkButton, { borderColor: tokens.border, backgroundColor: tokens.surface }]}
+                          style={[styles.linkButton, { borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface }]}
                           onPress={() => {
                             void handleOpenButtonUrl(button);
                           }}
                         >
                           <View style={styles.linkIconSlot}>
-                            <Icon size={16} strokeWidth={1.7} color={tokens.textMuted} />
+                            <Icon size={16} strokeWidth={1.7} color={hasCardTheme ? cardTheme.buttonText : tokens.textMuted} />
                           </View>
                           <View style={styles.linkLabelSlot}>
-                            <Text style={[styles.linkButtonLabel, { color: tokens.textMuted }]}>{button.label}</Text>
+                            <Text style={[styles.linkButtonLabel, { color: hasCardTheme ? cardTheme.buttonText : tokens.textMuted }]}>{button.label}</Text>
                           </View>
                           <View style={styles.linkIconSlot} />
                         </AnimatedPressable>
@@ -1304,24 +1338,24 @@ export default function ResidentProfilePage(): React.JSX.Element {
               </>
             ) : null}
 
-            <Text style={[styles.sectionLabel, { color: tokens.textMuted }]}>{profileText.actions}</Text>
+            <Text style={[styles.sectionLabel, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profileText.actions}</Text>
             <View style={styles.actionGrid}>
               <AnimatedPressable
                 containerStyle={styles.actionCell}
-                style={[styles.actionButton, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+                style={[styles.actionButton, { backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface, borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border }]}
                 onPress={handleExportProfileVcf}
               >
-                <Download size={16} strokeWidth={1.8} color={tokens.textMuted} />
-                <Text style={[styles.actionText, { color: tokens.text }]}>{profileText.saveVcf}</Text>
+                <Download size={16} strokeWidth={1.8} color={hasCardTheme ? cardTheme.buttonText : tokens.textMuted} />
+                <Text style={[styles.actionText, { color: hasCardTheme ? cardTheme.buttonText : tokens.text }]}>{profileText.saveVcf}</Text>
               </AnimatedPressable>
 
               <AnimatedPressable
                 containerStyle={styles.actionCell}
-                style={[styles.actionButton, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+                style={[styles.actionButton, { backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface, borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border }]}
                 onPress={handleOpenCard}
               >
-                <Globe size={16} strokeWidth={1.6} color={tokens.textMuted} />
-                <Text style={[styles.actionText, { color: tokens.text }]}>{profileText.openCard}</Text>
+                <Globe size={16} strokeWidth={1.6} color={hasCardTheme ? cardTheme.buttonText : tokens.textMuted} />
+                <Text style={[styles.actionText, { color: hasCardTheme ? cardTheme.buttonText : tokens.text }]}>{profileText.openCard}</Text>
               </AnimatedPressable>
 
               <AnimatedPressable
@@ -1329,8 +1363,8 @@ export default function ResidentProfilePage(): React.JSX.Element {
                 style={[
                   styles.actionButton,
                   {
-                    backgroundColor: tokens.surface,
-                    borderColor: tokens.border,
+                    backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface,
+                    borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border,
                     opacity: saveMutation.isPending ? 0.6 : 1,
                   },
                 ]}
@@ -1338,16 +1372,16 @@ export default function ResidentProfilePage(): React.JSX.Element {
                 onPress={handleToggleSaved}
               >
                 {saveMutation.isPending ? (
-                  <ActivityIndicator size='small' color={tokens.textMuted} />
+                  <ActivityIndicator size='small' color={hasCardTheme ? cardTheme.buttonText : tokens.textMuted} />
                 ) : (
                   <>
                     <Star
                       size={16}
                       strokeWidth={1.6}
-                      color={profile.saved ? tokens.amber : tokens.textMuted}
+                      color={profile.saved ? tokens.amber : (hasCardTheme ? cardTheme.buttonText : tokens.textMuted)}
                       fill={profile.saved ? tokens.amber : 'none'}
                     />
-                    <Text style={[styles.actionText, { color: profile.saved ? tokens.amber : tokens.text }]}>
+                    <Text style={[styles.actionText, { color: profile.saved ? tokens.amber : (hasCardTheme ? cardTheme.buttonText : tokens.text) }]}>
                       {profile.saved ? profileText.inFavorites : profileText.toFavorites}
                     </Text>
                   </>
@@ -1359,8 +1393,8 @@ export default function ResidentProfilePage(): React.JSX.Element {
                 style={[
                   styles.actionButton,
                   {
-                    backgroundColor: tokens.surface,
-                    borderColor: tokens.border,
+                    backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface,
+                    borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border,
                     opacity: subscribeMutation.isPending ? 0.6 : 1,
                   },
                 ]}
@@ -1368,15 +1402,15 @@ export default function ResidentProfilePage(): React.JSX.Element {
                 onPress={handleToggleContact}
               >
                 {subscribeMutation.isPending ? (
-                  <ActivityIndicator size='small' color={tokens.textMuted} />
+                  <ActivityIndicator size='small' color={hasCardTheme ? cardTheme.buttonText : tokens.textMuted} />
                 ) : (
                   <>
                     {profile.subscribed ? (
                       <UserCheck size={16} strokeWidth={1.6} color={tokens.green} />
                     ) : (
-                      <UserPlus size={16} strokeWidth={1.6} color={tokens.textMuted} />
+                      <UserPlus size={16} strokeWidth={1.6} color={hasCardTheme ? cardTheme.buttonText : tokens.textMuted} />
                     )}
-                    <Text style={[styles.actionText, { color: profile.subscribed ? tokens.green : tokens.text }]}>
+                    <Text style={[styles.actionText, { color: profile.subscribed ? tokens.green : (hasCardTheme ? cardTheme.buttonText : tokens.text) }]}>
                       {profile.subscribed ? profileText.inContacts : profileText.toContacts}
                     </Text>
                   </>
@@ -1386,8 +1420,8 @@ export default function ResidentProfilePage(): React.JSX.Element {
 
             {hasContacts ? (
               <>
-                <Text style={[styles.sectionLabel, { color: tokens.textMuted }]}>{profileText.contacts}</Text>
-                <View style={[styles.contactCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                <Text style={[styles.sectionLabel, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{profileText.contacts}</Text>
+                <View style={[styles.contactCard, { backgroundColor: hasCardTheme ? cardTheme.buttonBg : tokens.surface, borderColor: hasCardTheme ? cardTheme.buttonBg : tokens.border }]}>
                   {contactRows.map((row, index) => {
                     const Icon = row.icon;
                     return (
@@ -1396,16 +1430,16 @@ export default function ResidentProfilePage(): React.JSX.Element {
                         style={[
                           styles.contactRow,
                           index < contactRows.length - 1
-                            ? { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.border }
+                            ? { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: hasCardTheme ? cardTheme.cardBg : tokens.border }
                             : null,
                         ]}
                       >
-                        <View style={[styles.contactIconWrap, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
-                          <Icon size={15} strokeWidth={1.6} color={tokens.textMuted} />
+                        <View style={[styles.contactIconWrap, { borderColor: hasCardTheme ? cardTheme.cardBg : tokens.border, backgroundColor: hasCardTheme ? cardTheme.cardBg : tokens.inputBg }]}>
+                          <Icon size={15} strokeWidth={1.6} color={hasCardTheme ? cardTheme.job : tokens.textMuted} />
                         </View>
                         <View style={styles.contactContent}>
-                          <Text style={[styles.contactLabel, { color: tokens.textMuted }]}>{row.label}</Text>
-                          <Text style={[styles.contactValue, { color: tokens.text }]}>{row.value}</Text>
+                          <Text style={[styles.contactLabel, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{row.label}</Text>
+                          <Text style={[styles.contactValue, { color: hasCardTheme ? cardTheme.name : tokens.text }]}>{row.value}</Text>
                         </View>
                       </View>
                     );
@@ -1414,11 +1448,11 @@ export default function ResidentProfilePage(): React.JSX.Element {
               </>
             ) : null}
 
-            {shouldShowCenterHashtag ? <Text style={[styles.centerHashtag, { color: tokens.textMuted }]}>{normalizedProfileHashtag}</Text> : null}
+            {shouldShowCenterHashtag ? <Text style={[styles.centerHashtag, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{normalizedProfileHashtag}</Text> : null}
 
             <View style={styles.footerRow}>
-              <Text style={[styles.footerText, { color: tokens.textMuted }]}>{footerViewsText}</Text>
-              <Text style={[styles.footerText, { color: tokens.textMuted }]}>UNQX</Text>
+              <Text style={[styles.footerText, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>{footerViewsText}</Text>
+              <Text style={[styles.footerText, { color: hasCardTheme ? cardTheme.job : tokens.textMuted }]}>UNQX</Text>
             </View>
           </ScrollView>
         </ScreenTransition>

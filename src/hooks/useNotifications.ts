@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Constants from 'expo-constants';
+import { isRunningInExpoGo } from 'expo';
 
 import { MESSAGES } from '@/constants/messages';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -136,8 +136,7 @@ export function useNotifications(): UseNotificationsResult {
   const unreadCount = useMemo(() => sourceItems.filter((item) => !item.read).length, [sourceItems]);
 
   useEffect(() => {
-    const isExpoGo =
-      (Constants as any)?.executionEnvironment === 'storeClient' || (Constants as any)?.appOwnership === 'expo';
+    const isExpoGo = isRunningInExpoGo();
     if (isExpoGo) {
       return;
     }

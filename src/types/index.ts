@@ -181,6 +181,7 @@ export interface ResidentProfile {
   username?: string;
   verified?: boolean;
   verifiedCompany?: string;
+  theme?: string;
   isPrivate?: boolean;
   isLocked?: boolean;
   lockedMessage?: string;
@@ -237,17 +238,17 @@ export interface ProfileCard {
   slug: string;
   avatarUrl?: string;
   theme:
-    | 'default_dark'
-    | 'arctic'
-    | 'linen'
-    | 'marble'
-    | 'forest'
-    | 'sage_luxe'
-    | 'midnight_obsidian'
-    | 'golden_noir'
-    | 'aurora_codex'
-    | 'nebula_glass'
-    | 'velours';
+  | 'default_dark'
+  | 'arctic'
+  | 'linen'
+  | 'marble'
+  | 'forest'
+  | 'sage_luxe'
+  | 'midnight_obsidian'
+  | 'golden_noir'
+  | 'aurora_codex'
+  | 'nebula_glass'
+  | 'velours';
   buttons: CardButton[];
 }
 

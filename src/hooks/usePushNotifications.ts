@@ -2,6 +2,7 @@ import React from 'react';
 import { AppState, Platform } from 'react-native';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import { isRunningInExpoGo } from 'expo';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/lib/queryKeys';
@@ -90,9 +91,7 @@ async function getExistingPushToken(Notifications: typeof import('expo-notificat
 }
 
 export async function requestPushPermission(): Promise<string | null> {
-  const isExpoGo =
-    (Constants as any)?.executionEnvironment === 'storeClient' || (Constants as any)?.appOwnership === 'expo';
-  if (isExpoGo) {
+  if (isRunningInExpoGo()) {
     return null;
   }
 
@@ -125,8 +124,7 @@ export function usePushNotifications(): {
 } {
   const queryClient = useQueryClient();
   const { safePush } = useThrottledNavigation();
-  const isExpoGo =
-    (Constants as any)?.executionEnvironment === 'storeClient' || (Constants as any)?.appOwnership === 'expo';
+  const isExpoGo = isRunningInExpoGo();
   const [token, setToken] = React.useState<string | null>(null);
   const [nativeToken, setNativeToken] = React.useState<string | null>(null);
   const [promptVisible, setPromptVisible] = React.useState(false);

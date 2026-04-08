@@ -13,7 +13,7 @@ interface CardPreviewProps {
   onClose: () => void;
 }
 
-function resolvePreviewTheme(theme: ProfileCard['theme']): {
+export function resolvePreviewTheme(theme: ProfileCard['theme']): {
   cardBg: string;
   avatarBg: string;
   avatarText: string;

@@ -33,6 +33,7 @@ export default function ForgotPasswordPage(): React.JSX.Element {
       const result = await forgotPasswordWithApi(normalizedEmail);
       setSubmittedEmail(normalizedEmail);
       setInfo(result.message);
+      safePush(`/reset-password?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (e) {
       if (e instanceof AuthSessionError) {
         setError(toUserErrorMessage(e, MESSAGES.auth.otpSendError));

@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const LANGUAGE_SELECTED_KEY = 'language_selected';
 const ONBOARDING_COMPLETED_KEY = 'onboarding_completed';
 const ONBOARDING_STEP_KEY = 'onboarding_step';
 
@@ -10,11 +11,30 @@ function clampStep(value: number): number {
 }
 
 export function useOnboarding(): {
+  isLanguageSelected: () => Promise<boolean>;
+  completeLanguageSelection: () => Promise<void>;
   isCompleted: () => Promise<boolean>;
   complete: () => Promise<void>;
   getStep: () => Promise<number>;
   setStep: (step: number) => Promise<void>;
 } {
+  const isLanguageSelected = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(LANGUAGE_SELECTED_KEY);
+      return raw === '1';
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const completeLanguageSelection = useCallback(async () => {
+    try {
+      await AsyncStorage.setItem(LANGUAGE_SELECTED_KEY, '1');
+    } catch {
+      // noop
+    }
+  }, []);
+
   const isCompleted = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(ONBOARDING_COMPLETED_KEY);
@@ -53,6 +73,8 @@ export function useOnboarding(): {
   }, []);
 
   return {
+    isLanguageSelected,
+    completeLanguageSelection,
     isCompleted,
     complete,
     getStep,

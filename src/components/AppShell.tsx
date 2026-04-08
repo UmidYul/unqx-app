@@ -13,9 +13,15 @@ interface AppShellProps {
   title: string;
   tokens: ThemeTokens;
   children: React.ReactNode;
+  themeOverride?: {
+    bg: string;
+    text: string;
+    accent: string;
+    border: string;
+  } | null;
 }
 
-export function AppShell({ title, tokens, children }: AppShellProps): React.JSX.Element {
+export function AppShell({ title, tokens, children, themeOverride }: AppShellProps): React.JSX.Element {
   const unreadNotifications = useNfcStore((state) => state.unreadNotifications);
   const setUnreadNotifications = useNfcStore((state) => state.setUnreadNotifications);
   const isNotificationsOpen = useNfcStore((state) => state.isNotificationsOpen);
@@ -46,21 +52,21 @@ export function AppShell({ title, tokens, children }: AppShellProps): React.JSX.
   }, [isNotificationsOpen, markAllRead, refresh, unreadCount]);
 
   return (
-    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: tokens.bg }]}>
-      <View style={[styles.phoneFrame, { backgroundColor: tokens.phoneBg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: themeOverride?.bg ?? tokens.bg }]}>
+      <View style={[styles.phoneFrame, { backgroundColor: themeOverride?.bg ?? tokens.phoneBg }]}>
         <View style={styles.topBar}>
-          <Text style={[styles.title, { color: tokens.text }]}>{title}</Text>
+          <Text style={[styles.title, { color: themeOverride?.text ?? tokens.text }]}>{title}</Text>
           <Pressable onPress={() => setNotificationsOpen(true)} style={styles.notificationButton}>
-            <Bell size={22} color={tokens.text} strokeWidth={1.5} />
+            <Bell size={22} color={themeOverride?.text ?? tokens.text} strokeWidth={1.5} />
             {unreadNotifications > 0 ? (
-              <View style={[styles.dot, { backgroundColor: tokens.accent, borderColor: tokens.phoneBg }]} />
+              <View style={[styles.dot, { backgroundColor: themeOverride?.accent ?? tokens.accent, borderColor: themeOverride?.bg ?? tokens.phoneBg }]} />
             ) : null}
           </Pressable>
         </View>
 
         <View style={styles.content}>{children}</View>
 
-        <BottomNav tokens={tokens} />
+        <BottomNav tokens={tokens} themeOverride={themeOverride} />
       </View>
 
       <NotificationPanel

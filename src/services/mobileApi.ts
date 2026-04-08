@@ -1,6 +1,7 @@
 import { apiClient, ApiError } from '@/lib/apiClient';
 import { resolveAssetUrl } from '@/lib/assetUrl';
 import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
+import { API_ORIGIN } from '@/config/api';
 import { ProfileCard, ResidentProfile } from '@/types';
 
 const memoryCache = new Map<string, { value: unknown; expiresAt: number }>();
@@ -371,6 +372,7 @@ function mapResidentProfile(raw: any): ResidentProfile {
     username: source?.username ? String(source.username) : undefined,
     verified,
     verifiedCompany: verifiedCompany || undefined,
+    theme: source?.theme ? String(source.theme) : undefined,
     isPrivate: Boolean(source?.isPrivate ?? raw?.privateAccess?.required),
     isLocked: Boolean(source?.isLocked ?? (raw?.privateAccess?.required && !raw?.privateAccess?.granted)),
     lockedMessage: source?.lockedMessage ? String(source.lockedMessage) : undefined,
@@ -854,17 +856,32 @@ export async function fetchContactsLike(query: string): Promise<unknown> {
 
 export async function fetchDirectoryLike(query: string, page: number): Promise<unknown> {
   const normalizedQuery = query.trim();
+  const PAGE_LIMIT = 50;
+  const MAX_PAGES = 10;
+
   try {
-    // Public platform directory (residents).
-    const directory = await apiClient.get<any>('/directory', {
-      query: {
-        q: normalizedQuery,
-        page,
-      },
-    });
-    const items = Array.isArray(directory?.items) ? directory.items : [];
-    if (items.length > 0 || normalizedQuery.length > 0) {
-      return directory;
+    // Public platform directory (residents) — fetch all pages.
+    const allItems: any[] = [];
+    let currentPage = page;
+
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const directory = await apiClient.get<any>('/directory', {
+        query: {
+          q: normalizedQuery,
+          page: currentPage,
+          limit: PAGE_LIMIT,
+        },
+      });
+      const items = Array.isArray(directory?.items) ? directory.items : [];
+      allItems.push(...items);
+
+      const returnedLimit = Number(directory?.limit) || PAGE_LIMIT;
+      if (items.length < returnedLimit) break;
+      currentPage++;
+    }
+
+    if (allItems.length > 0 || normalizedQuery.length > 0) {
+      return { items: allItems };
     }
   } catch (error) {
     if (!isFallbackError(error)) {
@@ -889,6 +906,89 @@ export async function fetchDirectoryLike(query: string, page: number): Promise<u
   };
 }
 
+interface PublicCardData {
+  theme?: string;
+  buttons?: Array<{ type?: string; label: string; url: string; isActive?: boolean }>;
+  score?: number | null;
+  topBadge?: { rank: number; periodLabel?: string } | null;
+  viewsCount?: number;
+  tariff?: string;
+}
+
+async function fetchPublicCardData(slug: string): Promise<PublicCardData | null> {
+  try {
+    const url = `${API_ORIGIN}/${encodeURIComponent(slug)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'text/html' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+    const html = await response.text();
+    const match = html.match(/<script[^>]*>(\{"card":\{[\s\S]*?\})\s*<\/script>/);
+    if (!match?.[1]) return null;
+    const parsed = JSON.parse(match[1]);
+    const card = parsed?.card;
+    return {
+      theme: card?.theme ? String(card.theme) : undefined,
+      buttons: Array.isArray(card?.buttons) ? card.buttons : undefined,
+      score: parsed?.score ?? null,
+      topBadge: parsed?.topBadge ?? null,
+      viewsCount: card?.viewsCount ?? undefined,
+      tariff: card?.tariff ? String(card.tariff) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function mergePublicCardData(profile: ResidentProfile, publicCard: PublicCardData | null): ResidentProfile {
+  if (!publicCard) return profile;
+
+  const merged = { ...profile };
+
+  if (!merged.theme && publicCard.theme) {
+    merged.theme = publicCard.theme;
+  }
+
+  if ((!merged.buttons || merged.buttons.length === 0) && publicCard.buttons && publicCard.buttons.length > 0) {
+    merged.buttons = publicCard.buttons
+      .filter((b) => b.isActive !== false && b.label && b.url)
+      .map((b) => ({
+        icon: b.type ? String(b.type) : undefined,
+        label: String(b.label),
+        url: String(b.url),
+      }));
+  }
+
+  if (publicCard.topBadge && typeof publicCard.topBadge.rank === 'number') {
+    if (!Number.isFinite(merged.leaderboardPosition) || !merged.leaderboardPosition) {
+      merged.leaderboardPosition = publicCard.topBadge.rank;
+    }
+  }
+
+  if (publicCard.score != null && Number.isFinite(Number(publicCard.score))) {
+    if (!Number.isFinite(merged.score) || !merged.score) {
+      merged.score = Number(publicCard.score);
+    }
+  }
+
+  if (publicCard.viewsCount != null && Number.isFinite(publicCard.viewsCount)) {
+    if (!merged.taps || merged.taps === 0) {
+      merged.taps = publicCard.viewsCount;
+    }
+  }
+
+  if (publicCard.tariff && !merged.plan) {
+    merged.plan = publicCard.tariff;
+  }
+
+  return merged;
+}
+
 export async function fetchResidentProfileLike(slug: string): Promise<ResidentProfile> {
   const normalizedSlug = normalizeResidentSlug(slug);
   if (!normalizedSlug) {
@@ -899,6 +999,8 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
   const privateAccessHeaders = privateAccess?.token
     ? { 'x-card-access-token': privateAccess.token }
     : undefined;
+
+  const publicCardPromise = fetchPublicCardData(normalizedSlug);
 
   try {
     const direct = await apiClient.get<any>(`/directory/${encodeURIComponent(normalizedSlug)}`, {
@@ -915,7 +1017,8 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
       await writePrivateAccessToken(normalizedSlug, privateAccess.token, mapped.privateAccessExpiresAt);
     }
 
-    return mapped;
+    const publicCard = await publicCardPromise;
+    return mergePublicCardData(mapped, publicCard);
   } catch (error) {
     if (!isFallbackError(error)) {
       throw error;
@@ -937,7 +1040,7 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
     (item: any) => normalizeResidentSlug(item?.slug ?? item?.fullSlug) === normalizedSlug,
   );
 
-  return mapResidentProfile({
+  const fallback = mapResidentProfile({
     profile: {
       slug: normalizedSlug,
       name: matchDirectory?.name ?? matchContacts?.name ?? 'Unknown',
@@ -956,6 +1059,9 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
       subscribed: Boolean(matchDirectory?.subscribed ?? matchContacts?.subscribed),
     },
   });
+
+  const publicCard = await publicCardPromise;
+  return mergePublicCardData(fallback, publicCard);
 }
 
 export async function unlockResidentPrivateProfileLike(slug: string, password: string): Promise<{ expiresAt: string | null }> {

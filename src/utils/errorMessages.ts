@@ -101,7 +101,7 @@ function fromApiCode(code: string | null): string | null {
 }
 
 function fromStatus(status: number): string | null {
-  if (status === 401 || status === 403) {
+  if (status === 403) {
     return MESSAGES.auth.codeMessages.AUTH_REQUIRED;
   }
   if (status === 404) {

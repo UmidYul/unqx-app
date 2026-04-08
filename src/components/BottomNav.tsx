@@ -12,6 +12,12 @@ import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 
 interface BottomNavProps {
   tokens: ThemeTokens;
+  themeOverride?: {
+    bg: string;
+    text: string;
+    accent: string;
+    border: string;
+  } | null;
 }
 
 
@@ -31,7 +37,7 @@ function resolveActiveTab(pathname: string): ScreenTab {
   return 'home';
 }
 
-export function BottomNav({ tokens }: BottomNavProps): React.JSX.Element {
+export function BottomNav({ tokens, themeOverride }: BottomNavProps): React.JSX.Element {
   const { safeReplace } = useThrottledNavigation();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -56,8 +62,8 @@ export function BottomNav({ tokens }: BottomNavProps): React.JSX.Element {
       style={[
         styles.container,
         {
-          borderTopColor: tokens.navBorder,
-          backgroundColor: tokens.phoneBg,
+          borderTopColor: themeOverride?.border ?? tokens.navBorder,
+          backgroundColor: themeOverride?.bg ?? tokens.phoneBg,
           paddingBottom: navBottomPadding,
         },
       ]}
@@ -65,7 +71,7 @@ export function BottomNav({ tokens }: BottomNavProps): React.JSX.Element {
       {navItems.map((item) => {
         const isActive = item.id === activeTab;
         const Icon = item.icon;
-        const color = isActive ? tokens.accent : tokens.text;
+        const color = isActive ? (themeOverride?.accent ?? tokens.accent) : (themeOverride?.text ?? tokens.text);
 
         return (
           <AnimatedPressable
@@ -84,7 +90,7 @@ export function BottomNav({ tokens }: BottomNavProps): React.JSX.Element {
               <Icon size={20} color={color} strokeWidth={1.5} />
             </View>
             <Text style={[styles.label, { color }]}>{item.label}</Text>
-            <View style={[styles.dot, { backgroundColor: isActive ? tokens.accent : 'transparent' }]} />
+            <View style={[styles.dot, { backgroundColor: isActive ? (themeOverride?.accent ?? tokens.accent) : 'transparent' }]} />
           </AnimatedPressable>
         );
       })}

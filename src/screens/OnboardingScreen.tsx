@@ -22,6 +22,7 @@ import { apiClient } from '@/lib/apiClient';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { ThemeTokens } from '@/types';
 import { toast } from '@/utils/toast';
+import { MESSAGES } from '@/constants/messages';
 
 interface OnboardingScreenProps {
   tokens: ThemeTokens;
@@ -37,42 +38,20 @@ interface StepItem {
   Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 }
 
-const STEPS: StepItem[] = [
-  {
-    key: 'welcome',
-    title: 'UNQX NFC Manager',
-    text: 'Управляй своей цифровой визиткой. Читай и записывай NFC-метки.',
-    Icon: Wifi,
-  },
-  {
-    key: 'how',
-    title: 'Как это работает',
-    text: 'Сканируй, записывай и анализируй тапы в одном приложении.',
-    Icon: ScanLine,
-  },
-  {
-    key: 'nfc',
-    title: 'Разрешить NFC',
-    text: 'UNQX использует NFC чтобы читать чужие метки, записывать ваш unqx.uz/SLUG и проверять состояние тега на устройстве.',
-    Icon: Wifi,
-  },
-  {
-    key: 'push',
-    title: 'Будь в курсе',
-    text: 'Уведомления помогут сразу узнавать о новых тапах визитки и изменении статуса заказа браслета.',
-    Icon: Bell,
-  },
-  {
-    key: 'done',
-    title: 'Всё готово',
-    text: 'Твой UNQ настроен. Начни делиться визиткой прямо сейчас.',
-    Icon: CheckCircle2,
-  },
-];
+function buildSteps(): StepItem[] {
+  const m = MESSAGES.ui.onboarding;
+  return [
+    { key: 'welcome', title: m.welcomeTitle, text: m.welcomeText, Icon: Wifi },
+    { key: 'how', title: m.howTitle, text: m.howText, Icon: ScanLine },
+    { key: 'nfc', title: m.nfcTitle, text: m.nfcText, Icon: Wifi },
+    { key: 'push', title: m.pushTitle, text: m.pushText, Icon: Bell },
+    { key: 'done', title: m.doneTitle, text: m.doneText, Icon: CheckCircle2 },
+  ];
+}
 
 function clampStep(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(STEPS.length - 1, Math.floor(value)));
+  return Math.max(0, Math.min(4, Math.floor(value)));
 }
 
 export function OnboardingScreen({
@@ -86,6 +65,7 @@ export function OnboardingScreen({
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { isSupported: nfcSupported, requestPermission: requestNfcPermission } = useNFC();
+  const STEPS = React.useMemo(() => buildSteps(), []);
   const listRef = React.useRef<FlatList<StepItem> | null>(null);
   const [step, setStep] = React.useState(clampStep(initialStep));
   const [busy, setBusy] = React.useState(false);
@@ -127,20 +107,20 @@ export function OnboardingScreen({
       setBusy(true);
       try {
         if (!nfcSupported) {
-          toast.info('NFC недоступен на этом устройстве');
+          toast.info(MESSAGES.ui.onboarding.nfcUnavailable);
           nextStep();
           return;
         }
 
         const enabled = await requestNfcPermission();
         if (!enabled) {
-          toast.info('Включи NFC в настройках и повтори');
+          toast.info(MESSAGES.ui.onboarding.nfcEnableSettings);
           return;
         }
 
         nextStep();
       } catch {
-        toast.error('Не удалось запросить NFC');
+        toast.error(MESSAGES.ui.onboarding.nfcRequestFailed);
       } finally {
         setBusy(false);
       }
@@ -160,7 +140,7 @@ export function OnboardingScreen({
         }
 
         if (!granted) {
-          toast.info('Разреши уведомления в настройках');
+          toast.info(MESSAGES.ui.onboarding.pushEnableSettings);
           await Linking.openSettings().catch(() => undefined);
           return;
         }
@@ -176,7 +156,7 @@ export function OnboardingScreen({
 
         nextStep();
       } catch {
-        toast.error('Не удалось запросить уведомления');
+        toast.error(MESSAGES.ui.onboarding.pushRequestFailed);
       } finally {
         setBusy(false);
       }
@@ -214,11 +194,12 @@ export function OnboardingScreen({
   );
 
   const getPrimaryLabel = React.useMemo(() => {
-    if (step === 0) return 'Начать';
-    if (step === 2) return 'Разрешить NFC';
-    if (step === 3) return 'Включить уведомления';
-    if (step === 4) return 'Открыть приложение';
-    return 'Далее';
+    const m = MESSAGES.ui.onboarding;
+    if (step === 0) return m.start;
+    if (step === 2) return m.allowNfc;
+    if (step === 3) return m.enablePush;
+    if (step === 4) return m.openApp;
+    return m.next;
   }, [step]);
 
   const showSecondaryLater = step === 2 || step === 3;
@@ -240,10 +221,10 @@ export function OnboardingScreen({
 
         {item.key === 'how' ? (
           <View style={[styles.howList, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
-            <HowRow Icon={ScanLine} tokens={tokens} text='Сканируй чужие визитки одним касанием' />
-            <HowRow Icon={PenLine} tokens={tokens} text='Записывай свой UNQ на браслет или наклейку' />
-            <HowRow Icon={BarChart2} tokens={tokens} text='Смотри кто и когда тапнул твою карточку' />
-            <HowRow Icon={LayoutGrid} tokens={tokens} text='Добавляй UNQX-виджет на домашний экран для быстрого доступа' />
+            <HowRow Icon={ScanLine} tokens={tokens} text={MESSAGES.ui.onboarding.howScan} />
+            <HowRow Icon={PenLine} tokens={tokens} text={MESSAGES.ui.onboarding.howWrite} />
+            <HowRow Icon={BarChart2} tokens={tokens} text={MESSAGES.ui.onboarding.howAnalytics} />
+            <HowRow Icon={LayoutGrid} tokens={tokens} text={MESSAGES.ui.onboarding.howWidget} />
           </View>
         ) : null}
       </View>
@@ -255,7 +236,7 @@ export function OnboardingScreen({
     <View style={[styles.container, { backgroundColor: tokens.bg, paddingBottom: Math.max(24, insets.bottom + 12) }]}>
       {step < 4 ? (
         <Pressable style={[styles.skipTop, { top: insets.top + 10 }]} onPress={handleSkip}>
-          <Text style={[styles.skipTopText, { color: tokens.textMuted }]}>Пропустить</Text>
+          <Text style={[styles.skipTopText, { color: tokens.textMuted }]}>{MESSAGES.ui.onboarding.skip}</Text>
         </Pressable>
       ) : null}
 
@@ -292,7 +273,7 @@ export function OnboardingScreen({
 
         {showBack ? (
           <Pressable style={[styles.backBtn, { borderColor: tokens.border }]} onPress={handleBack} disabled={busy}>
-            <Text style={[styles.backText, { color: tokens.text }]}>Назад</Text>
+            <Text style={[styles.backText, { color: tokens.text }]}>{MESSAGES.ui.onboarding.back}</Text>
           </Pressable>
         ) : <View style={styles.backSpacer} />}
       </View>
@@ -305,12 +286,12 @@ export function OnboardingScreen({
         onPress={() => void handlePrimary()}
         disabled={busy}
       >
-        <Text style={[styles.primaryText, { color: tokens.accentText }]}>{busy ? 'Подождите...' : getPrimaryLabel}</Text>
+        <Text style={[styles.primaryText, { color: tokens.accentText }]}>{busy ? MESSAGES.ui.onboarding.wait : getPrimaryLabel}</Text>
       </Pressable>
 
       {showSecondaryLater ? (
         <Pressable style={styles.laterBtn} onPress={nextStep} disabled={busy}>
-          <Text style={[styles.laterText, { color: tokens.textMuted }]}>Позже</Text>
+          <Text style={[styles.laterText, { color: tokens.textMuted }]}>{MESSAGES.ui.onboarding.later}</Text>
         </Pressable>
       ) : null}
     </View>
