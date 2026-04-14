@@ -3,7 +3,7 @@
     "name": "UNQX",
     "slug": "unqx-app",
     "scheme": "unqxapp",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,7 +15,7 @@
     "ios": {
       "bundleIdentifier": "uz.unqx.app",
       "supportsTablet": false,
-      "buildNumber": "8",
+      "buildNumber": "9",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NFCReaderUsageDescription": "UNQX использует NFC для чтения меток других пользователей, записи вашей ссылки unqx.uz/SLUG и проверки состояния тега.",
@@ -26,11 +26,6 @@
         "NSUserNotificationsUsageDescription": "UNQX отправляет уведомления о новых тапах визитки и обновлениях статуса заказа.",
         "UNQXPrivacyPolicyURL": "https://unqx.uz/privacy",
         "UNQXTermsOfServiceURL": "https://unqx.uz/terms"
-      },
-      "entitlements": {
-        "com.apple.developer.nfc.readersession.formats": [
-          "NDEF"
-        ]
       }
     },
     "android": {
@@ -59,8 +54,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router",
-      "react-native-nfc-manager",
+      [
+        "react-native-nfc-manager",
+        {
+          "includeNdefEntitlement": false
+        }
+      ],
+      "./plugins/with-ios-nfc-tag-only",
       "expo-secure-store",
       "expo-local-authentication",
       "expo-notifications",
@@ -70,7 +70,8 @@
           "organization": "unqx",
           "project": "unqx"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "legal": {

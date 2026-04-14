@@ -1,0 +1,51 @@
+UNQX App Review Documentation
+
+1. App Overview
+UNQX is a next-generation digital business card platform based in Tashkent, Uzbekistan. The app allows users to instantly share their contact information using NFC technology, QR codes, or direct links. UNQX is designed for professionals and businesses seeking a modern, paperless alternative to traditional business cards.
+
+2. Key Features
+- NFC business card sharing: Instantly share your profile by tapping an NFC tag or wristband.
+- QR code sharing: Generate and share a branded QR code for your digital card.
+- Real-time analytics: Track profile views, tap sources (NFC, QR, direct), and city-level statistics.
+- Card editor: Customize your digital card with name, job, bio, contact info, avatar, and up to 6 custom buttons (phone, Telegram, website, etc.).
+- NFC tag management: Read, write, verify, batch program, and lock NFC tags directly from the app.
+- Contacts and directory: Save contacts, browse the UNQX directory, and view the UNQ Elite leaderboard.
+- Privacy and security: Password-protect your card, manage access, and enable biometric app lock (Face ID, fingerprint).
+- Push notifications: Receive alerts for profile views and order status updates.
+- Bilingual interface: Russian and Uzbek language support.
+
+3. Supported Regions
+UNQX is available in Uzbekistan, Kazakhstan, and Russia. The app is fully localized for Russian and Uzbek users.
+
+4. Pricing and Payments
+UNQX offers Basic and Premium plans as one-time purchases. NFC wristbands are available for order. All payments are processed outside the app via the official website (https://unqx.uz/#pricing) to comply with App Store guidelines. No in-app purchases are present.
+
+5. Test Account for Review
+- Email: yumid253@gmail.com
+- Password: g@laxyA7
+
+6. NFC Functionality
+- The app uses react-native-nfc-manager to interact with NFC tags.
+- Reviewers can test NFC features using any compatible NFC tag or emulator.
+- NFC is used only for reading/writing URLs to tags; no sensitive data is stored on tags.
+
+7. Privacy and Data Handling
+- User data is stored securely on the UNQX backend (https://unqx.uz).
+- The app does not collect unnecessary personal data.
+- Privacy Policy: https://unqx.uz/privacy
+
+8. Compliance Notes
+- No in-app purchases or payment UI are present in the iOS version.
+- All legal documents (Privacy Policy, Terms of Service) are available on the website.
+- The app does not use background location or sensitive device permissions.
+
+9. Contact Information
+- Name: Umid Yuldashev
+- Email: yumid253@gmail.com
+- Phone: +998905329686
+
+10. Additional Notes for Reviewers
+- For Premium features, activate the plan via the TST000 test account.
+- If you need a demonstration video or additional materials, please contact us at support@unqx.uz.
+
+Thank you for reviewing UNQX!
