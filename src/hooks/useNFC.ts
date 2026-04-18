@@ -4,9 +4,12 @@ import NfcManager, { Ndef, NfcTech } from 'react-native-nfc-manager';
 
 import { getMessagesLanguage } from '@/constants/messages';
 import { nfcApi } from '@/lib/apiClient';
+import { appendLocalNfcHistory } from '@/lib/nfcLocalHistory';
 import { addSentryBreadcrumb } from '@/lib/sentry';
-import { NFCTag, NFCState } from '@/types';
+import { NFCTag, NFCState, NfcWritablePayload } from '@/types';
 import { toUserErrorMessage } from '@/utils/errorMessages';
+import { extractSlug } from '@/utils/links';
+import { getPayloadPreview } from '@/utils/nfcPayloads';
 
 export interface UseNfcResult {
   isSupported: boolean;
@@ -15,7 +18,7 @@ export interface UseNfcResult {
   error: string | null;
   requestPermission: () => Promise<boolean>;
   startRead: () => Promise<void>;
-  writeURL: (url: string) => Promise<void>;
+  writePayload: (payload: NfcWritablePayload) => Promise<void>;
   verify: () => Promise<void>;
   lock: (password: string) => Promise<void>;
   reset: () => void;
@@ -26,7 +29,7 @@ export const NFC_PROTECTED_TAG_ERROR = 'NFC_TAG_PROTECTED';
 
 function unsupportedNfcMessage(): string {
   return getMessagesLanguage() === 'uz'
-    ? "Bu qurilmada NFC mavjud emas"
+    ? 'Bu qurilmada NFC mavjud emas'
     : NFC_UNSUPPORTED_ERROR;
 }
 
@@ -43,13 +46,34 @@ function toErrorMessage(error: unknown): string {
 
 function parseTag(rawTag: any): NFCTag {
   const records = rawTag?.ndefMessage ?? [];
-  let url: string | undefined;
+  let payload: Pick<NFCTag, 'url' | 'payloadKind' | 'payloadValue' | 'displayValue' | 'slug'> = {
+    payloadKind: records.length > 0 ? 'unknown' : undefined,
+  };
 
   for (const record of records) {
-    if (record?.tnf === Ndef.TNF_WELL_KNOWN && Array.isArray(record?.payload)) {
+    if (Ndef.isType(record, Ndef.TNF_WELL_KNOWN, Ndef.RTD_URI) && Array.isArray(record?.payload)) {
       const decoded = Ndef.uri.decodePayload(record.payload);
       if (decoded) {
-        url = decoded;
+        const slug = extractSlug(decoded) ?? undefined;
+        payload = {
+          url: decoded,
+          payloadKind: 'url',
+          payloadValue: decoded,
+          displayValue: getPayloadPreview('url', decoded, slug),
+          slug,
+        };
+        break;
+      }
+    }
+
+    if (Ndef.isType(record, Ndef.TNF_WELL_KNOWN, Ndef.RTD_TEXT) && Array.isArray(record?.payload)) {
+      const decoded = Ndef.text.decodePayload(Uint8Array.from(record.payload));
+      if (decoded) {
+        payload = {
+          payloadKind: 'text',
+          payloadValue: decoded,
+          displayValue: getPayloadPreview('text', decoded),
+        };
         break;
       }
     }
@@ -60,9 +84,21 @@ function parseTag(rawTag: any): NFCTag {
     type: rawTag?.type,
     capacity: rawTag?.maxSize,
     used: rawTag?.ndefMessage?.length,
-    url,
+    ...payload,
     isLocked: rawTag?.isWritable === false,
   };
+}
+
+function toHistoryEntry(tag: NFCTag, type: 'read' | 'write' | 'verify' | 'lock', templateId?: NfcWritablePayload['templateId']) {
+  return {
+    type,
+    uid: tag.uid,
+    slug: tag.slug,
+    payloadKind: tag.payloadKind ?? 'unknown',
+    payloadValue: tag.payloadValue,
+    displayValue: tag.displayValue,
+    templateId,
+  } as const;
 }
 
 async function withNdefTag<T>(callback: (rawTag: any) => Promise<T>): Promise<T> {
@@ -99,7 +135,7 @@ export function useNFC(): UseNfcResult {
       }
     }
 
-    init();
+    void init();
 
     return () => {
       mounted = false;
@@ -144,6 +180,7 @@ export function useNFC(): UseNfcResult {
       category: 'nfc',
       message: 'NFC scan started',
     });
+
     if (!isSupported) {
       setState('idle');
       setError(unsupportedNfcMessage());
@@ -158,7 +195,15 @@ export function useNFC(): UseNfcResult {
         const parsed = parseTag(rawTag);
         setTag(parsed);
         setState('success');
-        await nfcApi.scan({ uid: parsed.uid, url: parsed.url }).catch(() => undefined);
+        await appendLocalNfcHistory(toHistoryEntry(parsed, 'read'));
+        await nfcApi.scan({
+          uid: parsed.uid,
+          url: parsed.url,
+          slug: parsed.slug,
+          payloadKind: parsed.payloadKind,
+          payloadValue: parsed.payloadValue,
+          displayValue: parsed.displayValue,
+        });
       });
     } catch (e) {
       setError(toErrorMessage(e));
@@ -168,12 +213,13 @@ export function useNFC(): UseNfcResult {
     }
   }, [isSupported]);
 
-  const writeURL = useCallback(
-    async (url: string) => {
+  const writePayload = useCallback(
+    async (payload: NfcWritablePayload) => {
       addSentryBreadcrumb({
         category: 'nfc',
         message: 'NFC write started',
       });
+
       if (!isSupported) {
         setState('idle');
         setError(unsupportedNfcMessage());
@@ -191,7 +237,10 @@ export function useNFC(): UseNfcResult {
             throw new Error(NFC_PROTECTED_TAG_ERROR);
           }
 
-          const message = Ndef.encodeMessage([Ndef.uriRecord(url)]);
+          const record = payload.kind === 'url'
+            ? Ndef.uriRecord(payload.value)
+            : Ndef.textRecord(payload.value);
+          const message = Ndef.encodeMessage([record]);
 
           if (!message) {
             throw new Error('Failed to encode NFC message');
@@ -199,9 +248,27 @@ export function useNFC(): UseNfcResult {
 
           await NfcManager.ndefHandler.writeNdefMessage(message);
 
-          setTag({ ...parsed, url });
+          const nextTag: NFCTag = {
+            ...parsed,
+            url: payload.kind === 'url' ? payload.value : undefined,
+            payloadKind: payload.kind,
+            payloadValue: payload.value,
+            displayValue: payload.displayValue ?? getPayloadPreview(payload.kind, payload.value, payload.slug),
+            slug: payload.slug,
+          };
+
+          setTag(nextTag);
           setState('written');
-          await nfcApi.write({ url, uid: parsed.uid }).catch(() => undefined);
+          await appendLocalNfcHistory(toHistoryEntry(nextTag, 'write', payload.templateId));
+          await nfcApi.write({
+            uid: parsed.uid,
+            url: payload.kind === 'url' ? payload.value : undefined,
+            slug: payload.slug,
+            payloadKind: payload.kind,
+            payloadValue: payload.value,
+            displayValue: nextTag.displayValue,
+            templateId: payload.templateId,
+          });
         });
       } catch (e) {
         setError(toErrorMessage(e));
@@ -218,6 +285,7 @@ export function useNFC(): UseNfcResult {
       category: 'nfc',
       message: 'NFC verify started',
     });
+
     if (!isSupported) {
       setState('idle');
       setError(unsupportedNfcMessage());
@@ -232,7 +300,8 @@ export function useNFC(): UseNfcResult {
         const parsed = parseTag(rawTag);
         setTag(parsed);
         setState('verified');
-        await nfcApi.markVerified({ uid: parsed.uid, url: parsed.url }).catch(() => undefined);
+        await appendLocalNfcHistory(toHistoryEntry(parsed, 'verify'));
+        await nfcApi.markVerified({ uid: parsed.uid, url: parsed.url });
       });
     } catch (e) {
       setError(toErrorMessage(e));
@@ -248,6 +317,7 @@ export function useNFC(): UseNfcResult {
         category: 'nfc',
         message: 'NFC lock started',
       });
+
       if (!isSupported) {
         setState('idle');
         setError(unsupportedNfcMessage());
@@ -261,11 +331,12 @@ export function useNFC(): UseNfcResult {
         await withNdefTag(async (rawTag) => {
           const parsed = parseTag(rawTag);
 
-          // Universal tag lock is not available across all chip types, so we keep API-side lock policy.
           await nfcApi.lock({ password, uid: parsed.uid });
 
-          setTag({ ...parsed, isLocked: true });
+          const nextTag = { ...parsed, isLocked: true };
+          setTag(nextTag);
           setState('locked');
+          await appendLocalNfcHistory(toHistoryEntry(nextTag, 'lock'));
         });
       } catch (e) {
         setError(toErrorMessage(e));
@@ -284,7 +355,7 @@ export function useNFC(): UseNfcResult {
     error,
     requestPermission,
     startRead,
-    writeURL,
+    writePayload,
     verify,
     lock,
     reset,

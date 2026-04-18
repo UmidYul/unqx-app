@@ -19,6 +19,7 @@ import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSequence, w
 import Svg, { Path } from 'react-native-svg';
 
 import { AppShell } from '@/components/AppShell';
+import { withProtectedTab } from '@/components/auth/withProtectedTab';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/ErrorState';
 import { findButtonIcon, inferButtonIcon } from '@/components/profile/buttonIcons';
@@ -152,7 +153,7 @@ function normalizeCardTheme(rawTheme: unknown): ProfileCard['theme'] {
   return 'default_dark';
 }
 
-export default function ResidentProfilePage(): React.JSX.Element {
+function ResidentProfilePage(): React.JSX.Element {
   const { tokens } = useThemeContext();
   const { language } = useLanguageContext();
   const isUz = language === 'uz';
@@ -1460,6 +1461,8 @@ export default function ResidentProfilePage(): React.JSX.Element {
     </ErrorBoundary>
   );
 }
+
+export default withProtectedTab(ResidentProfilePage);
 
 const styles = StyleSheet.create({
   skeletonWrap: {

@@ -1,7 +1,8 @@
 import React from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Redirect } from 'expo-router';
-import { Eye, EyeOff } from 'lucide-react-native';
+import { ArrowLeft, Eye, EyeOff } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AuthLoadingScreen } from '@/components/AuthLoadingScreen';
 import { MESSAGES } from '@/constants/messages';
@@ -16,6 +17,7 @@ export default function LoginPage(): React.JSX.Element {
   const { safePush, safeReplace } = useThrottledNavigation();
   const { tokens } = useThemeContext();
   const { ready, signedIn } = useAuthStatus();
+  const insets = useSafeAreaInsets();
 
   const [login, setLogin] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -75,6 +77,14 @@ export default function LoginPage(): React.JSX.Element {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.container, { backgroundColor: tokens.bg }]}
     >
+      <Pressable
+        onPress={() => safeReplace('/(tabs)/nfc')}
+        style={[styles.backButton, { top: Math.max(insets.top + 10, 22) }]}
+      >
+        <ArrowLeft size={18} strokeWidth={1.7} color={tokens.text} />
+        <Text style={[styles.backButtonText, { color: tokens.text }]}>Назад к NFC</Text>
+      </Pressable>
+
       <View style={styles.body}>
         <Text style={[styles.kicker, { color: tokens.textMuted }]}>UNQX</Text>
         <Text style={[styles.title, { color: tokens.text }]}>{MESSAGES.ui.auth.loginTitle}</Text>
@@ -162,6 +172,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
+  },
+  backButton: {
+    position: 'absolute',
+    left: 24,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  backButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
   },
   kicker: {
     fontSize: 11,

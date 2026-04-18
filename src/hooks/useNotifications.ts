@@ -14,6 +14,10 @@ interface NotificationsResponse {
   items?: NotificationItem[];
 }
 
+interface UseNotificationsOptions {
+  enabled?: boolean;
+}
+
 interface UseNotificationsResult {
   items: NotificationItem[];
   unreadCount: number;
@@ -90,7 +94,8 @@ function normalizeNotification(raw: Partial<NotificationItem> & { id?: string })
   };
 }
 
-export function useNotifications(): UseNotificationsResult {
+export function useNotifications(options: UseNotificationsOptions = {}): UseNotificationsResult {
+  const enabled = options.enabled !== false;
   const queryClient = useQueryClient();
   const { isOnline } = useNetworkStatus({ invalidateOnReconnect: false });
   const { language } = useLanguageContext();
@@ -103,12 +108,18 @@ export function useNotifications(): UseNotificationsResult {
       const items = Array.isArray(response?.items) ? response.items.map((item) => normalizeNotification(item)) : [];
       return items;
     },
+    enabled,
     refetchInterval: 30_000,
   });
 
   const markAllReadMutation = useMutation({
     networkMode: 'offlineFirst',
-    mutationFn: markNotificationsReadLike,
+    mutationFn: async () => {
+      if (!enabled) {
+        return null;
+      }
+      return markNotificationsReadLike();
+    },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: queryKeys.notifications });
       const previous = queryClient.getQueryData<NotificationItem[]>(queryKeys.notifications);
@@ -128,7 +139,7 @@ export function useNotifications(): UseNotificationsResult {
   });
   const markAllReadAsync = markAllReadMutation.mutateAsync;
 
-  const sourceItems = query.data ?? [];
+  const sourceItems = enabled ? (query.data ?? []) : [];
   const items = useMemo(
     () => sourceItems.map((item) => ({ ...item, time: formatNotificationTime(item.time, isUz) })),
     [isUz, sourceItems],
@@ -136,6 +147,10 @@ export function useNotifications(): UseNotificationsResult {
   const unreadCount = useMemo(() => sourceItems.filter((item) => !item.read).length, [sourceItems]);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     const isExpoGo = isRunningInExpoGo();
     if (isExpoGo) {
       return;
@@ -147,22 +162,28 @@ export function useNotifications(): UseNotificationsResult {
   }, [unreadCount]);
 
   const refresh = useCallback(async () => {
+    if (!enabled) {
+      return;
+    }
     await queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
-  }, [queryClient]);
+  }, [enabled, queryClient]);
 
   const markAllRead = useCallback(async () => {
+    if (!enabled) {
+      return;
+    }
     if (!isOnline) {
       toast.info(MESSAGES.toast.offlineQueued);
       return;
     }
     await markAllReadAsync();
-  }, [isOnline, markAllReadAsync]);
+  }, [enabled, isOnline, markAllReadAsync]);
 
   return {
     items,
     unreadCount,
     isConnected: isOnline,
-    isLoading: query.isLoading,
+    isLoading: enabled ? query.isLoading : false,
     refresh,
     markAllRead,
   };

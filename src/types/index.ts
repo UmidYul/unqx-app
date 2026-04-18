@@ -27,6 +27,18 @@ export interface ThemeTokens {
 
 export type ScreenTab = 'home' | 'nfc' | 'people' | 'analytics' | 'profile';
 
+export type NfcPayloadKind = 'url' | 'text' | 'unknown';
+export type NfcTemplateId =
+  | 'slug'
+  | 'telegram'
+  | 'instagram'
+  | 'site'
+  | 'tiktok'
+  | 'whatsapp'
+  | 'phone'
+  | 'email'
+  | 'plain_text';
+
 export type NFCState =
   | 'idle'
   | 'scanning'
@@ -44,15 +56,31 @@ export interface NFCTag {
   capacity?: number;
   used?: number;
   url?: string;
+  payloadKind?: NfcPayloadKind;
+  payloadValue?: string;
+  displayValue?: string;
+  slug?: string;
   isLocked?: boolean;
 }
 
 export interface NFCHistoryItem {
   id: string;
-  slug: string;
+  slug?: string;
   uid?: string;
   type: 'read' | 'write' | 'verify' | 'lock';
   timestamp: string;
+  payloadKind?: NfcPayloadKind;
+  payloadValue?: string;
+  displayValue?: string;
+  templateId?: NfcTemplateId;
+}
+
+export interface NfcWritablePayload {
+  kind: Exclude<NfcPayloadKind, 'unknown'>;
+  value: string;
+  displayValue?: string;
+  slug?: string;
+  templateId?: NfcTemplateId;
 }
 
 export interface NotificationItem {

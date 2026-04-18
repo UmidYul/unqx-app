@@ -6,6 +6,7 @@ import { useLocalSearchParams } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { AppShell } from '@/components/AppShell';
+import { withProtectedTab } from '@/components/auth/withProtectedTab';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/ErrorState';
 import { QRCodeModal } from '@/components/QRCodeModal';
@@ -341,7 +342,7 @@ function Toggle({ value, onPress, tokens }: { value: boolean; onPress: () => voi
   );
 }
 
-export default function ProfilePage(): React.JSX.Element {
+function ProfilePage(): React.JSX.Element {
   const { safeReplace } = useThrottledNavigation();
   const params = useLocalSearchParams<{ wristband?: string | string[]; showQr?: string | string[] }>();
   const queryClient = useQueryClient();
@@ -2199,6 +2200,8 @@ export default function ProfilePage(): React.JSX.Element {
     </ErrorBoundary>
   );
 }
+
+export default withProtectedTab(ProfilePage);
 
 function SettingsRow({
   tokens,

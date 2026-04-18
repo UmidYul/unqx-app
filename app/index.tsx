@@ -108,7 +108,7 @@ export default function RootIndex(): React.JSX.Element {
   }
 
   if (!signedIn) {
-    return <Redirect href='/login' />;
+    return <Redirect href='/(tabs)/nfc' />;
   }
 
   return <Redirect href='/(tabs)/home' />;

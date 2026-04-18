@@ -1,7 +1,9 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  KeyboardTypeOptions,
   Linking,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,54 +12,41 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Clock, Info, Lock, ShieldCheck } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
+import { ChevronDown, Clock, Info, Lock, ShieldCheck } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { AppShell } from '@/components/AppShell';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { ErrorState } from '@/components/ErrorState';
 import { ScreenTransition } from '@/components/ScreenTransition';
 import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 import { SkeletonBlock, SkeletonCircle } from '@/components/ui/skeleton';
-import { CheckCircle, DotsLoader, Label, NFCRings, Pill, Row, ScanArea } from '@/components/ui/shared';
+import { CheckCircle, DotsLoader, Label, NFCRings, Row, ScanArea } from '@/components/ui/shared';
 import { MESSAGES } from '@/constants/messages';
 import { NFC_PROTECTED_TAG_ERROR, useNFC } from '@/hooks/useNFC';
-import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useAuthStatus } from '@/hooks/useAuthStatus';
 import { useStoreReview } from '@/hooks/useStoreReview';
-import { nfcApi } from '@/lib/apiClient';
+import { readLocalNfcHistory } from '@/lib/nfcLocalHistory';
 import { markPushTrigger } from '@/lib/pushPrompt';
 import { queryKeys } from '@/lib/queryKeys';
-import { NFCHistoryItem } from '@/types';
+import { NFCHistoryItem, NfcPayloadKind, NfcTemplateId } from '@/types';
 import { useNfcStore } from '@/store/nfcStore';
 import { useThemeContext } from '@/theme/ThemeProvider';
 import { useLanguageContext } from '@/i18n/LanguageProvider';
-import { extractSlug, getProfileURL } from '@/utils/links';
+import { buildSlugPayload, buildTemplatePayload, getHistoryPreview, getPayloadPreview } from '@/utils/nfcPayloads';
 import { toast } from '@/utils/toast';
-import Animated, { FadeIn } from 'react-native-reanimated';
 
 type NfcTab = 'read' | 'write' | 'verify' | 'batch' | 'lock';
+type WriteMode = 'slug' | 'other';
 
-function parseHistoryPayload(raw: unknown): NFCHistoryItem[] {
-  const source = (raw as { items?: unknown[] })?.items ?? raw;
-  if (!Array.isArray(source)) {
-    return [];
-  }
-
-  return source
-    .map((item: any, index) => ({
-      id: String(item?.id ?? `row-${index}`),
-      slug: extractSlug(item?.slug ?? item?.url ?? '') ?? '',
-      uid: item?.uid,
-      type:
-        item?.type === 'read' || item?.type === 'write' || item?.type === 'verify' || item?.type === 'lock'
-          ? item.type
-          : 'read',
-      timestamp: String(item?.timestamp ?? item?.createdAt ?? item?.viewedAt ?? ''),
-    }))
-    .filter((item) => Boolean(item.slug))
-    .slice(0, 8);
+interface TemplateOption {
+  id: Exclude<NfcTemplateId, 'slug'>;
+  label: string;
+  placeholder: string;
+  keyboardType?: KeyboardTypeOptions;
 }
 
 function formatHistoryTime(value: string, isUz: boolean): string {
@@ -82,18 +71,45 @@ function cleanDigits(value: string): string {
   return value.replace(/\D/g, '').slice(0, 3);
 }
 
+function getPayloadKindLabel(kind: NfcPayloadKind | undefined, isUz: boolean): string {
+  if (kind === 'url') {
+    return isUz ? 'Havola' : 'Ссылка';
+  }
+  if (kind === 'text') {
+    return isUz ? 'Matn' : 'Текст';
+  }
+  return isUz ? "Noma'lum" : 'Неизвестно';
+}
+
+function getHistoryTypeMark(type: NFCHistoryItem['type']): string {
+  if (type === 'write') {
+    return 'W';
+  }
+  if (type === 'verify') {
+    return 'V';
+  }
+  if (type === 'lock') {
+    return 'L';
+  }
+  return 'R';
+}
+
 export default function NfcPage(): React.JSX.Element {
   const { tokens } = useThemeContext();
   const { language } = useLanguageContext();
+  const { signedIn } = useAuthStatus();
   const isUz = language === 'uz';
   const queryClient = useQueryClient();
-  const { isOnline } = useNetworkStatus({ invalidateOnReconnect: false });
   const { incrementSuccess, maybeAskReview } = useStoreReview();
-  const { isSupported, state, tag, error, startRead, writeURL, verify, lock, reset } = useNFC();
+  const { isSupported, state, tag, error, startRead, writePayload, verify, lock, reset } = useNFC();
 
   const [activeTab, setActiveTab] = React.useState<NfcTab>('read');
+  const [writeMode, setWriteMode] = React.useState<WriteMode>('slug');
   const [letters, setLetters] = React.useState('');
   const [digits, setDigits] = React.useState('');
+  const [selectedTemplate, setSelectedTemplate] = React.useState<Exclude<NfcTemplateId, 'slug'>>('telegram');
+  const [templatePickerVisible, setTemplatePickerVisible] = React.useState(false);
+  const [otherValue, setOtherValue] = React.useState('');
   const [lockPassword, setLockPassword] = React.useState('');
   const [batchCount, setBatchCount] = React.useState(0);
 
@@ -106,11 +122,64 @@ export default function NfcPage(): React.JSX.Element {
 
   const slug = `${letters}${digits}`;
   const slugReady = letters.length === 3 && digits.length === 3;
+  const slugPayload = React.useMemo(() => (slugReady ? buildSlugPayload(slug) : null), [slug, slugReady]);
+  const extraPayload = React.useMemo(() => buildTemplatePayload(selectedTemplate, otherValue), [otherValue, selectedTemplate]);
+  const currentPayload = writeMode === 'slug' ? slugPayload : extraPayload;
+  const payloadReady = Boolean(currentPayload);
   const nfcUnavailable = !isSupported;
-  const targetUrl = React.useMemo(() => getProfileURL(slug, 'nfc'), [slug]);
+  const scannedPreview = tag?.displayValue ?? getPayloadPreview(tag?.payloadKind, tag?.payloadValue, tag?.slug);
 
-  const scannedSlug = React.useMemo(() => extractSlug(tag?.url ?? ''), [tag?.url]);
-  const scannedTitle = isUz ? 'NFC teg' : 'NFC метка';
+  const templateOptions = React.useMemo<TemplateOption[]>(
+    () => [
+      {
+        id: 'telegram',
+        label: 'Telegram',
+        placeholder: isUz ? '@username yoki t.me/username' : '@username или t.me/username',
+      },
+      {
+        id: 'instagram',
+        label: 'Instagram',
+        placeholder: isUz ? '@username yoki instagram.com/username' : '@username или instagram.com/username',
+      },
+      {
+        id: 'site',
+        label: isUz ? 'Sayt' : 'Сайт',
+        placeholder: isUz ? 'example.com yoki https://example.com' : 'example.com или https://example.com',
+        keyboardType: 'url',
+      },
+      {
+        id: 'tiktok',
+        label: 'TikTok',
+        placeholder: isUz ? '@username yoki tiktok.com/@username' : '@username или tiktok.com/@username',
+      },
+      {
+        id: 'whatsapp',
+        label: 'WhatsApp',
+        placeholder: isUz ? '+998901234567' : '+998901234567',
+        keyboardType: 'phone-pad',
+      },
+      {
+        id: 'phone',
+        label: isUz ? 'Telefon' : 'Телефон',
+        placeholder: isUz ? '+998901234567' : '+998901234567',
+        keyboardType: 'phone-pad',
+      },
+      {
+        id: 'email',
+        label: 'Email',
+        placeholder: 'hello@example.com',
+        keyboardType: 'email-address',
+      },
+      {
+        id: 'plain_text',
+        label: isUz ? 'Oddiy matn' : 'Plain text',
+        placeholder: isUz ? "Istalgan matnni yozing" : 'Напиши любой текст',
+      },
+    ],
+    [isUz],
+  );
+
+  const selectedTemplateMeta = templateOptions.find((item) => item.id === selectedTemplate) ?? templateOptions[0];
 
   const nfcText = isUz
     ? {
@@ -118,11 +187,19 @@ export default function NfcPage(): React.JSX.Element {
       readTapToScan: 'Skanerlash uchun bosing',
       readBringTag: 'Tegni yaqinlashtiring...',
       readTagRead: "Teg o'qildi",
-      premium: 'Premium',
       readAgain: 'Yana bir marta',
       open: 'Ochish',
+      copy: 'Nusxa olish',
+      payloadType: 'Format',
+      payloadValue: "Ma'lumot",
       letters: 'Harflar',
       digits: 'Raqamlar',
+      writeMode: 'Yozish rejimi',
+      slugMode: 'UNQX slug',
+      otherMode: 'Boshqa',
+      templates: 'Tayyor shablonlar',
+      templatePickerTitle: 'Shablonni tanlang',
+      otherValue: "Qiymat",
       writeBringTag: 'NFC tegni yaqinlashtiring',
       writing: 'Yozilmoqda...',
       writeDone: 'Muvaffaqiyatli yozildi',
@@ -135,14 +212,15 @@ export default function NfcPage(): React.JSX.Element {
       verifyType: 'Turi',
       verifyCapacity: "Sig'im",
       verifyUsed: 'Band',
-      verifyFree: 'Bo\'sh',
+      verifyFree: "Bo'sh",
       verifyStatus: 'Holat',
+      verifyPayloadType: 'Payload',
       verifyData: "Ma'lumotlar",
       secured: 'Himoyalangan',
       notSecured: 'Himoyasiz',
       verifyButton: 'Tegni tekshirish',
       verifyAgain: 'Yana tekshirish',
-      batchInfo: 'Batch rejimi: bitta havolani ketma-ket ko\'p teglarga yozing.',
+      batchInfo: "Batch rejimi: bitta payload'ni ketma-ket ko'p teglarga yozing.",
       tagsWritten: 'Yozilgan teglar',
       bringTag: 'Tegni yaqinlashtiring',
       batchTagWritten: 'Teg #%1 yozildi',
@@ -150,7 +228,7 @@ export default function NfcPage(): React.JSX.Element {
       batchStart: 'Yozishni boshlash',
       batchFinish: 'Yakunlash · %1 dona',
       lockWarning: 'Diqqat',
-      lockInfo: 'Parol himoyasi qayta yozishni bloklaydi. Parolni unutsangiz, tegni ochib bo\'lmaydi.',
+      lockInfo: "Parol himoyasi qayta yozishni bloklaydi. Agar unutsangiz, tegni ochib bo'lmaydi.",
       lockPasswordLabel: 'Teg uchun parol',
       lockPasswordHint: '4 dan 8 tagacha belgi',
       lockBringTag: 'Himoya uchun tegni yaqinlashtiring',
@@ -158,10 +236,11 @@ export default function NfcPage(): React.JSX.Element {
       locked: 'Teg himoyalandi',
       lockButton: 'Tegni himoyalash',
       lockAgain: 'Yana himoyalash',
-      unsupported: 'Bu qurilmada NFC mavjud emas. O\'qish va yozish o\'chirilgan.',
-      historyEmptyTitle: 'Tarix bo\'sh',
+      unsupported: "Bu qurilmada NFC mavjud emas. O'qish va yozish o'chirilgan.",
+      historyEmptyTitle: "Tarix bo'sh",
       historyEmptySubtitle: 'Teglarni skanerlang yoki yozing',
       historyAction: 'Skanerlash',
+      copied: 'Maʼlumot nusxalandi',
       noData: '—',
     }
     : {
@@ -169,11 +248,19 @@ export default function NfcPage(): React.JSX.Element {
       readTapToScan: 'Нажми для сканирования',
       readBringTag: 'Поднеси метку...',
       readTagRead: 'Метка прочитана',
-      premium: 'Премиум',
       readAgain: 'Ещё раз',
       open: 'Открыть',
+      copy: 'Копировать',
+      payloadType: 'Формат',
+      payloadValue: 'Данные',
       letters: 'Буквы',
       digits: 'Цифры',
+      writeMode: 'Режим записи',
+      slugMode: 'UNQX slug',
+      otherMode: 'Другое',
+      templates: 'Готовые шаблоны',
+      templatePickerTitle: 'Выберите шаблон',
+      otherValue: 'Значение',
       writeBringTag: 'Поднеси NFC-метку',
       writing: 'Записываю...',
       writeDone: 'Успешно записано',
@@ -188,12 +275,13 @@ export default function NfcPage(): React.JSX.Element {
       verifyUsed: 'Занято',
       verifyFree: 'Свободно',
       verifyStatus: 'Статус',
+      verifyPayloadType: 'Payload',
       verifyData: 'Данные',
       secured: 'С защитой',
       notSecured: 'Без защиты',
       verifyButton: 'Проверить метку',
       verifyAgain: 'Проверить ещё',
-      batchInfo: 'Batch-режим: пиши одну ссылку на множество меток подряд.',
+      batchInfo: 'Batch-режим: пиши один payload на множество меток подряд.',
       tagsWritten: 'Записано меток',
       bringTag: 'Поднеси метку',
       batchTagWritten: 'Метка #%1 записана',
@@ -201,7 +289,7 @@ export default function NfcPage(): React.JSX.Element {
       batchStart: 'Начать запись',
       batchFinish: 'Завершить · %1 шт.',
       lockWarning: 'Внимание',
-      lockInfo: 'Защита паролем блокирует перезапись. Если забудешь — метку нельзя разблокировать.',
+      lockInfo: 'Защита паролем блокирует перезапись. Если забудешь, метку нельзя разблокировать.',
       lockPasswordLabel: 'Пароль для метки',
       lockPasswordHint: 'От 4 до 8 символов',
       lockBringTag: 'Поднеси метку для защиты',
@@ -213,6 +301,7 @@ export default function NfcPage(): React.JSX.Element {
       historyEmptyTitle: 'История пуста',
       historyEmptySubtitle: 'Сканируй или записывай метки',
       historyAction: 'Сканировать',
+      copied: 'Данные скопированы',
       noData: '—',
     };
 
@@ -230,18 +319,11 @@ export default function NfcPage(): React.JSX.Element {
   }, [setCurrentTag, setNfcState, state, tag]);
 
   const historyQuery = useQuery({
-    queryKey: queryKeys.nfcHistory,
-    queryFn: nfcApi.history,
+    queryKey: queryKeys.nfcLocalHistory,
+    queryFn: readLocalNfcHistory,
   });
-  const tagsQuery = useQuery({
-    queryKey: queryKeys.nfcTags,
-    queryFn: nfcApi.tags,
-  });
-  const isRefreshing = historyQuery.isRefetching || tagsQuery.isRefetching;
-  const onRefresh = React.useCallback(async () => {
-    await Promise.all([historyQuery.refetch(), tagsQuery.refetch()]);
-  }, [historyQuery, tagsQuery]);
-  const history = React.useMemo(() => parseHistoryPayload(historyQuery.data), [historyQuery.data]);
+
+  const history = React.useMemo(() => historyQuery.data?.items ?? [], [historyQuery.data]);
 
   React.useEffect(() => {
     const prev = prevStateRef.current;
@@ -249,7 +331,7 @@ export default function NfcPage(): React.JSX.Element {
     if ((state === 'success' || state === 'written' || state === 'verified' || state === 'locked') && prev !== state) {
       void markPushTrigger('nfc').catch(() => undefined);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.nfcHistory });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.nfcLocalHistory });
 
       if (state === 'written') {
         toast.success(MESSAGES.toast.nfcWritten);
@@ -266,15 +348,18 @@ export default function NfcPage(): React.JSX.Element {
     }
 
     prevStateRef.current = state;
-  }, [queryClient, state]);
+  }, [incrementSuccess, maybeAskReview, queryClient, state]);
 
   React.useEffect(() => {
-    if (error) {
-      const readableError = error === NFC_PROTECTED_TAG_ERROR
-        ? (isUz ? 'Teg himoyalangan. Unga yozib bo\'lmaydi.' : 'Метка защищена. Запись невозможна.')
-        : error;
-      toast.error(MESSAGES.toast.nfcWriteError, readableError);
+    if (!error) {
+      return;
     }
+
+    const readableError = error === NFC_PROTECTED_TAG_ERROR
+      ? (isUz ? "Teg himoyalangan. Unga yozib bo'lmaydi." : 'Метка защищена. Запись невозможна.')
+      : error;
+
+    toast.error(MESSAGES.toast.nfcWriteError, readableError);
   }, [error, isUz]);
 
   const switchTab = React.useCallback(
@@ -283,6 +368,7 @@ export default function NfcPage(): React.JSX.Element {
       reset();
       if (tab !== 'batch') {
         batchPendingRef.current = false;
+        setBatchCount(0);
       }
     },
     [reset],
@@ -305,44 +391,175 @@ export default function NfcPage(): React.JSX.Element {
   }, [startRead]);
 
   const handleWrite = React.useCallback(() => {
-    if (!slugReady) return;
-    if (!isOnline) {
-      toast.info(MESSAGES.toast.offlineQueued);
+    if (!currentPayload) {
       return;
     }
-    void writeURL(targetUrl);
-  }, [isOnline, slugReady, targetUrl, writeURL]);
+
+    void writePayload(currentPayload);
+  }, [currentPayload, writePayload]);
 
   const handleVerify = React.useCallback(() => {
     void verify();
   }, [verify]);
 
   const handleNextBatch = React.useCallback(() => {
-    if (!slugReady) return;
-    if (!isOnline) {
-      toast.info(MESSAGES.toast.offlineQueued);
+    if (!currentPayload) {
       return;
     }
+
     batchPendingRef.current = true;
-    void writeURL(targetUrl);
-  }, [isOnline, slugReady, targetUrl, writeURL]);
+    void writePayload(currentPayload);
+  }, [currentPayload, writePayload]);
 
   const handleLock = React.useCallback(() => {
-    if (lockPassword.length < 4) return;
-    if (!isOnline) {
-      toast.info(MESSAGES.toast.offlineQueued);
+    if (lockPassword.length < 4) {
       return;
     }
+
     void lock(lockPassword);
-  }, [isOnline, lock, lockPassword]);
+  }, [lock, lockPassword]);
 
   const handleOpen = React.useCallback(() => {
     if (tag?.url) {
       void Linking.openURL(tag.url);
     }
   }, [tag?.url]);
+
+  const handleCopyPayload = React.useCallback(() => {
+    if (!tag?.payloadValue) {
+      return;
+    }
+
+    void Clipboard.setStringAsync(tag.payloadValue)
+      .then(() => {
+        toast.success(nfcText.copied);
+      })
+      .catch(() => undefined);
+  }, [nfcText.copied, tag?.payloadValue]);
+
   const writePending = state === 'writing';
   const lockPending = state === 'locking';
+
+  const renderPayloadComposer = (disabled: boolean): React.JSX.Element => (
+    <View style={styles.composer}>
+      <View style={styles.inputCol}>
+        <Label color={tokens.textMuted}>{nfcText.writeMode}</Label>
+        <View style={[styles.segmentedWrap, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+          {([
+            ['slug', nfcText.slugMode],
+            ['other', nfcText.otherMode],
+          ] as const).map(([mode, label]) => {
+            const active = writeMode === mode;
+            return (
+              <AnimatedPressable
+                key={mode}
+                style={[
+                  styles.segmentedBtn,
+                  {
+                    backgroundColor: active ? tokens.accent : 'transparent',
+                    borderColor: active ? tokens.accent : 'transparent',
+                  },
+                ]}
+                onPress={() => setWriteMode(mode)}
+                disabled={disabled}
+              >
+                <Text style={[styles.segmentedText, { color: active ? tokens.accentText : tokens.text }]}>{label}</Text>
+              </AnimatedPressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {writeMode === 'slug' ? (
+        <View style={styles.inputsRow}>
+          <View style={styles.inputCol}>
+            <Label color={tokens.textMuted}>{nfcText.letters}</Label>
+            <TextInput
+              value={letters}
+              onChangeText={handleLetters}
+              autoCapitalize='characters'
+              maxLength={3}
+              placeholder='ABC'
+              placeholderTextColor={tokens.textMuted}
+              editable={!disabled}
+              style={[
+                styles.slugInput,
+                {
+                  backgroundColor: tokens.inputBg,
+                  borderColor: letters.length === 3 ? tokens.borderStrong : tokens.border,
+                  color: tokens.text,
+                },
+              ]}
+            />
+          </View>
+
+          <Text style={[styles.midDot, { color: tokens.textMuted }]}>·</Text>
+
+          <View style={styles.inputCol}>
+            <Label color={tokens.textMuted}>{nfcText.digits}</Label>
+            <TextInput
+              ref={digitsRef}
+              value={digits}
+              onChangeText={handleDigits}
+              keyboardType='number-pad'
+              maxLength={3}
+              placeholder='000'
+              placeholderTextColor={tokens.textMuted}
+              editable={!disabled}
+              style={[
+                styles.slugInput,
+                {
+                  backgroundColor: tokens.inputBg,
+                  borderColor: digits.length === 3 ? tokens.borderStrong : tokens.border,
+                  color: tokens.text,
+                },
+              ]}
+            />
+          </View>
+        </View>
+      ) : (
+        <>
+          <View style={styles.inputCol}>
+            <Label color={tokens.textMuted}>{nfcText.templates}</Label>
+            <Pressable
+              style={[styles.selectTrigger, { backgroundColor: tokens.inputBg, borderColor: tokens.border }]}
+              onPress={() => setTemplatePickerVisible(true)}
+              disabled={disabled}
+            >
+              <Text style={[styles.selectText, { color: tokens.text }]}>{selectedTemplateMeta.label}</Text>
+              <ChevronDown size={18} strokeWidth={1.6} color={tokens.textMuted} />
+            </Pressable>
+          </View>
+
+          <View style={styles.inputCol}>
+            <Label color={tokens.textMuted}>{nfcText.otherValue}</Label>
+            <TextInput
+              value={otherValue}
+              onChangeText={setOtherValue}
+              placeholder={selectedTemplateMeta.placeholder}
+              placeholderTextColor={tokens.textMuted}
+              editable={!disabled}
+              keyboardType={selectedTemplateMeta.keyboardType}
+              autoCapitalize='none'
+              autoCorrect={false}
+              multiline={selectedTemplate === 'plain_text'}
+              textAlignVertical={selectedTemplate === 'plain_text' ? 'top' : 'center'}
+              style={[
+                styles.otherInput,
+                selectedTemplate === 'plain_text' ? styles.otherInputMultiline : null,
+                {
+                  backgroundColor: tokens.inputBg,
+                  borderColor: otherValue.trim() ? tokens.borderStrong : tokens.border,
+                  color: tokens.text,
+                },
+              ]}
+            />
+          </View>
+        </>
+      )}
+
+    </View>
+  );
 
   const renderRead = (): React.JSX.Element => (
     <View style={styles.tabSection}>
@@ -371,15 +588,22 @@ export default function NfcPage(): React.JSX.Element {
             <View style={[styles.resultCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
               <View style={styles.resultTop}>
                 <View style={[styles.resultAvatar, { backgroundColor: `${tokens.accent}14` }]}>
-                  <Text style={[styles.resultAvatarText, { color: tokens.accent }]}>{scannedTitle[0]}</Text>
+                  <Text style={[styles.resultAvatarText, { color: tokens.accent }]}>N</Text>
                 </View>
                 <View>
-                  <Text style={[styles.resultName, { color: tokens.text }]}>{scannedTitle}</Text>
+                  <Text style={[styles.resultName, { color: tokens.text }]}>{MESSAGES.ui.screens.nfc}</Text>
                 </View>
               </View>
               <Row
-                label='UNQ'
-                value={scannedSlug ? `unqx.uz/${scannedSlug}` : nfcText.noData}
+                label={nfcText.payloadType}
+                value={getPayloadKindLabel(tag?.payloadKind, isUz)}
+                textColor={tokens.text}
+                mutedColor={tokens.textMuted}
+                borderColor={tokens.border}
+              />
+              <Row
+                label={nfcText.payloadValue}
+                value={scannedPreview || nfcText.noData}
                 textColor={tokens.text}
                 mutedColor={tokens.textMuted}
                 borderColor={tokens.border}
@@ -405,9 +629,18 @@ export default function NfcPage(): React.JSX.Element {
           <AnimatedPressable style={[styles.secondaryBtn, styles.flexBtn, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={reset}>
             <Text style={[styles.secondaryBtnText, { color: tokens.text }]}>{nfcText.readAgain}</Text>
           </AnimatedPressable>
-          <AnimatedPressable style={[styles.primaryBtn, styles.flexBtn, { backgroundColor: tokens.accent, borderColor: tokens.accent }]} onPress={handleOpen}>
-            <Text style={[styles.primaryBtnText, { color: tokens.accentText }]}>{nfcText.open}</Text>
-          </AnimatedPressable>
+
+          {tag?.payloadKind === 'url' && tag.url ? (
+            <AnimatedPressable style={[styles.primaryBtn, styles.flexBtn, { backgroundColor: tokens.accent, borderColor: tokens.accent }]} onPress={handleOpen}>
+              <Text style={[styles.primaryBtnText, { color: tokens.accentText }]}>{nfcText.open}</Text>
+            </AnimatedPressable>
+          ) : null}
+
+          {tag?.payloadKind === 'text' && tag.payloadValue ? (
+            <AnimatedPressable style={[styles.primaryBtn, styles.flexBtn, { backgroundColor: tokens.accent, borderColor: tokens.accent }]} onPress={handleCopyPayload}>
+              <Text style={[styles.primaryBtnText, { color: tokens.accentText }]}>{nfcText.copy}</Text>
+            </AnimatedPressable>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -415,52 +648,7 @@ export default function NfcPage(): React.JSX.Element {
 
   const renderWrite = (): React.JSX.Element => (
     <View style={styles.tabSection}>
-      <View style={styles.inputsRow}>
-        <View style={styles.inputCol}>
-          <Label color={tokens.textMuted}>{nfcText.letters}</Label>
-          <TextInput
-            value={letters}
-            onChangeText={handleLetters}
-            autoCapitalize='characters'
-            maxLength={3}
-            placeholder='ABC'
-            placeholderTextColor={tokens.textMuted}
-            editable={state !== 'writing' && state !== 'written'}
-            style={[
-              styles.slugInput,
-              {
-                backgroundColor: tokens.inputBg,
-                borderColor: letters.length === 3 ? tokens.borderStrong : tokens.border,
-                color: tokens.text,
-              },
-            ]}
-          />
-        </View>
-
-        <Text style={[styles.midDot, { color: tokens.textMuted }]}>·</Text>
-
-        <View style={styles.inputCol}>
-          <Label color={tokens.textMuted}>{nfcText.digits}</Label>
-          <TextInput
-            ref={digitsRef}
-            value={digits}
-            onChangeText={handleDigits}
-            keyboardType='number-pad'
-            maxLength={3}
-            placeholder='000'
-            placeholderTextColor={tokens.textMuted}
-            editable={state !== 'writing' && state !== 'written'}
-            style={[
-              styles.slugInput,
-              {
-                backgroundColor: tokens.inputBg,
-                borderColor: digits.length === 3 ? tokens.borderStrong : tokens.border,
-                color: tokens.text,
-              },
-            ]}
-          />
-        </View>
-      </View>
+      {renderPayloadComposer(writePending)}
 
       <ScanArea active={state === 'writing'} tokens={tokens} minHeight={200}>
         {state === 'idle' ? (
@@ -485,7 +673,9 @@ export default function NfcPage(): React.JSX.Element {
             </View>
             <Text style={[styles.writeDoneTitle, { color: tokens.text }]}>{nfcText.writeDone}</Text>
             <View style={[styles.writeDoneSlug, { backgroundColor: tokens.surface }]}>
-              <Text style={[styles.writeDoneSlugText, { color: tokens.text }]}>{slug}</Text>
+              <Text style={[styles.writeDoneSlugText, { color: tokens.text }]}>
+                {tag?.displayValue ?? currentPayload?.displayValue ?? nfcText.noData}
+              </Text>
             </View>
           </View>
         ) : null}
@@ -496,18 +686,18 @@ export default function NfcPage(): React.JSX.Element {
           style={[
             styles.primaryBtn,
             {
-              backgroundColor: slugReady ? tokens.accent : tokens.surface,
-              borderColor: slugReady ? tokens.accent : tokens.border,
-              opacity: slugReady && !writePending && !nfcUnavailable ? 1 : 0.5,
+              backgroundColor: payloadReady ? tokens.accent : tokens.surface,
+              borderColor: payloadReady ? tokens.accent : tokens.border,
+              opacity: payloadReady && !writePending && !nfcUnavailable ? 1 : 0.5,
             },
           ]}
-          disabled={!slugReady || writePending || nfcUnavailable}
+          disabled={!payloadReady || writePending || nfcUnavailable}
           onPress={handleWrite}
         >
           {writePending ? (
             <ActivityIndicator color={tokens.accentText} />
           ) : (
-            <Text style={[styles.primaryBtnText, { color: slugReady ? tokens.accentText : tokens.text }]}>{nfcText.writeToTag}</Text>
+            <Text style={[styles.primaryBtnText, { color: payloadReady ? tokens.accentText : tokens.text }]}>{nfcText.writeToTag}</Text>
           )}
         </AnimatedPressable>
       ) : null}
@@ -560,7 +750,8 @@ export default function NfcPage(): React.JSX.Element {
                   : nfcText.noData,
               ],
               [nfcText.verifyStatus, tag?.isLocked ? nfcText.secured : nfcText.notSecured],
-              [nfcText.verifyData, tag?.url ?? nfcText.noData],
+              [nfcText.verifyPayloadType, getPayloadKindLabel(tag?.payloadKind, isUz)],
+              [nfcText.verifyData, tag?.displayValue ?? tag?.payloadValue ?? nfcText.noData],
             ].map(([k, v], idx, arr) => (
               <View
                 key={k}
@@ -604,41 +795,15 @@ export default function NfcPage(): React.JSX.Element {
         <Text style={[styles.infoText, { color: tokens.textSub }]}>{nfcText.batchInfo}</Text>
       </View>
 
-      <View style={styles.inputsRow}>
-        <View style={styles.inputCol}>
-          <Label color={tokens.textMuted}>{nfcText.letters}</Label>
-          <TextInput
-            value={letters}
-            onChangeText={handleLetters}
-            autoCapitalize='characters'
-            maxLength={3}
-            placeholder='ABC'
-            placeholderTextColor={tokens.textMuted}
-            style={[styles.slugInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
-          />
-        </View>
-
-        <Text style={[styles.midDot, { color: tokens.textMuted }]}>·</Text>
-
-        <View style={styles.inputCol}>
-          <Label color={tokens.textMuted}>{nfcText.digits}</Label>
-          <TextInput
-            value={digits}
-            onChangeText={handleDigits}
-            keyboardType='number-pad'
-            maxLength={3}
-            placeholder='000'
-            placeholderTextColor={tokens.textMuted}
-            style={[styles.slugInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
-          />
-        </View>
-      </View>
+      {renderPayloadComposer(writePending)}
 
       <View style={[styles.batchCounter, { borderColor: `${tokens.accent}30`, backgroundColor: `${tokens.accent}10` }]}>
         <Text style={[styles.batchCount, { color: tokens.accent }]}>{batchCount}</Text>
-        <View>
+        <View style={styles.batchMeta}>
           <Text style={[styles.batchTitle, { color: tokens.text }]}>{nfcText.tagsWritten}</Text>
-          <Text style={[styles.batchSub, { color: tokens.textMuted }]}>{`/${letters || '___'}${digits || '000'}`}</Text>
+          <Text style={[styles.batchSub, { color: tokens.textMuted }]} numberOfLines={1}>
+            {currentPayload?.displayValue ?? nfcText.noData}
+          </Text>
         </View>
       </View>
 
@@ -670,18 +835,18 @@ export default function NfcPage(): React.JSX.Element {
           style={[
             styles.primaryBtn,
             {
-              backgroundColor: slugReady ? tokens.accent : tokens.surface,
-              borderColor: slugReady ? tokens.accent : tokens.border,
-              opacity: slugReady && !writePending && !nfcUnavailable ? 1 : 0.5,
+              backgroundColor: payloadReady ? tokens.accent : tokens.surface,
+              borderColor: payloadReady ? tokens.accent : tokens.border,
+              opacity: payloadReady && !writePending && !nfcUnavailable ? 1 : 0.5,
             },
           ]}
-          disabled={!slugReady || writePending || nfcUnavailable}
+          disabled={!payloadReady || writePending || nfcUnavailable}
           onPress={handleNextBatch}
         >
           {writePending ? (
             <ActivityIndicator color={tokens.accentText} />
           ) : (
-            <Text style={[styles.primaryBtnText, { color: slugReady ? tokens.accentText : tokens.text }]}>
+            <Text style={[styles.primaryBtnText, { color: payloadReady ? tokens.accentText : tokens.text }]}>
               {state === 'written' ? nfcText.batchNext.replace('%1', String(batchCount + 1)) : nfcText.batchStart}
             </Text>
           )}
@@ -798,135 +963,172 @@ export default function NfcPage(): React.JSX.Element {
 
   return (
     <ErrorBoundary>
-      <AppShell title={MESSAGES.ui.screens.nfc} tokens={tokens}>
+      <AppShell title={MESSAGES.ui.screens.nfc} tokens={tokens} allowNotifications={signedIn}>
         <ScreenTransition>
+          <Modal
+            visible={templatePickerVisible}
+            transparent
+            animationType='fade'
+            onRequestClose={() => setTemplatePickerVisible(false)}
+          >
+            <Pressable style={styles.modalBackdrop} onPress={() => setTemplatePickerVisible(false)}>
+              <Pressable
+                style={[styles.modalCard, { backgroundColor: tokens.bg, borderColor: tokens.border }]}
+                onPress={(event) => event.stopPropagation()}
+              >
+                <Text style={[styles.modalTitle, { color: tokens.text }]}>{nfcText.templatePickerTitle}</Text>
+                <ScrollView
+                  style={styles.templateList}
+                  contentContainerStyle={styles.templateListContent}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps='handled'
+                >
+                  {templateOptions.map((template) => {
+                    const selected = selectedTemplate === template.id;
+                    return (
+                      <Pressable
+                        key={template.id}
+                        onPress={() => {
+                          setSelectedTemplate(template.id);
+                          setTemplatePickerVisible(false);
+                        }}
+                        style={[
+                          styles.templateOption,
+                          {
+                            borderColor: selected ? tokens.accent : tokens.border,
+                            backgroundColor: selected ? `${tokens.accent}14` : tokens.surface,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.templateOptionText, { color: selected ? tokens.accent : tokens.text }]}>
+                          {template.label}
+                        </Text>
+                        {selected ? <Text style={[styles.templateOptionCheck, { color: tokens.accent }]}>✓</Text> : null}
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </Pressable>
+            </Pressable>
+          </Modal>
+
           <ScrollView
             contentContainerStyle={styles.content}
-            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void onRefresh()} tintColor={tokens.accent} colors={[tokens.accent]} />}
+            refreshControl={<RefreshControl refreshing={historyQuery.isRefetching} onRefresh={() => void historyQuery.refetch()} tintColor={tokens.accent} colors={[tokens.accent]} />}
           >
-            {historyQuery.isError && !historyQuery.data ? (
-              <ErrorState
-                tokens={tokens}
-                text={MESSAGES.query.nfcHistoryLoadFailed}
-                onRetry={() => {
-                  void historyQuery.refetch();
-                }}
-              />
+            {!isSupported ? (
+              <View style={[styles.unsupported, { borderColor: `${tokens.blue}55`, backgroundColor: tokens.blueBg }]}>
+                <Info size={15} strokeWidth={1.5} color={tokens.blue} />
+                <Text style={[styles.unsupportedText, { color: tokens.textSub }]}>{nfcText.unsupported}</Text>
+              </View>
             ) : null}
 
-            {!historyQuery.isError || historyQuery.data ? (
-              <>
-                {!isSupported ? (
-                  <View style={[styles.unsupported, { borderColor: `${tokens.blue}55`, backgroundColor: tokens.blueBg }]}>
-                    <Info size={15} strokeWidth={1.5} color={tokens.blue} />
-                    <Text style={[styles.unsupportedText, { color: tokens.textSub }]}>{nfcText.unsupported}</Text>
-                  </View>
-                ) : null}
+            <View style={[styles.tabsWrap, { borderBottomColor: tokens.border }]}>
+              {tabs.map((tab) => (
+                <AnimatedPressable
+                  key={tab.id}
+                  onPress={() => switchTab(tab.id)}
+                  style={styles.tabBtn}
+                  containerStyle={styles.tabWrap}
+                >
+                  <Text style={[styles.tabText, { color: activeTab === tab.id ? tokens.text : tokens.textMuted }]}>{tab.label}</Text>
+                  <View style={[styles.tabLine, { backgroundColor: activeTab === tab.id ? tokens.accent : 'transparent' }]} />
+                </AnimatedPressable>
+              ))}
+            </View>
 
-                <View style={[styles.tabsWrap, { borderBottomColor: tokens.border }]}>
-                  {tabs.map((tab) => (
-                    <AnimatedPressable
-                      key={tab.id}
-                      onPress={() => switchTab(tab.id)}
-                      style={styles.tabBtn}
-                      containerStyle={styles.tabWrap}
-                    >
-                      <Text style={[styles.tabText, { color: activeTab === tab.id ? tokens.text : tokens.textMuted }]}>{tab.label}</Text>
-                      <View style={[styles.tabLine, { backgroundColor: activeTab === tab.id ? tokens.accent : 'transparent' }]} />
-                    </AnimatedPressable>
-                  ))}
-                </View>
+            <Animated.View key={activeTab} entering={FadeIn.duration(170)}>
+              {activeTab === 'read' ? renderRead() : null}
+              {activeTab === 'write' ? renderWrite() : null}
+              {activeTab === 'verify' ? renderVerify() : null}
+              {activeTab === 'batch' ? renderBatch() : null}
+              {activeTab === 'lock' ? renderLock() : null}
+            </Animated.View>
 
-                <Animated.View key={activeTab} entering={FadeIn.duration(170)}>
-                  {activeTab === 'read' ? renderRead() : null}
-                  {activeTab === 'write' ? renderWrite() : null}
-                  {activeTab === 'verify' ? renderVerify() : null}
-                  {activeTab === 'batch' ? renderBatch() : null}
-                  {activeTab === 'lock' ? renderLock() : null}
-                </Animated.View>
+            {error ? <Text style={[styles.errorText, { color: tokens.red }]}>{error}</Text> : null}
 
-                {error ? <Text style={[styles.errorText, { color: tokens.red }]}>{error}</Text> : null}
-
-                <View style={styles.historyWrap}>
-                  <Label color={tokens.textMuted} style={styles.historyLabel}>{MESSAGES.ui.nfc.history}</Label>
-                  {historyQuery.isLoading ? (
-                    <>
-                      {[0, 1].map((idx) => (
-                        <View key={`history-sk-${idx}`} style={styles.historyRow}>
-                          <View style={styles.historyLeft}>
-                            <SkeletonCircle tokens={tokens} size={32} />
-                            <View style={{ gap: 5, width: 160 }}>
-                              <SkeletonBlock tokens={tokens} height={10} width='78%' />
-                              <SkeletonBlock tokens={tokens} height={9} width='52%' />
-                            </View>
-                          </View>
-                          <SkeletonBlock tokens={tokens} height={10} width={10} />
-                        </View>
-                      ))}
-                    </>
-                  ) : null}
-                  {!historyQuery.isLoading && history.length === 0 ? (
-                    <EmptyState
-                      icon={Clock}
-                      title={nfcText.historyEmptyTitle}
-                      subtitle={nfcText.historyEmptySubtitle}
-                      tokens={tokens}
-                      action={{
-                        label: nfcText.historyAction,
-                        onPress: () => {
-                          switchTab('read');
-                          handleRead();
-                        },
-                      }}
-                    />
-                  ) : null}
-
-                  {history.map((item, index, arr) => (
-                    <View
-                      key={item.id}
-                      style={[
-                        styles.historyRow,
-                        {
-                          borderBottomColor: tokens.border,
-                          borderBottomWidth: index === arr.length - 1 ? 0 : StyleSheet.hairlineWidth,
-                        },
-                      ]}
-                    >
+            <View style={styles.historyWrap}>
+              <Label color={tokens.textMuted} style={styles.historyLabel}>{MESSAGES.ui.nfc.history}</Label>
+              {historyQuery.isLoading ? (
+                <>
+                  {[0, 1].map((idx) => (
+                    <View key={`history-sk-${idx}`} style={styles.historyRow}>
                       <View style={styles.historyLeft}>
-                        <View
+                        <SkeletonCircle tokens={tokens} size={32} />
+                        <View style={styles.historySkeletonText}>
+                          <SkeletonBlock tokens={tokens} height={10} width='78%' />
+                          <SkeletonBlock tokens={tokens} height={9} width='52%' />
+                        </View>
+                      </View>
+                      <SkeletonBlock tokens={tokens} height={10} width={10} />
+                    </View>
+                  ))}
+                </>
+              ) : null}
+
+              {!historyQuery.isLoading && history.length === 0 ? (
+                <EmptyState
+                  icon={Clock}
+                  title={nfcText.historyEmptyTitle}
+                  subtitle={nfcText.historyEmptySubtitle}
+                  tokens={tokens}
+                  action={{
+                    label: nfcText.historyAction,
+                    onPress: () => {
+                      switchTab('read');
+                      handleRead();
+                    },
+                  }}
+                />
+              ) : null}
+
+              {history.map((item, index, arr) => {
+                const preview = getHistoryPreview(item) || nfcText.noData;
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.historyRow,
+                      {
+                        borderBottomColor: tokens.border,
+                        borderBottomWidth: index === arr.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                      },
+                    ]}
+                  >
+                    <View style={styles.historyLeft}>
+                      <View
+                        style={[
+                          styles.historyType,
+                          {
+                            backgroundColor: item.type === 'read' ? tokens.surface : `${tokens.accent}14`,
+                          },
+                        ]}
+                      >
+                        <Text
                           style={[
-                            styles.historyType,
+                            styles.historyTypeText,
                             {
-                              backgroundColor: item.type === 'read' ? tokens.surface : `${tokens.accent}14`,
+                              color: item.type === 'read' ? tokens.textSub : tokens.accent,
                             },
                           ]}
                         >
-                          <Text
-                            style={[
-                              styles.historyTypeText,
-                              {
-                                color: item.type === 'read' ? tokens.textSub : tokens.accent,
-                              },
-                            ]}
-                          >
-                            {item.type === 'read' ? 'R' : item.type === 'write' ? 'W' : item.type === 'verify' ? 'V' : 'L'}
-                          </Text>
-                        </View>
-                        <View>
-                          <Text style={[styles.historySlug, { color: tokens.text }]}>
-                            {item.slug ? <Text style={[styles.historyPrefix, { color: tokens.textMuted }]}>unqx.uz/</Text> : null}
-                            {item.slug || nfcText.noData}
-                          </Text>
-                          <Text style={[styles.historyTime, { color: tokens.textMuted }]}>{formatHistoryTime(item.timestamp, isUz)}</Text>
-                        </View>
+                          {getHistoryTypeMark(item.type)}
+                        </Text>
                       </View>
 
-                      <Text style={[styles.historyChevron, { color: tokens.textMuted }]}>›</Text>
+                      <View style={styles.historyMeta}>
+                        <Text style={[styles.historySlug, { color: tokens.text }]} numberOfLines={1}>{preview}</Text>
+                        <Text style={[styles.historyTime, { color: tokens.textMuted }]}>
+                          {getPayloadKindLabel(item.payloadKind, isUz)} · {formatHistoryTime(item.timestamp, isUz)}
+                        </Text>
+                      </View>
                     </View>
-                  ))}
-                </View>
-              </>
-            ) : null}
+
+                    <Text style={[styles.historyChevron, { color: tokens.textMuted }]}>›</Text>
+                  </View>
+                );
+              })}
+            </View>
           </ScrollView>
         </ScreenTransition>
       </AppShell>
@@ -963,14 +1165,16 @@ const styles = StyleSheet.create({
   tabsWrap: {
     borderBottomWidth: 1,
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 2,
   },
   tabWrap: {
-    flex: 1,
+    flexShrink: 1,
   },
   tabBtn: {
     minHeight: 44,
+    paddingHorizontal: 8,
     paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1025,6 +1229,91 @@ const styles = StyleSheet.create({
   dualBtns: {
     flexDirection: 'row',
     gap: 12,
+  },
+  composer: {
+    gap: 10,
+  },
+  segmentedWrap: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 4,
+    flexDirection: 'row',
+    gap: 6,
+    alignSelf: 'center',
+    justifyContent: 'center',
+  },
+  segmentedBtn: {
+    minWidth: 156,
+    minHeight: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  segmentedText: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+  },
+  selectTrigger: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  selectText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 10,
+    maxHeight: '68%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter_600SemiBold',
+    marginBottom: 12,
+  },
+  templateList: {
+    flexGrow: 0,
+  },
+  templateListContent: {
+    gap: 8,
+    paddingBottom: 6,
+  },
+  templateOption: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  templateOptionText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+  },
+  templateOptionCheck: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
   },
   resultCardWrap: {
     width: '100%',
@@ -1095,6 +1384,19 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: 'Inter_600SemiBold',
   },
+  otherInput: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    fontFamily: 'Inter_500Medium',
+  },
+  otherInputMultiline: {
+    minHeight: 108,
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
   writeDoneWrap: {
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -1110,9 +1412,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   writeDoneSlugText: {
-    fontSize: 18,
-    letterSpacing: 4,
+    fontSize: 15,
     fontFamily: 'Inter_600SemiBold',
+    textAlign: 'center',
   },
   infoCard: {
     borderWidth: 1,
@@ -1171,6 +1473,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     lineHeight: 38,
   },
+  batchMeta: {
+    flex: 1,
+  },
   batchTitle: {
     fontSize: 13,
     fontFamily: 'Inter_500Medium',
@@ -1178,6 +1483,7 @@ const styles = StyleSheet.create({
   batchSub: {
     fontSize: 11,
     fontFamily: 'Inter_400Regular',
+    marginTop: 2,
   },
   batchDoneWrap: {
     alignItems: 'center',
@@ -1248,11 +1554,6 @@ const styles = StyleSheet.create({
   historyLabel: {
     marginBottom: 12,
   },
-  historyLoading: {
-    marginBottom: 10,
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-  },
   historyRow: {
     minHeight: 54,
     flexDirection: 'row',
@@ -1264,6 +1565,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 11,
+    flex: 1,
+  },
+  historySkeletonText: {
+    gap: 5,
+    width: 160,
   },
   historyType: {
     width: 32,
@@ -1276,15 +1582,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'Inter_600SemiBold',
   },
+  historyMeta: {
+    flex: 1,
+  },
   historySlug: {
     fontSize: 13,
     fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 1,
-  },
-  historyPrefix: {
-    fontSize: 11,
-    letterSpacing: 0,
-    fontFamily: 'Inter_400Regular',
   },
   historyTime: {
     marginTop: 1,

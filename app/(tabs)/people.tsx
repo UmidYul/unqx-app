@@ -10,12 +10,13 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Award, CheckCircle2, Download, Search, Star, TrendingUp, UserX } from 'lucide-react-native';
+import { Award, CheckCircle2, Search, Star, TrendingUp, UserX } from 'lucide-react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { AppShell } from '@/components/AppShell';
+import { withProtectedTab } from '@/components/auth/withProtectedTab';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/ErrorState';
@@ -24,7 +25,6 @@ import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 import { SkeletonBlock, SkeletonCircle } from '@/components/ui/skeleton';
 import { Label, Pill } from '@/components/ui/shared';
 import { MESSAGES } from '@/constants/messages';
-import { useExport } from '@/hooks/useExport';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { useStoreReview } from '@/hooks/useStoreReview';
@@ -277,14 +277,13 @@ function Avatar({
   );
 }
 
-export default function PeoplePage(): React.JSX.Element {
+function PeoplePage(): React.JSX.Element {
   const { tokens } = useThemeContext();
   const { language } = useLanguageContext();
   const { width } = useWindowDimensions();
   const isUz = language === 'uz';
   const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const { safePush } = useThrottledNavigation();
-  const { exportVCF, exportCSV } = useExport();
   const { incrementSuccess } = useStoreReview();
   const { isOnline } = useNetworkStatus({ invalidateOnReconnect: false });
   const queryClient = useQueryClient();
@@ -491,26 +490,6 @@ export default function PeoplePage(): React.JSX.Element {
     },
   });
 
-  const handleExportVCF = React.useCallback(() => {
-    void exportVCF(
-      filteredContacts.map((contact) => ({
-        name: contact.name,
-        slug: contact.slug,
-        phone: contact.phone,
-      })),
-    );
-  }, [exportVCF, filteredContacts]);
-
-  const handleExportCSV = React.useCallback(() => {
-    void exportCSV(
-      filteredContacts.map((contact) => ({
-        name: contact.name,
-        slug: contact.slug,
-        phone: contact.phone,
-      })),
-    );
-  }, [exportCSV, filteredContacts]);
-
   const handleSaveContact = React.useCallback(
     (slug: string) => {
       if (!isOnline) {
@@ -609,17 +588,6 @@ export default function PeoplePage(): React.JSX.Element {
                           ]}
                         >
                           <Star size={16} strokeWidth={1.5} color={favoritesOnly ? tokens.accentText : tokens.text} fill={favoritesOnly ? tokens.accentText : 'none'} />
-                        </AnimatedPressable>
-                      </View>
-
-                      <View style={styles.exportRow}>
-                        <AnimatedPressable style={[styles.exportBtn, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={handleExportVCF}>
-                          <Download size={14} strokeWidth={1.5} color={tokens.text} />
-                          <Text style={[styles.exportText, { color: tokens.text }]}>{peopleText.exportVcf}</Text>
-                        </AnimatedPressable>
-                        <AnimatedPressable style={[styles.exportBtn, { backgroundColor: tokens.surface, borderColor: tokens.border }]} onPress={handleExportCSV}>
-                          <Download size={14} strokeWidth={1.5} color={tokens.text} />
-                          <Text style={[styles.exportText, { color: tokens.text }]}>{peopleText.exportCsv}</Text>
                         </AnimatedPressable>
                       </View>
 
@@ -973,6 +941,8 @@ export default function PeoplePage(): React.JSX.Element {
   );
 }
 
+export default withProtectedTab(PeoplePage);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1033,24 +1003,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  exportRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  exportBtn: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  exportText: {
-    fontSize: 12,
-    fontFamily: 'Inter_500Medium',
   },
   contactCard: {
     borderWidth: 1,

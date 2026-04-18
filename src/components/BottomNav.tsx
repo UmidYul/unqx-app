@@ -5,6 +5,7 @@ import { BarChart3, House, UserRound, UsersRound, Wifi } from 'lucide-react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MESSAGES } from '@/constants/messages';
+import { useAuthStatus } from '@/hooks/useAuthStatus';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { ThemeTokens, ScreenTab } from '@/types';
 import { useNfcStore } from '@/store/nfcStore';
@@ -40,13 +41,16 @@ function resolveActiveTab(pathname: string): ScreenTab {
 export function BottomNav({ tokens, themeOverride }: BottomNavProps): React.JSX.Element {
   const { safeReplace } = useThrottledNavigation();
   const pathname = usePathname();
+  const { signedIn } = useAuthStatus();
   const insets = useSafeAreaInsets();
   const activeTab = useMemo(() => resolveActiveTab(pathname ?? ''), [pathname]);
   const setActiveTab = useNfcStore((state) => state.setActiveTab);
   const navBottomPadding =
     Platform.OS === 'ios'
-      ? Math.max(6, insets.bottom)
+      ? Math.max(10, insets.bottom - 2)
       : Math.max(14, Math.min(24, (insets.bottom || 0) + 10));
+  const navTopPadding = Platform.OS === 'ios' ? 10 : 6;
+  const navMinHeight = Platform.OS === 'ios' ? 92 : 79;
 
   // Формируем подписи динамически из актуального MESSAGES
   const navItems = useMemo(() => {
@@ -64,6 +68,8 @@ export function BottomNav({ tokens, themeOverride }: BottomNavProps): React.JSX.
         {
           borderTopColor: themeOverride?.border ?? tokens.navBorder,
           backgroundColor: themeOverride?.bg ?? tokens.phoneBg,
+          minHeight: navMinHeight,
+          paddingTop: navTopPadding,
           paddingBottom: navBottomPadding,
         },
       ]}
@@ -80,6 +86,10 @@ export function BottomNav({ tokens, themeOverride }: BottomNavProps): React.JSX.
               if (pathname?.includes(`/${item.id}`)) {
                 return;
               }
+              if (!signedIn && item.id !== 'nfc') {
+                safeReplace('/login');
+                return;
+              }
               setActiveTab(item.id as ScreenTab);
               safeReplace(item.route);
             }}
@@ -89,7 +99,7 @@ export function BottomNav({ tokens, themeOverride }: BottomNavProps): React.JSX.
             <View style={isActive ? styles.activeIcon : undefined}>
               <Icon size={20} color={color} strokeWidth={1.5} />
             </View>
-            <Text style={[styles.label, { color }]}>{item.label}</Text>
+            <Text numberOfLines={1} style={[styles.label, { color }]}>{item.label}</Text>
             <View style={[styles.dot, { backgroundColor: isActive ? (themeOverride?.accent ?? tokens.accent) : 'transparent' }]} />
           </AnimatedPressable>
         );
@@ -104,27 +114,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'stretch',
-    minHeight: 79,
-    paddingTop: 6,
     paddingHorizontal: 8,
+    overflow: 'hidden',
   },
   item: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    minHeight: 48,
-    gap: 2,
-    paddingBottom: 6,
+    justifyContent: 'center',
+    minHeight: 58,
+    gap: 4,
+    paddingHorizontal: 2,
+    paddingTop: 4,
   },
   itemWrap: {
     flex: 1,
     alignItems: 'stretch',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
   },
   label: {
-    fontSize: 9.5,
+    fontSize: 10,
+    lineHeight: 12,
     fontFamily: 'Inter_400Regular',
-    marginTop: 1,
+    textAlign: 'center',
   },
   activeIcon: {
     transform: [{ scale: 1.04 }],
@@ -133,5 +144,6 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 99,
+    marginTop: 1,
   },
 });

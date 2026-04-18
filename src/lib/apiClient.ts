@@ -1,4 +1,4 @@
-import { ApiError as ApiErrorShape } from '@/types';
+import { ApiError as ApiErrorShape, NfcPayloadKind, NfcTemplateId } from '@/types';
 import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { addSentryBreadcrumb, captureSentryException } from '@/lib/sentry';
 import { extractSlug } from '@/utils/links';
@@ -498,12 +498,21 @@ export const apiClient = {
 export interface NfcScanPayload {
   uid?: string;
   url?: string;
+  slug?: string;
+  payloadKind?: NfcPayloadKind;
+  payloadValue?: string;
+  displayValue?: string;
   recordTap?: boolean;
 }
 
 export interface NfcWritePayload {
-  url: string;
+  url?: string;
   uid?: string;
+  slug?: string;
+  payloadKind?: NfcPayloadKind;
+  payloadValue: string;
+  displayValue?: string;
+  templateId?: NfcTemplateId;
 }
 
 export interface NfcLockPayload {
@@ -539,8 +548,8 @@ async function logCardView(slug: string, source: string): Promise<void> {
 
 export const nfcApi = {
   scan: async (payload: NfcScanPayload) => {
-    const slug = extractSlug(payload.url ?? '');
-    await apiClient.post('/nfc/scan', { ...payload, recordTap: false });
+    const slug = payload.slug ?? extractSlug(payload.url ?? payload.payloadValue ?? '');
+    await apiClient.post('/nfc/scan', { ...payload, recordTap: false }).catch(() => undefined);
     if (slug) {
       await apiClient.post('/nfc/tap', { ownerSlug: slug, source: 'nfc' }).catch(async () => {
         await logCardView(slug, 'nfc');
@@ -549,12 +558,11 @@ export const nfcApi = {
     return { ok: true };
   },
   write: async (payload: NfcWritePayload) => {
-    const slug = extractSlug(payload.url);
+    const slug = payload.slug ?? extractSlug(payload.url ?? payload.payloadValue);
     await apiClient.post('/nfc/write', payload).catch(async () => {
       if (slug) {
         await logCardView(slug, 'nfc');
       }
-      throw new ApiError('Failed to write NFC data', 0, 'NFC_WRITE_FAILED');
     });
     return { ok: true };
   },
@@ -673,7 +681,7 @@ export const nfcApi = {
     return { ok: true };
   },
   markVerified: async (payload: { uid?: string; url?: string }) => {
-    await apiClient.post('/nfc/verify', payload);
+    await apiClient.post('/nfc/verify', payload).catch(() => undefined);
     return { ok: true };
   },
 };

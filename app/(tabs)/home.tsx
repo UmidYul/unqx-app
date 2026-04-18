@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { AppShell } from '@/components/AppShell';
+import { withProtectedTab } from '@/components/auth/withProtectedTab';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/ErrorState';
 import { QRCodeModal } from '@/components/QRCodeModal';
@@ -155,7 +156,7 @@ function sourceLabel(value: string | undefined, isUz: boolean): string {
   return isUz ? "To'g'ridan-to'g'ri" : 'Прямая';
 }
 
-export default function HomePage(): React.JSX.Element {
+function HomePage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const { tokens } = useThemeContext();
   const { safePush } = useThrottledNavigation();
@@ -520,6 +521,8 @@ export default function HomePage(): React.JSX.Element {
     </ErrorBoundary>
   );
 }
+
+export default withProtectedTab(HomePage);
 
 const styles = StyleSheet.create({
   content: {

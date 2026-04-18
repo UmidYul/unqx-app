@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Switch, useWindowDimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Plus, Trash2 } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ProfileCard, ThemeTokens } from '@/types';
 import { BUTTON_ICONS, inferButtonIcon, normalizeButtonIconKey } from '@/components/profile/buttonIcons';
@@ -42,6 +43,7 @@ const THEME_OPTIONS: Array<{ id: string; label: string; swatch: string; premium?
 
 export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, onPreview, onSave }: CardEditorProps): React.JSX.Element {
   const { language } = useLanguageContext();
+  const insets = useSafeAreaInsets();
   const isUz = language === 'uz';
   const text = isUz
     ? {
@@ -246,14 +248,26 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
   return (
     <Modal visible={visible} animationType='slide' onRequestClose={onClose}>
       <View style={[styles.root, { backgroundColor: tokens.phoneBg }]}>
-        <View style={[styles.header, { borderBottomColor: tokens.border }]}>
-          <Pressable onPress={() => runThrottled(onClose)}>
-            <Text style={[styles.headerAction, { color: tokens.textMuted }]}>{text.back}</Text>
-          </Pressable>
-          <Text style={[styles.headerTitle, { color: tokens.text }]}>{text.title}</Text>
-          <Pressable onPress={() => runThrottled(() => onPreview(local))}>
-            <Text style={[styles.headerAction, { color: tokens.accent }]}>{text.preview}</Text>
-          </Pressable>
+        <View
+          style={[
+            styles.header,
+            {
+              borderBottomColor: tokens.border,
+              paddingTop: Math.max(10, insets.top + 4),
+            },
+          ]}
+        >
+          <View style={styles.headerSide}>
+            <Pressable onPress={() => runThrottled(onClose)} hitSlop={8}>
+              <Text style={[styles.headerAction, { color: tokens.textMuted }]}>{text.back}</Text>
+            </Pressable>
+          </View>
+          <Text style={[styles.headerTitle, { color: tokens.text }]} numberOfLines={1}>{text.title}</Text>
+          <View style={[styles.headerSide, styles.headerSideRight]}>
+            <Pressable onPress={() => runThrottled(() => onPreview(local))} hitSlop={8}>
+              <Text style={[styles.headerAction, { color: tokens.accent }]}>{text.preview}</Text>
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
@@ -573,16 +587,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    minHeight: 64,
+    minHeight: 78,
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 20,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+  },
+  headerSide: {
+    width: 88,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  headerSideRight: {
+    alignItems: 'flex-end',
   },
   headerTitle: {
+    flex: 1,
     fontSize: 18,
     fontFamily: 'Inter_600SemiBold',
+    textAlign: 'center',
   },
   headerAction: {
     fontSize: 13,

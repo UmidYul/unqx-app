@@ -9,10 +9,37 @@ import { queryKeys } from '@/lib/queryKeys';
 import { dismissPushPromptPermanently, getPushPromptState, markPushPermissionRequested } from '@/lib/pushPrompt';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 
+type PushPermissionState = 'granted' | 'undetermined' | 'denied';
+
 function resolveProjectId(): string | undefined {
   const fromEasConfig = (Constants as any)?.easConfig?.projectId;
   const fromExpoConfig = (Constants as any)?.expoConfig?.extra?.eas?.projectId;
   return fromEasConfig ?? fromExpoConfig;
+}
+
+function getPermissionState(value: unknown): PushPermissionState {
+  if (!value || typeof value !== 'object') {
+    return 'denied';
+  }
+
+  if ('granted' in value && typeof value.granted === 'boolean') {
+    if (value.granted) {
+      return 'granted';
+    }
+    if ('canAskAgain' in value && typeof value.canAskAgain === 'boolean' && value.canAskAgain) {
+      return 'undetermined';
+    }
+    return 'denied';
+  }
+
+  if ('status' in value && typeof value.status === 'string') {
+    if (value.status === 'granted') {
+      return 'granted';
+    }
+    return value.status === 'undetermined' ? 'undetermined' : 'denied';
+  }
+
+  return 'denied';
 }
 
 async function getExpoPushTokenSafe(Notifications: typeof import('expo-notifications')): Promise<string | null> {
@@ -40,14 +67,13 @@ async function registerForPushNotifications(Notifications: typeof import('expo-n
     return null;
   }
 
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  const existingStatus = getPermissionState(await Notifications.getPermissionsAsync());
   let finalStatus = existingStatus;
 
   // Ask only once when permission state is undecided. Re-requesting after explicit deny
   // creates a bad UX where users can see the prompt repeatedly on app opens.
   if (existingStatus === 'undetermined') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+    finalStatus = getPermissionState(await Notifications.requestPermissionsAsync());
   }
 
   if (finalStatus !== 'granted') {
@@ -82,8 +108,7 @@ async function getExistingPushToken(Notifications: typeof import('expo-notificat
     return null;
   }
 
-  const { status } = await Notifications.getPermissionsAsync();
-  if (status !== 'granted') {
+  if (getPermissionState(await Notifications.getPermissionsAsync()) !== 'granted') {
     return null;
   }
 
@@ -152,8 +177,7 @@ export function usePushNotifications(): {
 
     const Notifications = await import('expo-notifications');
     const permissions = await Notifications.getPermissionsAsync().catch(() => null);
-    const status = permissions?.status;
-    if (status && status !== 'undetermined') {
+    if (getPermissionState(permissions) !== 'undetermined') {
       setPromptVisible(false);
       await markPushPermissionRequested();
       return;

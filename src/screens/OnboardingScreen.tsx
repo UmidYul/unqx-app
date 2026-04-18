@@ -5,7 +5,6 @@ import {
   Linking,
   ListRenderItemInfo,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -15,6 +14,7 @@ import { BarChart2, Bell, CheckCircle2, LayoutGrid, PenLine, ScanLine, Wifi } fr
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 import { useNFC } from '@/hooks/useNFC';
 import { requestPushPermission } from '@/hooks/usePushNotifications';
 import { getBrandLogoSource } from '@/lib/brandAssets';
@@ -52,6 +52,17 @@ function buildSteps(): StepItem[] {
 function clampStep(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(4, Math.floor(value)));
+}
+
+function isGrantedPermission(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if ('granted' in value && typeof value.granted === 'boolean') {
+    return value.granted;
+  }
+  if ('status' in value && typeof value.status === 'string') {
+    return value.status === 'granted';
+  }
+  return false;
 }
 
 export function OnboardingScreen({
@@ -132,11 +143,11 @@ export function OnboardingScreen({
       try {
         const Notifications = await import('expo-notifications');
         const current = await Notifications.getPermissionsAsync();
-        let granted = current.status === 'granted';
+        let granted = isGrantedPermission(current);
 
         if (!granted) {
           const requested = await Notifications.requestPermissionsAsync();
-          granted = requested.status === 'granted';
+          granted = isGrantedPermission(requested);
         }
 
         if (!granted) {
@@ -204,10 +215,13 @@ export function OnboardingScreen({
 
   const showSecondaryLater = step === 2 || step === 3;
   const showBack = step >= 1 && step <= 3;
+  const footerBottomInset = Math.max(24, insets.bottom + 12);
+  const footerReservedHeight = showSecondaryLater ? 132 : 92;
+  const slideBottomInset = footerBottomInset + footerReservedHeight;
 
   const renderItem = React.useCallback(
     ({ item }: ListRenderItemInfo<StepItem>) => (
-      <View style={[styles.slide, { width }]}>
+      <View style={[styles.slide, { width, paddingBottom: slideBottomInset }]}>
         <View style={[styles.iconWrap, { backgroundColor: `${tokens.accent}15`, borderColor: `${tokens.accent}45` }]}>
           {item.key === 'welcome' ? (
             <Image source={getBrandLogoSource(isDark)} style={styles.brandLogo} resizeMode='contain' />
@@ -229,15 +243,20 @@ export function OnboardingScreen({
         ) : null}
       </View>
     ),
-    [isDark, tokens, width],
+    [isDark, slideBottomInset, tokens, width],
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: tokens.bg, paddingBottom: Math.max(24, insets.bottom + 12) }]}>
+    <View style={[styles.container, { backgroundColor: tokens.bg }]}>
       {step < 4 ? (
-        <Pressable style={[styles.skipTop, { top: insets.top + 10 }]} onPress={handleSkip}>
+        <AnimatedPressable
+          containerStyle={[styles.skipTop, { top: insets.top + 10 }]}
+          style={styles.skipTopInner}
+          onPress={handleSkip}
+          hitSlop={8}
+        >
           <Text style={[styles.skipTopText, { color: tokens.textMuted }]}>{MESSAGES.ui.onboarding.skip}</Text>
-        </Pressable>
+        </AnimatedPressable>
       ) : null}
 
       <FlatList
@@ -253,47 +272,68 @@ export function OnboardingScreen({
         onMomentumScrollEnd={onMomentumEnd}
         initialNumToRender={STEPS.length}
         getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        keyboardShouldPersistTaps='handled'
+        scrollEnabled={!busy}
       />
 
-      <View style={styles.bottomBar}>
-        <View style={styles.dots}>
-          {STEPS.map((item, index) => (
-            <View
-              key={item.key}
-              style={[
-                styles.dot,
-                {
-                  width: index === step ? 18 : 7,
-                  backgroundColor: index === step ? tokens.accent : `${tokens.textMuted}55`,
-                },
-              ]}
-            />
-          ))}
+      <View style={[styles.footer, { backgroundColor: tokens.bg, paddingBottom: footerBottomInset }]}>
+        <View style={styles.bottomBar}>
+          <View style={styles.dots}>
+            {STEPS.map((item, index) => (
+              <View
+                key={item.key}
+                style={[
+                  styles.dot,
+                  {
+                    width: index === step ? 18 : 7,
+                    backgroundColor: index === step ? tokens.accent : `${tokens.textMuted}55`,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+
+          {showBack ? (
+            <AnimatedPressable
+              containerStyle={[styles.backBtnWrap, { opacity: busy ? 0.55 : 1 }]}
+              style={[styles.backBtn, { borderColor: tokens.border }]}
+              onPress={handleBack}
+              disabled={busy}
+              hitSlop={8}
+            >
+              <Text style={[styles.backText, { color: tokens.text }]}>{MESSAGES.ui.onboarding.back}</Text>
+            </AnimatedPressable>
+          ) : <View style={styles.backSpacer} />}
         </View>
 
-        {showBack ? (
-          <Pressable style={[styles.backBtn, { borderColor: tokens.border }]} onPress={handleBack} disabled={busy}>
-            <Text style={[styles.backText, { color: tokens.text }]}>{MESSAGES.ui.onboarding.back}</Text>
-          </Pressable>
-        ) : <View style={styles.backSpacer} />}
+        <AnimatedPressable
+          containerStyle={styles.primaryBtnWrap}
+          style={[
+            styles.primaryBtn,
+            { backgroundColor: tokens.accent, opacity: busy ? 0.55 : 1 },
+          ]}
+          onPress={() => void handlePrimary()}
+          disabled={busy}
+          accessibilityRole='button'
+          hitSlop={8}
+        >
+          <Text style={[styles.primaryText, { color: tokens.accentText }]}>
+            {busy ? MESSAGES.ui.onboarding.wait : getPrimaryLabel}
+          </Text>
+        </AnimatedPressable>
+
+        {showSecondaryLater ? (
+          <AnimatedPressable
+            containerStyle={styles.laterBtnWrap}
+            style={[styles.laterBtn, { opacity: busy ? 0.55 : 1 }]}
+            onPress={nextStep}
+            disabled={busy}
+            hitSlop={8}
+          >
+            <Text style={[styles.laterText, { color: tokens.textMuted }]}>{MESSAGES.ui.onboarding.later}</Text>
+          </AnimatedPressable>
+        ) : null}
       </View>
-
-      <Pressable
-        style={[
-          styles.primaryBtn,
-          { backgroundColor: tokens.accent, opacity: busy ? 0.55 : 1 },
-        ]}
-        onPress={() => void handlePrimary()}
-        disabled={busy}
-      >
-        <Text style={[styles.primaryText, { color: tokens.accentText }]}>{busy ? MESSAGES.ui.onboarding.wait : getPrimaryLabel}</Text>
-      </Pressable>
-
-      {showSecondaryLater ? (
-        <Pressable style={styles.laterBtn} onPress={nextStep} disabled={busy}>
-          <Text style={[styles.laterText, { color: tokens.textMuted }]}>{MESSAGES.ui.onboarding.later}</Text>
-        </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -324,10 +364,21 @@ const styles = StyleSheet.create({
   slidesList: {
     flex: 1,
   },
+  footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 30,
+    elevation: 12,
+    paddingTop: 8,
+  },
   skipTop: {
     position: 'absolute',
     right: 20,
     zIndex: 20,
+  },
+  skipTopInner: {
     padding: 8,
   },
   skipTopText: {
@@ -421,6 +472,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  backBtnWrap: {
+    minWidth: 72,
+  },
   backText: {
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
@@ -429,22 +483,26 @@ const styles = StyleSheet.create({
     width: 72,
   },
   primaryBtn: {
-    marginHorizontal: 24,
-    marginTop: 12,
     minHeight: 50,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  primaryBtnWrap: {
+    marginHorizontal: 24,
+    marginTop: 12,
   },
   primaryText: {
     fontSize: 14,
     fontFamily: 'Inter_600SemiBold',
   },
   laterBtn: {
-    marginTop: 10,
     minHeight: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  laterBtnWrap: {
+    marginTop: 10,
   },
   laterText: {
     fontSize: 12,

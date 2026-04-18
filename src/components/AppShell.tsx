@@ -13,6 +13,7 @@ interface AppShellProps {
   title: string;
   tokens: ThemeTokens;
   children: React.ReactNode;
+  allowNotifications?: boolean;
   themeOverride?: {
     bg: string;
     text: string;
@@ -21,12 +22,12 @@ interface AppShellProps {
   } | null;
 }
 
-export function AppShell({ title, tokens, children, themeOverride }: AppShellProps): React.JSX.Element {
+export function AppShell({ title, tokens, children, allowNotifications = true, themeOverride }: AppShellProps): React.JSX.Element {
   const unreadNotifications = useNfcStore((state) => state.unreadNotifications);
   const setUnreadNotifications = useNfcStore((state) => state.setUnreadNotifications);
   const isNotificationsOpen = useNfcStore((state) => state.isNotificationsOpen);
   const setNotificationsOpen = useNfcStore((state) => state.setNotificationsOpen);
-  const { items, unreadCount, isConnected, isLoading, markAllRead, refresh } = useNotifications();
+  const { items, unreadCount, isConnected, isLoading, markAllRead, refresh } = useNotifications({ enabled: allowNotifications });
 
   const handledNotificationsOpenRef = React.useRef(false);
 
@@ -35,7 +36,7 @@ export function AppShell({ title, tokens, children, themeOverride }: AppShellPro
   }, [setUnreadNotifications, unreadCount]);
 
   React.useEffect(() => {
-    if (!isNotificationsOpen) {
+    if (!allowNotifications || !isNotificationsOpen) {
       handledNotificationsOpenRef.current = false;
       return;
     }
@@ -49,19 +50,21 @@ export function AppShell({ title, tokens, children, themeOverride }: AppShellPro
     if (unreadCount > 0) {
       void markAllRead();
     }
-  }, [isNotificationsOpen, markAllRead, refresh, unreadCount]);
+  }, [allowNotifications, isNotificationsOpen, markAllRead, refresh, unreadCount]);
 
   return (
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: themeOverride?.bg ?? tokens.bg }]}>
       <View style={[styles.phoneFrame, { backgroundColor: themeOverride?.bg ?? tokens.phoneBg }]}>
         <View style={styles.topBar}>
           <Text style={[styles.title, { color: themeOverride?.text ?? tokens.text }]}>{title}</Text>
-          <Pressable onPress={() => setNotificationsOpen(true)} style={styles.notificationButton}>
-            <Bell size={22} color={themeOverride?.text ?? tokens.text} strokeWidth={1.5} />
-            {unreadNotifications > 0 ? (
-              <View style={[styles.dot, { backgroundColor: themeOverride?.accent ?? tokens.accent, borderColor: themeOverride?.bg ?? tokens.phoneBg }]} />
-            ) : null}
-          </Pressable>
+          {allowNotifications ? (
+            <Pressable onPress={() => setNotificationsOpen(true)} style={styles.notificationButton}>
+              <Bell size={22} color={themeOverride?.text ?? tokens.text} strokeWidth={1.5} />
+              {unreadNotifications > 0 ? (
+                <View style={[styles.dot, { backgroundColor: themeOverride?.accent ?? tokens.accent, borderColor: themeOverride?.bg ?? tokens.phoneBg }]} />
+              ) : null}
+            </Pressable>
+          ) : <View style={styles.notificationPlaceholder} />}
         </View>
 
         <View style={styles.content}>{children}</View>
@@ -69,15 +72,17 @@ export function AppShell({ title, tokens, children, themeOverride }: AppShellPro
         <BottomNav tokens={tokens} themeOverride={themeOverride} />
       </View>
 
-      <NotificationPanel
-        visible={isNotificationsOpen}
-        tokens={tokens}
-        items={items}
-        isConnected={isConnected}
-        isLoading={isLoading}
-        onClose={() => setNotificationsOpen(false)}
-        onMarkAllRead={markAllRead}
-      />
+      {allowNotifications ? (
+        <NotificationPanel
+          visible={isNotificationsOpen}
+          tokens={tokens}
+          items={items}
+          isConnected={isConnected}
+          isLoading={isLoading}
+          onClose={() => setNotificationsOpen(false)}
+          onMarkAllRead={markAllRead}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -91,10 +96,12 @@ const styles = StyleSheet.create({
   },
   topBar: {
     paddingHorizontal: 24,
-    paddingTop: 14,
+    paddingTop: 16,
+    paddingBottom: 6,
+    minHeight: 56,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   title: {
     fontSize: 23,
@@ -107,6 +114,10 @@ const styles = StyleSheet.create({
     height: 28,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  notificationPlaceholder: {
+    width: 28,
+    height: 28,
   },
   dot: {
     position: 'absolute',

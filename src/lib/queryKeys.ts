@@ -6,6 +6,7 @@ export const queryKeys = {
   directory: (query: string, page: number) => ['directory', query, page] as const,
   leaderboard: ['leaderboard'] as const,
   nfcHistory: ['nfc-history'] as const,
+  nfcLocalHistory: ['nfc-local-history'] as const,
   nfcTags: ['nfc-tags'] as const,
   wristband: ['wristband'] as const,
   wristbandOrders: ['wristband-orders'] as const,

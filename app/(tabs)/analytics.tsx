@@ -11,6 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { AppShell } from '@/components/AppShell';
+import { withProtectedTab } from '@/components/auth/withProtectedTab';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/ErrorState';
 import { ScreenTransition } from '@/components/ScreenTransition';
@@ -191,7 +192,7 @@ function AnimatedBar({
   return <Animated.View style={[styles.weekBar, { height: `${ratio * 100}%`, backgroundColor: color }, style]} />;
 }
 
-export default function AnalyticsPage(): React.JSX.Element {
+function AnalyticsPage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const { tokens } = useThemeContext();
   const { language } = useLanguageContext();
@@ -432,6 +433,8 @@ export default function AnalyticsPage(): React.JSX.Element {
     </ErrorBoundary>
   );
 }
+
+export default withProtectedTab(AnalyticsPage);
 
 const styles = StyleSheet.create({
   content: {
