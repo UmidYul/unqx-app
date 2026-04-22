@@ -17,28 +17,6 @@ export function validateEmail(value: string): string | null {
   return null;
 }
 
-export function validateFirstName(value: string): string | null {
-  const name = value.trim();
-  if (!name) {
-    return MESSAGES.validation.nameRequired;
-  }
-  if (name.length < 2) {
-    return MESSAGES.validation.nameTooShort;
-  }
-  if (name.length > 50) {
-    return MESSAGES.validation.nameTooLong;
-  }
-  return null;
-}
-
-export function validateCity(value: string): string | null {
-  const city = value.trim();
-  if (!city) {
-    return MESSAGES.validation.cityRequired;
-  }
-  return null;
-}
-
 export function validateLogin(value: string): string | null {
   const login = value.trim();
   if (!login) {

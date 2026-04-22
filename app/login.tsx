@@ -147,13 +147,6 @@ export default function LoginPage(): React.JSX.Element {
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.loginNoAccount}</Text>
-          <Pressable onPress={() => safePush('/register')}>
-            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.registerTitle}</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.footer}>
           <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.loginForgotPassword}</Text>
           <Pressable onPress={() => safePush('/forgot-password')}>
             <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.loginForgotPasswordAction}</Text>

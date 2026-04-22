@@ -52,8 +52,6 @@ export function buildApiUrl(path: string, query?: Record<string, ApiQueryValue>)
 
 export const API_PATHS = {
   auth: {
-    register: "/auth/register",
-    checkAvailability: "/auth/check-availability",
     login: "/auth/login",
     logout: "/auth/logout",
     me: "/auth/me",

@@ -36,20 +36,6 @@ export class AuthSessionError extends Error {
   }
 }
 
-export interface AvailabilityFieldResult {
-  provided: boolean;
-  valid: boolean;
-  available: boolean;
-  checked: boolean;
-  message: string;
-}
-
-export interface RegistrationAvailabilityResult {
-  supported: boolean;
-  login: AvailabilityFieldResult;
-  email: AvailabilityFieldResult;
-}
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -357,31 +343,6 @@ async function postLoginWithWafFallback<T>(input: {
   throw lastError instanceof Error ? lastError : new Error('Auth login failed');
 }
 
-function buildAvailabilityField(provided: boolean): AvailabilityFieldResult {
-  return {
-    provided,
-    valid: true,
-    available: true,
-    checked: false,
-    message: '',
-  };
-}
-
-function normalizeAvailabilityField(raw: unknown, provided: boolean): AvailabilityFieldResult {
-  const field = buildAvailabilityField(provided);
-  if (!raw || typeof raw !== 'object') {
-    return field;
-  }
-
-  const value = raw as Record<string, unknown>;
-  if (typeof value.provided === 'boolean') field.provided = value.provided;
-  if (typeof value.valid === 'boolean') field.valid = value.valid;
-  if (typeof value.available === 'boolean') field.available = value.available;
-  if (typeof value.checked === 'boolean') field.checked = value.checked;
-  if (typeof value.message === 'string') field.message = value.message;
-  return field;
-}
-
 function extractEmailFromPayload(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') {
     return undefined;
@@ -425,49 +386,6 @@ async function markSignedOutSession(): Promise<void> {
   await setSignedFlag(false);
   await storageDeleteItem(AUTH_USER_ID_KEY);
   emitAuthSignedOut();
-}
-
-export async function checkRegistrationAvailability(input: {
-  login?: string;
-  email?: string;
-}): Promise<RegistrationAvailabilityResult> {
-  const login = String(input.login ?? '').trim();
-  const email = String(input.email ?? '').trim().toLowerCase();
-  const hasLogin = Boolean(login);
-  const hasEmail = Boolean(email);
-
-  const defaults: RegistrationAvailabilityResult = {
-    supported: true,
-    login: buildAvailabilityField(hasLogin),
-    email: buildAvailabilityField(hasEmail),
-  };
-
-  if (!hasLogin && !hasEmail) {
-    return defaults;
-  }
-
-  try {
-    const payload = await getAuthWithWafFallback<any>('/auth/check-availability', {
-      query: {
-        login: hasLogin ? login : undefined,
-        email: hasEmail ? email : undefined,
-      },
-    });
-
-    return {
-      supported: true,
-      login: normalizeAvailabilityField(payload?.login, hasLogin),
-      email: normalizeAvailabilityField(payload?.email, hasEmail),
-    };
-  } catch (error) {
-    if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
-      return {
-        ...defaults,
-        supported: false,
-      };
-    }
-    throw toAuthError(error);
-  }
 }
 
 function applySentryUserFromPayload(payload: unknown): boolean {
@@ -561,82 +479,6 @@ export async function loginWithApi(
         email: extractEmailFromPayload(error.details),
       };
     }
-    throw toAuthError(error);
-  }
-}
-
-export async function registerWithApi(input: {
-  firstName: string;
-  city: string;
-  login: string;
-  email?: string | null;
-  password: string;
-  confirmPassword: string;
-}): Promise<{ signedIn: boolean; message?: string; email?: string }> {
-  try {
-    const payload = await postAuthWithWafFallback<any>('/auth/register', input);
-    const hasEmail = Boolean(String(input.email ?? '').trim());
-    const redirectTo = String(payload?.redirectTo ?? '').trim().toLowerCase();
-    const token = await persistAuth(payload);
-    if (token || payload?.user || payload?.authenticated === true) {
-      const registerUserId = String(payload?.user?.id ?? '').trim() || null;
-      await markSignedInSession(registerUserId);
-      if (!applySentryUserFromPayload(payload)) {
-        await syncSentryUserFromApi();
-      }
-      return { signedIn: true };
-    }
-
-    // Some deployments return register success without auto-login cookie.
-    if (payload?.ok === true) {
-      const sessionReady = await hasAuthenticatedSession();
-      if (sessionReady) {
-        await markSignedInSession();
-        await syncSentryUserFromApi();
-        return { signedIn: true };
-      }
-
-      const loginResult = await loginWithApi(input.login, input.password).catch(() => null);
-      if (loginResult && !loginResult.requiresVerification) {
-        return { signedIn: true };
-      }
-      if (loginResult?.requiresVerification) {
-        await markSignedOutSession();
-        return {
-          signedIn: false,
-          message: loginResult.message ?? MESSAGES.auth.unverifiedEmail,
-          email: loginResult.email ?? (input.email ?? undefined),
-        };
-      }
-
-      // Some deployments create the account first, then allow login slightly later.
-      if (!hasEmail) {
-        await new Promise((resolve) => {
-          setTimeout(resolve, 250);
-        });
-        const retryLoginResult = await loginWithApi(input.login, input.password).catch(() => null);
-        if (retryLoginResult && !retryLoginResult.requiresVerification) {
-          return { signedIn: true };
-        }
-      }
-    }
-
-    if (hasEmail && redirectTo.includes('verify-email')) {
-      await markSignedOutSession();
-      return {
-        signedIn: false,
-        message: payload?.message || MESSAGES.auth.registerDoneVerify,
-        email: input.email ?? undefined,
-      };
-    }
-
-    await markSignedOutSession();
-    return {
-      signedIn: false,
-      message: payload?.message || (hasEmail ? MESSAGES.auth.registerDoneVerify : MESSAGES.auth.registerDoneLogin),
-      email: input.email ?? undefined,
-    };
-  } catch (error) {
     throw toAuthError(error);
   }
 }

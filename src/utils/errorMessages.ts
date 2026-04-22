@@ -40,8 +40,8 @@ const API_CODE_MESSAGES: Record<string, { ru: string; uz: string }> = {
     uz: "Akkaunt o'chirilgan. Qo'llab-quvvatlash xizmatiga murojaat qiling",
   },
   ACCOUNT_DELETED: {
-    ru: 'Аккаунт удалён. Зарегистрируйтесь заново',
-    uz: "Akkaunt o'chirilgan. Qayta ro'yxatdan o'ting",
+    ru: 'Аккаунт удалён. Обратитесь в поддержку',
+    uz: "Akkaunt o'chirilgan. Qo'llab-quvvatlash xizmatiga murojaat qiling",
   },
   ACCOUNT_DEACTIVATED: {
     ru: 'Аккаунт деактивирован. Восстановите его через email',
