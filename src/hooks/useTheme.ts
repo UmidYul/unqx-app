@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { resolveAppDesign } from '@/design/appDesign';
 import { storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { ThemeMode } from '@/types';
 import { DARK_TOKENS, LIGHT_TOKENS, getUzbekistanHour, resolveThemeByHour } from '@/theme/tokens';
@@ -27,6 +28,7 @@ export interface UseThemeResult {
   theme: ThemeMode;
   autoTheme: boolean;
   tokens: typeof LIGHT_TOKENS;
+  design: ReturnType<typeof resolveAppDesign>;
   setTheme: (mode: ThemeMode) => void;
   setAutoTheme: (enabled: boolean) => void;
 }
@@ -101,11 +103,13 @@ export function useTheme(): UseThemeResult {
   }, []);
 
   const tokens = useMemo(() => (theme === 'dark' ? DARK_TOKENS : LIGHT_TOKENS), [theme]);
+  const design = useMemo(() => resolveAppDesign(theme), [theme]);
 
   return {
     theme,
     autoTheme,
     tokens,
+    design,
     setTheme,
     setAutoTheme,
   };

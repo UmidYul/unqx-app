@@ -4,7 +4,11 @@ import { AppState, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
 import { useFonts } from 'expo-font';
+import { CormorantGaramond_600SemiBold, CormorantGaramond_700Bold } from '@expo-google-fonts/cormorant-garamond';
+import { DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
+import { Manrope_600SemiBold } from '@expo-google-fonts/manrope';
+import { Sora_500Medium } from '@expo-google-fonts/sora';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import Toast from 'react-native-toast-message';
@@ -260,9 +264,14 @@ function RootNavigator(): React.JSX.Element {
 
 function RootLayout(): React.JSX.Element | null {
   const [fontsLoaded] = useFonts({
+    CormorantGaramond_600SemiBold,
+    CormorantGaramond_700Bold,
+    DMSerifDisplay_400Regular,
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
+    Manrope_600SemiBold,
+    Sora_500Medium,
   });
 
   if (!fontsLoaded) {

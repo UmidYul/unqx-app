@@ -1,9 +1,10 @@
 import React from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Redirect } from 'expo-router';
-import { ArrowLeft, Eye, EyeOff } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Eye, EyeOff } from 'lucide-react-native';
 
+import { AuthScaffold } from '@/components/auth/AuthScaffold';
+import { Button } from '@/components/ui/Button';
 import { AuthLoadingScreen } from '@/components/AuthLoadingScreen';
 import { MESSAGES } from '@/constants/messages';
 import { useAuthStatus } from '@/hooks/useAuthStatus';
@@ -17,7 +18,6 @@ export default function LoginPage(): React.JSX.Element {
   const { safePush, safeReplace } = useThrottledNavigation();
   const { tokens } = useThemeContext();
   const { ready, signedIn } = useAuthStatus();
-  const insets = useSafeAreaInsets();
 
   const [login, setLogin] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -75,21 +75,23 @@ export default function LoginPage(): React.JSX.Element {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[styles.container, { backgroundColor: tokens.bg }]}
+      style={[styles.container, { backgroundColor: tokens.phoneBg }]}
     >
-      <Pressable
-        onPress={() => safeReplace('/(tabs)/nfc')}
-        style={[styles.backButton, { top: Math.max(insets.top + 10, 22) }]}
+      <AuthScaffold
+        tokens={tokens}
+        eyebrow='UNQX / Login'
+        title={MESSAGES.ui.auth.loginTitle}
+        subtitle={MESSAGES.ui.auth.loginSubtitle}
+        topAction={{ label: 'Назад к NFC', onPress: () => safeReplace('/(tabs)/nfc') }}
+        footer={(
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.loginForgotPassword}</Text>
+            <Pressable onPress={() => safePush('/forgot-password')}>
+              <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.loginForgotPasswordAction}</Text>
+            </Pressable>
+          </View>
+        )}
       >
-        <ArrowLeft size={18} strokeWidth={1.7} color={tokens.text} />
-        <Text style={[styles.backButtonText, { color: tokens.text }]}>Назад к NFC</Text>
-      </Pressable>
-
-      <View style={styles.body}>
-        <Text style={[styles.kicker, { color: tokens.textMuted }]}>UNQX</Text>
-        <Text style={[styles.title, { color: tokens.text }]}>{MESSAGES.ui.auth.loginTitle}</Text>
-        <Text style={[styles.subtitle, { color: tokens.textSub }]}>{MESSAGES.ui.auth.loginSubtitle}</Text>
-
         <View style={styles.form}>
           <TextInput
             value={login}
@@ -124,35 +126,19 @@ export default function LoginPage(): React.JSX.Element {
 
           {error ? <Text style={[styles.error, { color: tokens.red }]}>{error}</Text> : null}
 
-          <Pressable
-            onPress={() => void submit()}
-            disabled={loading}
-            style={[
-              styles.submit,
-              { backgroundColor: tokens.accent, opacity: loading ? 0.5 : 1 },
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator color={tokens.accentText} />
-            ) : (
-              <Text style={[styles.submitText, { color: tokens.accentText }]}>{MESSAGES.ui.auth.loginSubmit}</Text>
-            )}
-          </Pressable>
+          <Button tokens={tokens} label={MESSAGES.ui.auth.loginSubmit} onPress={() => void submit()} loading={loading} size='lg' />
 
           {verificationEmail ? (
-            <Pressable style={[styles.secondary, { borderColor: tokens.border }]} onPress={() => safePush(`/verify-email?email=${encodeURIComponent(verificationEmail)}`)}>
-              <Text style={[styles.secondaryText, { color: tokens.text }]}>{MESSAGES.ui.auth.loginVerifyEmail}</Text>
-            </Pressable>
+            <Button
+              tokens={tokens}
+              label={MESSAGES.ui.auth.loginVerifyEmail}
+              onPress={() => safePush(`/verify-email?email=${encodeURIComponent(verificationEmail)}`)}
+              variant='secondary'
+              size='lg'
+            />
           ) : null}
         </View>
-
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.loginForgotPassword}</Text>
-          <Pressable onPress={() => safePush('/forgot-password')}>
-            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.loginForgotPasswordAction}</Text>
-          </Pressable>
-        </View>
-      </View>
+      </AuthScaffold>
     </KeyboardAvoidingView>
   );
 }
@@ -161,60 +147,25 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  body: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  backButton: {
-    position: 'absolute',
-    left: 24,
-    zIndex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  backButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-  },
-  kicker: {
-    fontSize: 11,
-    letterSpacing: 2.4,
-    textTransform: 'uppercase',
-    fontFamily: 'Inter_500Medium',
-  },
-  title: {
-    marginTop: 10,
-    fontSize: 40,
-    lineHeight: 40,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-  },
   form: {
-    marginTop: 26,
-    gap: 10,
+    gap: 12,
   },
   input: {
-    minHeight: 48,
+    minHeight: 56,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderRadius: 18,
+    paddingHorizontal: 16,
     fontSize: 14,
     fontFamily: 'Inter_400Regular',
   },
   passwordWrap: {
-    minHeight: 48,
+    minHeight: 56,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 14,
-    paddingRight: 10,
+    paddingLeft: 16,
+    paddingRight: 12,
   },
   passwordInput: {
     flex: 1,
@@ -224,43 +175,22 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   eyeBtn: {
-    width: 28,
-    height: 28,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   error: {
-    marginTop: 4,
+    marginTop: 2,
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
   },
-  submit: {
-    marginTop: 4,
-    minHeight: 50,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitText: {
-    fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  secondary: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryText: {
-    fontSize: 13,
-    fontFamily: 'Inter_500Medium',
-  },
   footer: {
-    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
+    flexWrap: 'wrap',
   },
   footerText: {
     fontSize: 12,

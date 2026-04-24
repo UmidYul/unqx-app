@@ -1,6 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { AuthScaffold } from '@/components/auth/AuthScaffold';
+import { Button } from '@/components/ui/Button';
 import { MESSAGES } from '@/constants/messages';
 import { useThrottledNavigation } from '@/hooks/useThrottledNavigation';
 import { AuthSessionError, forgotPasswordWithApi } from '@/services/authSession';
@@ -43,18 +45,28 @@ export default function ForgotPasswordPage(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [email]);
+  }, [email, safePush]);
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[styles.container, { backgroundColor: tokens.bg }]}
+      style={[styles.container, { backgroundColor: tokens.phoneBg }]}
     >
-      <View style={styles.body}>
-        <Text style={[styles.kicker, { color: tokens.textMuted }]}>UNQX</Text>
-        <Text style={[styles.title, { color: tokens.text }]}>{MESSAGES.ui.auth.forgotPasswordTitle}</Text>
-        <Text style={[styles.subtitle, { color: tokens.textSub }]}>{MESSAGES.ui.auth.forgotPasswordSubtitle}</Text>
-
+      <AuthScaffold
+        tokens={tokens}
+        eyebrow='UNQX / Recovery'
+        title={MESSAGES.ui.auth.forgotPasswordTitle}
+        subtitle={MESSAGES.ui.auth.forgotPasswordSubtitle}
+        topAction={{ label: 'Назад к входу', onPress: () => safePush('/login') }}
+        footer={(
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.forgotRemembered}</Text>
+            <Pressable onPress={() => safePush('/login')}>
+              <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.forgotRememberedAction}</Text>
+            </Pressable>
+          </View>
+        )}
+      >
         <View style={styles.form}>
           <TextInput
             value={email}
@@ -73,32 +85,19 @@ export default function ForgotPasswordPage(): React.JSX.Element {
           {error ? <Text style={[styles.error, { color: tokens.red }]}>{error}</Text> : null}
           {info ? <Text style={[styles.info, { color: tokens.green }]}>{info}</Text> : null}
 
-          <Pressable
-            onPress={() => void submit()}
-            disabled={loading}
-            style={[styles.submit, { backgroundColor: tokens.accent, opacity: loading ? 0.5 : 1 }]}
-          >
-            {loading ? (
-              <ActivityIndicator color={tokens.accentText} />
-            ) : (
-              <Text style={[styles.submitText, { color: tokens.accentText }]}>{MESSAGES.ui.auth.forgotSubmitCode}</Text>
-            )}
-          </Pressable>
+          <Button tokens={tokens} label={MESSAGES.ui.auth.forgotSubmitCode} onPress={() => void submit()} loading={loading} size='lg' />
 
           {submittedEmail ? (
-            <Pressable style={[styles.secondary, { borderColor: tokens.border }]} onPress={() => safePush(`/reset-password?email=${encodeURIComponent(submittedEmail)}`)}>
-              <Text style={[styles.secondaryText, { color: tokens.text }]}>{MESSAGES.ui.auth.forgotHaveCode}</Text>
-            </Pressable>
+            <Button
+              tokens={tokens}
+              label={MESSAGES.ui.auth.forgotHaveCode}
+              onPress={() => safePush(`/reset-password?email=${encodeURIComponent(submittedEmail)}`)}
+              variant='secondary'
+              size='lg'
+            />
           ) : null}
         </View>
-
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.forgotRemembered}</Text>
-          <Pressable onPress={() => safePush('/login')}>
-            <Text style={[styles.footerLink, { color: tokens.text }]}>{MESSAGES.ui.auth.forgotRememberedAction}</Text>
-          </Pressable>
-        </View>
-      </View>
+      </AuthScaffold>
     </KeyboardAvoidingView>
   );
 }
@@ -107,77 +106,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  body: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  kicker: {
-    fontSize: 11,
-    letterSpacing: 2.4,
-    textTransform: 'uppercase',
-    fontFamily: 'Inter_500Medium',
-  },
-  title: {
-    marginTop: 10,
-    fontSize: 36,
-    lineHeight: 38,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-  },
   form: {
-    marginTop: 24,
-    gap: 10,
+    gap: 12,
   },
   input: {
-    minHeight: 48,
+    minHeight: 56,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderRadius: 18,
+    paddingHorizontal: 16,
     fontSize: 14,
     fontFamily: 'Inter_400Regular',
   },
   error: {
-    marginTop: 4,
+    marginTop: 2,
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
   },
   info: {
-    marginTop: 4,
+    marginTop: 2,
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
   },
-  submit: {
-    marginTop: 4,
-    minHeight: 50,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitText: {
-    fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  secondary: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryText: {
-    fontSize: 13,
-    fontFamily: 'Inter_500Medium',
-  },
   footer: {
-    marginTop: 20,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
+    flexWrap: 'wrap',
   },
   footerText: {
     fontSize: 12,

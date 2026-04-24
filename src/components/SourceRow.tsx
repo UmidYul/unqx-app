@@ -4,6 +4,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTimi
 
 import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { ThemeTokens, TapSource } from '@/types';
+import { isDarkThemeTokens } from '@/theme/tokens';
 import { getSourceConfig, resolveSource } from '@/utils/sourceConfig';
 
 interface SourceRowProps {
@@ -19,7 +20,7 @@ export function SourceRow({ source, count, percent, index, tokens }: SourceRowPr
   const resolved = resolveSource(source);
   const sourceConfig = React.useMemo(() => getSourceConfig(tokens, language), [tokens, language]);
   const config = sourceConfig[resolved];
-  const isDark = tokens.text === '#f5f5f5';
+  const isDark = isDarkThemeTokens(tokens);
   const trackColor = isDark ? 'rgba(255,255,255,0.14)' : `${tokens.border}22`;
   const fillColor = isDark ? 'rgba(232,223,200,0.9)' : config.color;
   const progress = useSharedValue(0);

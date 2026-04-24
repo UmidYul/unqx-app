@@ -10,11 +10,14 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { BarChart2, Bell, CheckCircle2, LayoutGrid, PenLine, ScanLine, Wifi } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
+import { resolveShadowStyle } from '@/design/appDesign';
 import { useNFC } from '@/hooks/useNFC';
 import { requestPushPermission } from '@/hooks/usePushNotifications';
 import { getBrandLogoSource } from '@/lib/brandAssets';
@@ -71,23 +74,16 @@ export function OnboardingScreen({
   onStepChange,
   onComplete,
 }: OnboardingScreenProps): React.JSX.Element {
-  const { theme } = useThemeContext();
+  const initialIndex = React.useMemo(() => clampStep(initialStep), [initialStep]);
+  const { theme, design } = useThemeContext();
   const isDark = theme === 'dark';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { isSupported: nfcSupported, requestPermission: requestNfcPermission } = useNFC();
   const STEPS = React.useMemo(() => buildSteps(), []);
   const listRef = React.useRef<FlatList<StepItem> | null>(null);
-  const [step, setStep] = React.useState(clampStep(initialStep));
+  const [step, setStep] = React.useState(initialIndex);
   const [busy, setBusy] = React.useState(false);
-
-  React.useEffect(() => {
-    const index = clampStep(initialStep);
-    setStep(index);
-    requestAnimationFrame(() => {
-      listRef.current?.scrollToIndex({ index, animated: false });
-    });
-  }, [initialStep]);
 
   React.useEffect(() => {
     onStepChange(step);
@@ -222,36 +218,60 @@ export function OnboardingScreen({
   const renderItem = React.useCallback(
     ({ item }: ListRenderItemInfo<StepItem>) => (
       <View style={[styles.slide, { width, paddingBottom: slideBottomInset }]}>
-        <View style={[styles.iconWrap, { backgroundColor: `${tokens.accent}15`, borderColor: `${tokens.accent}45` }]}>
-          {item.key === 'welcome' ? (
-            <Image source={getBrandLogoSource(isDark)} style={styles.brandLogo} resizeMode='contain' />
-          ) : (
-            <item.Icon size={72} color={item.key === 'done' ? tokens.text : tokens.accent} strokeWidth={1.5} />
-          )}
-        </View>
+        <View
+          style={[
+            styles.slideCard,
+            {
+              backgroundColor: design.elevatedSurface.backgroundColor,
+              borderColor: design.elevatedSurface.borderColor,
+            },
+            resolveShadowStyle(design.elevatedSurface),
+          ]}
+        >
+          <LinearGradient colors={tokens.panelGradient} style={StyleSheet.absoluteFill} />
 
-        <Text style={[styles.title, { color: tokens.text }]}>{item.title}</Text>
-        <Text style={[styles.subtitle, { color: tokens.textMuted }]}>{item.text}</Text>
-
-        {item.key === 'how' ? (
-          <View style={[styles.howList, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
-            <HowRow Icon={ScanLine} tokens={tokens} text={MESSAGES.ui.onboarding.howScan} />
-            <HowRow Icon={PenLine} tokens={tokens} text={MESSAGES.ui.onboarding.howWrite} />
-            <HowRow Icon={BarChart2} tokens={tokens} text={MESSAGES.ui.onboarding.howAnalytics} />
-            <HowRow Icon={LayoutGrid} tokens={tokens} text={MESSAGES.ui.onboarding.howWidget} />
+          <View style={[styles.iconWrap, { backgroundColor: `${tokens.accent}15`, borderColor: `${tokens.accent}45` }]}>
+            {item.key === 'welcome' ? (
+              <Image source={getBrandLogoSource(isDark)} style={styles.brandLogo} resizeMode='contain' />
+            ) : (
+              <item.Icon size={72} color={item.key === 'done' ? tokens.text : tokens.accent} strokeWidth={1.5} />
+            )}
           </View>
-        ) : null}
+
+          <Text style={[styles.title, { color: tokens.text }]}>{item.title}</Text>
+          <Text style={[styles.subtitle, { color: tokens.textMuted }]}>{item.text}</Text>
+
+          {item.key === 'how' ? (
+            <View style={[styles.howList, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+              <HowRow Icon={ScanLine} tokens={tokens} text={MESSAGES.ui.onboarding.howScan} />
+              <HowRow Icon={PenLine} tokens={tokens} text={MESSAGES.ui.onboarding.howWrite} />
+              <HowRow Icon={BarChart2} tokens={tokens} text={MESSAGES.ui.onboarding.howAnalytics} />
+              <HowRow Icon={LayoutGrid} tokens={tokens} text={MESSAGES.ui.onboarding.howWidget} />
+            </View>
+          ) : null}
+        </View>
       </View>
     ),
-    [isDark, slideBottomInset, tokens, width],
+    [design.elevatedSurface, isDark, slideBottomInset, tokens, width],
   );
 
   return (
     <View style={[styles.container, { backgroundColor: tokens.bg }]}>
+      <LinearGradient colors={[design.backdropStart, design.backdropEnd]} style={StyleSheet.absoluteFill} />
+      <View pointerEvents='none' style={StyleSheet.absoluteFill}>
+        <Svg viewBox='0 0 400 900' preserveAspectRatio='none' style={StyleSheet.absoluteFill}>
+          <Circle cx='332' cy='126' r='170' fill={design.glowTint} />
+          <Circle cx='54' cy='790' r='194' fill={design.backdropAccent} />
+          <Path d='M-14 182C80 156 168 160 258 182C322 198 366 200 414 190' stroke={tokens.overlayLine} strokeWidth='1.2' fill='none' />
+          <Path d='M-8 428C88 402 172 404 262 430C324 446 370 450 414 442' stroke={tokens.overlaySoft} strokeWidth='1.2' fill='none' />
+          <Path d='M-8 650C86 624 174 628 266 652C328 668 372 674 414 664' stroke={tokens.overlaySoft} strokeWidth='1.2' fill='none' />
+        </Svg>
+      </View>
+
       {step < 4 ? (
         <AnimatedPressable
           containerStyle={[styles.skipTop, { top: insets.top + 10 }]}
-          style={styles.skipTopInner}
+          style={[styles.skipTopInner, { backgroundColor: tokens.glass, borderColor: tokens.glassBorder }]}
           onPress={handleSkip}
           hitSlop={8}
         >
@@ -266,6 +286,7 @@ export function OnboardingScreen({
         horizontal
         pagingEnabled
         bounces={false}
+        initialScrollIndex={initialIndex}
         keyExtractor={(item) => item.key}
         renderItem={renderItem}
         showsHorizontalScrollIndicator={false}
@@ -276,7 +297,17 @@ export function OnboardingScreen({
         scrollEnabled={!busy}
       />
 
-      <View style={[styles.footer, { backgroundColor: tokens.bg, paddingBottom: footerBottomInset }]}>
+      <View style={[styles.footer, { backgroundColor: 'transparent', paddingBottom: footerBottomInset }]}>
+        <View
+          style={[
+            styles.footerShell,
+            {
+              backgroundColor: design.floatingSurface.backgroundColor,
+              borderColor: design.floatingSurface.borderColor,
+            },
+            resolveShadowStyle(design.floatingSurface),
+          ]}
+        >
         <View style={styles.bottomBar}>
           <View style={styles.dots}>
             {STEPS.map((item, index) => (
@@ -333,6 +364,7 @@ export function OnboardingScreen({
             <Text style={[styles.laterText, { color: tokens.textMuted }]}>{MESSAGES.ui.onboarding.later}</Text>
           </AnimatedPressable>
         ) : null}
+        </View>
       </View>
     </View>
   );
@@ -372,6 +404,12 @@ const styles = StyleSheet.create({
     zIndex: 30,
     elevation: 12,
     paddingTop: 8,
+    paddingHorizontal: 16,
+  },
+  footerShell: {
+    borderWidth: 1,
+    borderRadius: 28,
+    paddingTop: 8,
   },
   skipTop: {
     position: 'absolute',
@@ -379,7 +417,12 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   skipTopInner: {
-    padding: 8,
+    minHeight: 38,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   skipTopText: {
     fontSize: 12,
@@ -389,8 +432,16 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingTop: 36,
+  },
+  slideCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 30,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    alignItems: 'center',
   },
   iconWrap: {
     width: 138,
@@ -424,7 +475,7 @@ const styles = StyleSheet.create({
     marginTop: 22,
     width: '100%',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 12,
     gap: 10,
@@ -466,7 +517,7 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     minHeight: 34,
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
     alignItems: 'center',
@@ -483,8 +534,8 @@ const styles = StyleSheet.create({
     width: 72,
   },
   primaryBtn: {
-    minHeight: 50,
-    borderRadius: 12,
+    minHeight: 54,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },

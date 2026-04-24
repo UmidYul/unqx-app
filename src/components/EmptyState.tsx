@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LucideIcon } from 'lucide-react-native';
 
 import { ThemeTokens } from '@/types';
+import { useThemeContext } from '@/theme/ThemeProvider';
+import { resolveShadowStyle } from '@/design/appDesign';
 
 interface EmptyStateProps {
   icon: LucideIcon;
@@ -16,9 +18,20 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ icon: Icon, title, subtitle, tokens, action }: EmptyStateProps): React.JSX.Element {
+  const { design } = useThemeContext();
+
   return (
-    <View style={styles.wrap}>
-      <View style={[styles.iconWrap, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+    <View
+      style={[
+        styles.wrap,
+        {
+          backgroundColor: design.elevatedSurface.backgroundColor,
+          borderColor: design.elevatedSurface.borderColor,
+        },
+        resolveShadowStyle(design.elevatedSurface),
+      ]}
+    >
+      <View style={[styles.iconWrap, { backgroundColor: tokens.pageTint, borderColor: tokens.border }]}>
         <Icon size={22} strokeWidth={1.5} color={tokens.textMuted} />
       </View>
       <Text style={[styles.title, { color: tokens.text }]}>{title}</Text>
@@ -38,15 +51,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+    paddingVertical: 24,
+    borderWidth: 1,
+    borderRadius: 28,
   },
   iconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   title: {
     fontSize: 16,
@@ -54,18 +70,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitle: {
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 12,
-    lineHeight: 18,
+    lineHeight: 19,
     fontFamily: 'Inter_400Regular',
     textAlign: 'center',
   },
   button: {
-    marginTop: 14,
-    minHeight: 40,
-    borderRadius: 10,
+    marginTop: 18,
+    minHeight: 44,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },

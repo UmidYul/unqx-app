@@ -84,7 +84,6 @@ export default function RootIndex(): React.JSX.Element {
   }, [onboarding]);
 
   const handleOnboardingStepChange = React.useCallback((step: number) => {
-    setOnboardingStep(step);
     void onboarding.setStep(step);
   }, [onboarding]);
 

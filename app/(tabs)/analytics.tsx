@@ -25,7 +25,7 @@ import { fetchAnalyticsDashboardLike } from '@/services/mobileApi';
 import { SourceStat } from '@/types';
 import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThemeContext } from '@/theme/ThemeProvider';
-import { getUzbekistanWeekday } from '@/theme/tokens';
+import { getUzbekistanWeekday, isDarkThemeTokens } from '@/theme/tokens';
 import { resolveSource } from '@/utils/sourceConfig';
 import { uniqueBy } from '@/utils/uniqueBy';
 
@@ -243,7 +243,7 @@ function AnalyticsPage(): React.JSX.Element {
   const cityStats = React.useMemo(() => uniqueBy(buildCityStats(analytics.geo, analytics.totalTaps), c => c.city.toLowerCase()), [analytics.geo, analytics.totalTaps]);
   const cityMax = React.useMemo(() => Math.max(...cityStats.map((item) => item.taps), 1), [cityStats]);
   const weekMax = Math.max(...analytics.weekTaps, 1);
-  const isDark = tokens.text === '#f5f5f5';
+  const isDark = isDarkThemeTokens(tokens);
   const weekTrackColor = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(17,17,17,0.10)';
   const weekBarMutedColor = isDark ? 'rgba(232,223,200,0.42)' : tokens.borderStrong;
   const cityTrackColor = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(17,17,17,0.12)';
@@ -313,7 +313,7 @@ function AnalyticsPage(): React.JSX.Element {
 
                 {showInitialSkeleton ? (
                   <>
-                    <View style={[styles.kpiCard, styles.skeletonCard, { borderColor: tokens.border }]}>
+                    <View style={[styles.kpiCard, styles.skeletonCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
                       <SkeletonBlock tokens={tokens} height={10} width={110} radius={6} />
                       <View style={styles.skeletonKpiRow}>
                         <View style={styles.skeletonKpiLeft}>
@@ -324,7 +324,7 @@ function AnalyticsPage(): React.JSX.Element {
                       </View>
                     </View>
 
-                    <View style={[styles.weekCard, styles.skeletonCard, { borderColor: tokens.border }]}>
+                    <View style={[styles.weekCard, styles.skeletonCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
                       <SkeletonBlock tokens={tokens} height={10} width={88} radius={6} />
                       <View style={styles.skeletonWeekRow}>
                         {Array.from({ length: 7 }).map((_, i) => (
@@ -338,7 +338,7 @@ function AnalyticsPage(): React.JSX.Element {
                     </View>
 
                     {Array.from({ length: 3 }).map((_, i) => (
-                      <View key={`city-sk-${i}`} style={[styles.cityRow, styles.skeletonCard, { borderColor: tokens.border }]}>
+                      <View key={`city-sk-${i}`} style={[styles.cityRow, styles.skeletonCard, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
                         <View style={styles.cityHeader}>
                           <SkeletonBlock tokens={tokens} height={12} width='42%' radius={6} />
                           <SkeletonBlock tokens={tokens} height={12} width={56} radius={6} />

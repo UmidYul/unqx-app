@@ -80,9 +80,9 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    minHeight: 52,
+    minHeight: 58,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },

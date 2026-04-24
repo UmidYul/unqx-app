@@ -1,13 +1,15 @@
 import React from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Switch, useWindowDimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Camera, Plus, Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CardThemeBackdrop } from '@/components/profile/CardThemeBackdrop';
 import { ProfileCard, ThemeTokens } from '@/types';
 import { BUTTON_ICONS, inferButtonIcon, normalizeButtonIconKey } from '@/components/profile/buttonIcons';
 import { normalizeButtonUrl } from '@/components/profile/normalizeButtonUrl';
-import { CardPreview } from '@/components/profile/CardPreview';
+import { CARD_THEME_OPTIONS, resolveProfileCardTheme } from '@/design/cardThemes';
 import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { runThrottled } from '@/utils/navigation';
@@ -27,19 +29,26 @@ interface CardEditorProps {
 const MAX_BUTTONS = 6;
 const MAX_BIO_LENGTH = 120;
 
-const THEME_OPTIONS: Array<{ id: string; label: string; swatch: string; premium?: boolean }> = [
-  { id: 'default_dark', label: 'Obsidian Noir', swatch: '#0a0a0a' },
-  { id: 'arctic', label: 'Glacier Platinum', swatch: '#d8e8f2', premium: true },
-  { id: 'linen', label: 'Imperial Linen', swatch: '#e9ddcb', premium: true },
-  { id: 'marble', label: 'Carrara Prestige', swatch: '#f8f8f8', premium: true },
-  { id: 'forest', label: 'Emerald Reserve', swatch: '#0e2010', premium: true },
-  { id: 'sage_luxe', label: 'Verdant Luxe', swatch: '#dbe7de', premium: true },
-  { id: 'midnight_obsidian', label: 'Midnight Obsidian', swatch: '#101827', premium: true },
-  { id: 'golden_noir', label: 'Noir Aureate', swatch: '#141a27', premium: true },
-  { id: 'aurora_codex', label: 'Aurora Scriptum', swatch: '#efe1c2', premium: true },
-  { id: 'nebula_glass', label: 'Liquid Glass', swatch: '#1c1c1e', premium: true },
-  { id: 'velours', label: 'Velours Luxe', swatch: '#2d0a12', premium: true },
-];
+function LinearThemePreview({ themeId }: { themeId: ProfileCard['theme'] }): React.JSX.Element {
+  const theme = resolveProfileCardTheme(themeId);
+
+  return (
+    <View style={[styles.themePreviewInner, { borderRadius: Math.max(12, theme.cardRadius - 6) }]}>
+      <LinearGradient colors={theme.cardGradient as [string, string]} style={StyleSheet.absoluteFill} />
+      <CardThemeBackdrop theme={theme} rounded={Math.max(12, theme.cardRadius - 6)} />
+      {theme.topLineGradient && theme.topLineGradient.length >= 3 ? (
+        <LinearGradient colors={theme.topLineGradient as [string, string, string]} style={styles.themePreviewLine} />
+      ) : (
+        <View style={[styles.themePreviewLine, { backgroundColor: theme.topLineColor }]} />
+      )}
+      <View style={[styles.themePreviewAvatar, { backgroundColor: theme.avatarBg, borderColor: theme.avatarBorder }]} />
+      <View style={styles.themePreviewText}>
+        <View style={[styles.themePreviewName, { backgroundColor: theme.nameColor }]} />
+        <View style={[styles.themePreviewRole, { backgroundColor: theme.roleColor }]} />
+      </View>
+    </View>
+  );
+}
 
 export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, onPreview, onSave }: CardEditorProps): React.JSX.Element {
   const { language } = useLanguageContext();
@@ -302,7 +311,7 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
             <Text style={[styles.avatarHint, { color: tokens.textMuted }]}>{text.avatarHint}</Text>
           </View>
 
-          <View style={styles.block}>
+          <View style={[styles.block, { backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }]}>
             <Text style={[styles.blockLabel, { color: tokens.textMuted }]}>{text.mainInfo}</Text>
             {/* Имя (обязательно) */}
             <View style={styles.fieldBlock}>
@@ -424,7 +433,7 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
           </View>
 
           {/* Брендинг */}
-          <View style={styles.block}>
+          <View style={[styles.block, { backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Switch
                 value={local.showBranding}
@@ -436,11 +445,12 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
             </View>
           </View>
 
-          <View style={styles.block}>
+          <View style={[styles.block, { backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }]}>
             <Text style={[styles.blockLabel, { color: tokens.textMuted }]}>{text.cardTheme}</Text>
             <View style={styles.themeGrid}>
-              {THEME_OPTIONS.map((option) => {
+              {CARD_THEME_OPTIONS.map((option) => {
                 const locked = option.premium && String(userPlan).toLowerCase() !== 'premium';
+                const themeSpec = resolveProfileCardTheme(option.id);
                 return (
                   <Pressable
                     key={option.id}
@@ -455,23 +465,18 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
                     ]}
                     disabled={locked}
                   >
-                    <View style={[styles.themeSwatch, { backgroundColor: option.swatch, borderColor: tokens.border, position: 'relative' }]}
-                    >
-                      {locked && (
-                        <Text style={{
-                          position: 'absolute',
-                          left: 0, right: 0, top: 0, bottom: 0,
-                          textAlign: 'center',
-                          textAlignVertical: 'center',
-                          color: tokens.textMuted,
-                          fontSize: 13,
-                          fontWeight: 'bold',
-                        }}>🔒</Text>
-                      )}
+                    <View style={styles.themePreview}>
+                      <LinearThemePreview themeId={option.id} />
+                      {locked ? <View style={[styles.themeLock, { backgroundColor: 'rgba(0,0,0,0.28)' }]}><Text style={styles.themeLockText}>🔒</Text></View> : null}
                     </View>
-                    <Text style={[styles.themeText, { color: local.theme === option.id ? tokens.text : tokens.textMuted }]} numberOfLines={1}>
-                      {option.label}
-                    </Text>
+                    <View style={styles.themeMeta}>
+                      <Text style={[styles.themeText, { color: local.theme === option.id ? tokens.text : tokens.textMuted }]} numberOfLines={1}>
+                        {option.label}
+                      </Text>
+                      <Text style={[styles.themeSubtext, { color: themeSpec.roleColor }]} numberOfLines={1}>
+                        {themeSpec.premium ? 'Premium theme' : 'Core theme'}
+                      </Text>
+                    </View>
                   </Pressable>
                 );
               })}
@@ -481,7 +486,7 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
             )}
           </View>
 
-          <View style={styles.block}>
+          <View style={[styles.block, { backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }]}>
             <View style={styles.buttonsHead}>
               <Text style={[styles.blockLabel, { color: tokens.textMuted }]}>{`${text.buttons} (${local.buttons.filter((b: ProfileCard['buttons'][number]) => b.label).length}/6)`}</Text>
               {local.buttons.length < 6 ? (
@@ -656,6 +661,9 @@ const styles = StyleSheet.create({
   },
   block: {
     gap: 10,
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
   },
   blockLabel: {
     fontSize: 10,
@@ -679,31 +687,79 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
   },
   themeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   themeBtn: {
-    width: '48%',
-    minHeight: 44,
-    borderRadius: 10,
+    width: '100%',
+    minHeight: 88,
+    borderRadius: 18,
     borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
   },
-  themeSwatch: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+  themePreview: {
+    width: 76,
+    height: 66,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  themePreviewInner: {
+    flex: 1,
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  themePreviewLine: {
+    height: 2,
+    borderRadius: 999,
+    width: '56%',
+    marginBottom: 8,
+  },
+  themePreviewAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 1,
   },
+  themePreviewText: {
+    marginTop: 8,
+    gap: 4,
+  },
+  themePreviewName: {
+    width: '72%',
+    height: 5,
+    borderRadius: 999,
+    opacity: 0.9,
+  },
+  themePreviewRole: {
+    width: '48%',
+    height: 4,
+    borderRadius: 999,
+    opacity: 0.55,
+  },
+  themeMeta: {
+    flex: 1,
+  },
   themeText: {
-    fontSize: 12,
-    fontFamily: 'Inter_500Medium',
-    textAlignVertical: 'center',
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  themeSubtext: {
+    marginTop: 4,
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+  },
+  themeLock: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  themeLockText: {
+    fontSize: 14,
   },
   buttonsHead: {
     flexDirection: 'row',

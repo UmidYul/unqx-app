@@ -1,9 +1,40 @@
 export type ThemeMode = 'light' | 'dark';
 
+export interface SurfacePreset {
+  backgroundColor: string;
+  borderColor: string;
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowRadius: number;
+  shadowOffsetY: number;
+  elevation: number;
+}
+
+export interface AppDesignTokens {
+  mode: ThemeMode;
+  backdropStart: string;
+  backdropEnd: string;
+  backdropAccent: string;
+  chromeSurface: SurfacePreset;
+  elevatedSurface: SurfacePreset;
+  floatingSurface: SurfacePreset;
+  authSurface: SurfacePreset;
+  chipSurface: SurfacePreset;
+  navSurface: SurfacePreset;
+  overlayStroke: string;
+  overlayStrokeSoft: string;
+  heroGradient: readonly [string, string, string];
+  panelGradient: readonly [string, string];
+  noiseTint: string;
+  glowTint: string;
+}
+
 export interface ThemeTokens {
   bg: string;
   phoneBg: string;
   surface: string;
+  surfaceElevated: string;
+  surfaceMuted: string;
   border: string;
   borderStrong: string;
   text: string;
@@ -23,7 +54,97 @@ export interface ThemeTokens {
   tabInactive: string;
   navBorder: string;
   inputBg: string;
+  glass: string;
+  glassBorder: string;
+  cardShadowColor: string;
+  pageTint: string;
+  overlayLine: string;
+  overlaySoft: string;
+  heroGradient: readonly [string, string, string];
+  panelGradient: readonly [string, string];
 }
+
+export type ProfileCardTheme =
+  | 'default_dark'
+  | 'arctic'
+  | 'linen'
+  | 'marble'
+  | 'forest'
+  | 'sage_luxe'
+  | 'midnight_obsidian'
+  | 'golden_noir'
+  | 'aurora_codex'
+  | 'nebula_glass'
+  | 'velours';
+
+export interface CardThemeSpec {
+  id: ProfileCardTheme;
+  label: string;
+  premium?: boolean;
+  swatch: string;
+  cardGradient: readonly string[];
+  cardBg: string;
+  surfaceBg: string;
+  cardBorder: string;
+  surfaceBorder: string;
+  dividerColor: string;
+  nameColor: string;
+  roleColor: string;
+  mutedColor: string;
+  accentColor: string;
+  emailColor: string;
+  buttonPrimaryBg: string;
+  buttonPrimaryGradient?: readonly string[];
+  buttonPrimaryText: string;
+  buttonPrimaryBorder: string;
+  buttonSecondaryBg: string;
+  buttonSecondaryGradient?: readonly string[];
+  buttonSecondaryText: string;
+  buttonSecondaryBorder: string;
+  badgeText: string;
+  badgeBg: string;
+  badgeBorder: string;
+  topLineColor: string;
+  topLineGradient?: readonly string[];
+  avatarBg: string;
+  avatarGradient?: readonly string[];
+  avatarText: string;
+  avatarBorder: string;
+  cardRadius: number;
+  fontFamily: string;
+  nameFontStyle: 'normal' | 'italic';
+  nameFontWeight: '300' | '400' | '500' | '600' | '700' | '800';
+  roleLetterSpacing: number;
+  scoreLabelColor: string;
+  scoreValueColor: string;
+  scoreBarFill: string;
+  scoreBarTrack: string;
+  scorePercentileColor: string;
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowRadius: number;
+  shadowOffsetY: number;
+  elevation: number;
+  overlay:
+    | 'none'
+    | 'default_flow'
+    | 'arctic_frost'
+    | 'linen_stitch'
+    | 'marble_veins'
+    | 'forest_grain'
+    | 'sage_geometry'
+    | 'midnight_constellation'
+    | 'noir_gold_dust'
+    | 'codex_corner_lines'
+    | 'velvet_weave';
+  buttonShine: boolean;
+  footerText: string;
+  widgetPrimary: string;
+  widgetSecondary: string;
+  widgetAccent: string;
+}
+
+export type CardThemeRegistry = Record<ProfileCardTheme, CardThemeSpec>;
 
 export type ScreenTab = 'home' | 'nfc' | 'people' | 'analytics' | 'profile';
 
@@ -265,18 +386,7 @@ export interface ProfileCard {
   email: string;
   slug: string;
   avatarUrl?: string;
-  theme:
-  | 'default_dark'
-  | 'arctic'
-  | 'linen'
-  | 'marble'
-  | 'forest'
-  | 'sage_luxe'
-  | 'midnight_obsidian'
-  | 'golden_noir'
-  | 'aurora_codex'
-  | 'nebula_glass'
-  | 'velours';
+  theme: ProfileCardTheme;
   buttons: CardButton[];
 }
 

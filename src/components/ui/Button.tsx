@@ -22,7 +22,7 @@ interface ButtonProps {
 
 function resolveColors(tokens: ThemeTokens, variant: ButtonVariant): { bg: string; border: string; text: string } {
   if (variant === 'secondary') {
-    return { bg: tokens.surface, border: tokens.border, text: tokens.text };
+    return { bg: tokens.surfaceElevated, border: tokens.border, text: tokens.text };
   }
   if (variant === 'ghost') {
     return { bg: 'transparent', border: tokens.border, text: tokens.text };
@@ -34,9 +34,9 @@ function resolveColors(tokens: ThemeTokens, variant: ButtonVariant): { bg: strin
 }
 
 function resolveSize(size: ButtonSize): { height: number; radius: number; font: number } {
-  if (size === 'sm') return { height: 38, radius: 10, font: 13 };
-  if (size === 'lg') return { height: 50, radius: 14, font: 15 };
-  return { height: 44, radius: 12, font: 14 };
+  if (size === 'sm') return { height: 40, radius: 14, font: 13 };
+  if (size === 'lg') return { height: 54, radius: 18, font: 15 };
+  return { height: 48, radius: 16, font: 14 };
 }
 
 export function Button({
@@ -53,6 +53,7 @@ export function Button({
   const palette = resolveColors(tokens, variant);
   const metrics = resolveSize(size);
   const isDisabled = Boolean(disabled || loading);
+  const showPrimary = variant === 'primary' && !success;
 
   return (
     <AnimatedPressable
@@ -68,6 +69,7 @@ export function Button({
           borderColor: success ? tokens.green : palette.border,
           opacity: isDisabled ? 0.5 : 1,
         },
+        showPrimary ? styles.primaryShadow : null,
       ]}
     >
       <View style={styles.content}>
@@ -95,6 +97,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
+    overflow: 'hidden',
+  },
+  primaryShadow: {
+    shadowColor: '#111111',
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
   content: {
     minWidth: 124,
@@ -107,4 +117,3 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
   },
 });
-

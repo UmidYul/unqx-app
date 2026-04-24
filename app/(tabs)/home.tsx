@@ -1,7 +1,6 @@
 import React from 'react';
 import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BarChart2, PenLine, TrendingUp, Wifi } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -13,7 +12,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { QRCodeModal } from '@/components/QRCodeModal';
 import { ScreenTransition } from '@/components/ScreenTransition';
 import { ShareSheet } from '@/components/ShareSheet';
-import { SkeletonBlock, SkeletonCircle } from '@/components/ui/skeleton';
+import { SkeletonBlock, SkeletonCard, SkeletonCircle } from '@/components/ui/skeleton';
 import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 import { Chevron, Label, Pill } from '@/components/ui/shared';
 import { MESSAGES } from '@/constants/messages';
@@ -290,29 +289,55 @@ function HomePage(): React.JSX.Element {
     return (
       <AppShell title={MESSAGES.ui.screens.home} tokens={tokens}>
         <View style={styles.skeletonWrap}>
-          <SkeletonBlock tokens={tokens} height={200} radius={20} />
+          <SkeletonCard tokens={tokens} style={styles.skeletonHeroCard}>
+            <SkeletonBlock tokens={tokens} height={12} width={124} radius={6} />
+            <SkeletonBlock tokens={tokens} height={34} width='68%' radius={10} />
+            <View style={styles.skeletonPillRow}>
+              <SkeletonBlock tokens={tokens} height={34} width='48%' radius={16} />
+              <SkeletonBlock tokens={tokens} height={34} width={104} radius={16} />
+            </View>
+            <SkeletonBlock tokens={tokens} height={11} width={92} radius={6} />
+            <View style={styles.skeletonHeroButtons}>
+              <SkeletonBlock tokens={tokens} height={54} radius={18} style={styles.skeletonMetric} />
+              <SkeletonBlock tokens={tokens} height={54} radius={18} style={styles.skeletonMetric} />
+            </View>
+          </SkeletonCard>
           <View style={styles.skeletonMetrics}>
-            <SkeletonBlock tokens={tokens} height={120} radius={16} style={styles.skeletonMetric} />
-            <SkeletonBlock tokens={tokens} height={120} radius={16} style={styles.skeletonMetric} />
+            <SkeletonCard tokens={tokens} style={styles.skeletonMetricCard}>
+              <SkeletonBlock tokens={tokens} height={12} width='46%' radius={6} />
+              <SkeletonBlock tokens={tokens} height={34} width={82} radius={10} />
+              <SkeletonBlock tokens={tokens} height={10} width='72%' radius={6} />
+              <SkeletonBlock tokens={tokens} height={10} width='58%' radius={6} />
+            </SkeletonCard>
+            <SkeletonCard tokens={tokens} style={styles.skeletonMetricCard}>
+              <SkeletonBlock tokens={tokens} height={12} width='42%' radius={6} />
+              <SkeletonBlock tokens={tokens} height={34} width={88} radius={10} />
+              <SkeletonBlock tokens={tokens} height={10} width='68%' radius={6} />
+              <SkeletonBlock tokens={tokens} height={10} width='54%' radius={6} />
+            </SkeletonCard>
           </View>
           {[0, 1, 2].map((i) => (
-            <View key={`sk-action-${i}`} style={styles.skeletonRow}>
-              <SkeletonCircle tokens={tokens} size={40} />
-              <View style={styles.skeletonActionText}>
-                <SkeletonBlock tokens={tokens} height={12} width='62%' />
-                <SkeletonBlock tokens={tokens} height={10} width='42%' />
+            <SkeletonCard key={`sk-action-${i}`} tokens={tokens} style={styles.skeletonRowCard}>
+              <View style={styles.skeletonRow}>
+                <SkeletonCircle tokens={tokens} size={40} />
+                <View style={styles.skeletonActionText}>
+                  <SkeletonBlock tokens={tokens} height={12} width='62%' />
+                  <SkeletonBlock tokens={tokens} height={10} width='42%' />
+                </View>
               </View>
-            </View>
+            </SkeletonCard>
           ))}
           {[0, 1].map((i) => (
-            <View key={`sk-recent-${i}`} style={styles.skeletonRecentRow}>
-              <SkeletonCircle tokens={tokens} size={36} />
-              <View style={styles.skeletonActionText}>
-                <SkeletonBlock tokens={tokens} height={11} width='52%' />
-                <SkeletonBlock tokens={tokens} height={10} width='38%' />
+            <SkeletonCard key={`sk-recent-${i}`} tokens={tokens} style={styles.skeletonRecentCard}>
+              <View style={styles.skeletonRecentRow}>
+                <SkeletonCircle tokens={tokens} size={36} />
+                <View style={styles.skeletonActionText}>
+                  <SkeletonBlock tokens={tokens} height={11} width='52%' />
+                  <SkeletonBlock tokens={tokens} height={10} width='38%' />
+                </View>
+                <SkeletonBlock tokens={tokens} height={10} width={54} />
               </View>
-              <SkeletonBlock tokens={tokens} height={10} width={54} />
-            </View>
+            </SkeletonCard>
           ))}
         </View>
       </AppShell>
@@ -402,38 +427,41 @@ function HomePage(): React.JSX.Element {
               </View>
             ) : null}
 
-            <LinearGradient colors={tokens.bg === '#ffffff' ? ['#0a0a0a', '#1a1a1a'] : ['#101010', '#1b1b1b']} style={styles.hero}>
-              <Wifi size={120} strokeWidth={1.1} color='rgba(255,255,255,0.05)' style={styles.heroBgIcon} />
-              <Text style={styles.heroKicker}>UNQX CARD</Text>
-              <Text style={styles.heroName}>{user.name}</Text>
-              <Text style={styles.heroSlug}>{heroSlug}</Text>
+            <View style={[styles.hero, { borderColor: tokens.border, backgroundColor: tokens.surface }]}>
+              <LinearGradient colors={tokens.heroGradient} style={StyleSheet.absoluteFill} />
+              <View style={[styles.heroGlow, styles.heroGlowLeft, { backgroundColor: tokens.pageTint }]} />
+              <View style={[styles.heroGlow, styles.heroGlowRight, { backgroundColor: `${tokens.accent}10` }]} />
+              <Wifi size={120} strokeWidth={1.1} color={tokens.pageTint} style={styles.heroBgIcon} />
 
-              <View style={styles.heroPills}>
-                <BlurView intensity={28} tint='dark' style={styles.blurPill}>
-                  <Text style={styles.blurText}>{planLabel}</Text>
-                </BlurView>
-                <BlurView intensity={28} tint='dark' style={styles.blurPill}>
-                  <Text style={styles.blurText}>● NFC active</Text>
-                </BlurView>
+              <Text style={[styles.heroKicker, { color: tokens.textMuted }]}>unqx.uz / dashboard</Text>
+              <Text style={[styles.heroName, { color: tokens.text }]}>{user.name}</Text>
+
+              <View style={styles.heroMetaRow}>
+                <View style={[styles.heroSlugPlate, { borderColor: tokens.border, backgroundColor: tokens.inputBg }]}>
+                  <Text style={[styles.heroSlugPrefix, { color: tokens.textMuted }]}>unqx.uz/</Text>
+                  <Text style={[styles.heroSlugValue, { color: tokens.text }]}>{heroSlug}</Text>
+                </View>
+                <Pill color={tokens.text} bg={tokens.surfaceMuted}>{planLabel}</Pill>
+                <Pill color={tokens.textSub} bg={tokens.surfaceMuted}>NFC ready</Pill>
               </View>
 
               <View style={styles.heroActions}>
                 <AnimatedPressable
                   onPress={handleOpenShare}
-                  style={styles.heroActionBtn}
+                  style={[styles.heroActionBtn, styles.heroActionBtnPrimary, { backgroundColor: tokens.accent, borderColor: tokens.accent }]}
                   containerStyle={styles.heroActionWrap}
                 >
-                  <Text style={styles.heroActionText}>{homeText.share}</Text>
+                  <Text style={[styles.heroActionText, { color: tokens.accentText }]}>{homeText.share}</Text>
                 </AnimatedPressable>
                 <AnimatedPressable
                   onPress={handleOpenQr}
-                  style={styles.heroActionBtn}
+                  style={[styles.heroActionBtn, styles.heroActionBtnSecondary, { backgroundColor: tokens.surfaceElevated, borderColor: tokens.border }]}
                   containerStyle={styles.heroActionWrap}
                 >
-                  <Text style={styles.heroActionText}>{homeText.showQr}</Text>
+                  <Text style={[styles.heroActionText, { color: tokens.text }]}>{homeText.showQr}</Text>
                 </AnimatedPressable>
               </View>
-            </LinearGradient>
+            </View>
 
             <View style={styles.metricsGrid}>
               <View style={[styles.metricCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
@@ -550,6 +578,19 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     gap: 16,
   },
+  skeletonHeroCard: {
+    gap: 14,
+    minHeight: 220,
+  },
+  skeletonPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  skeletonHeroButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   skeletonMetrics: {
     flexDirection: 'row',
     gap: 12,
@@ -557,8 +598,16 @@ const styles = StyleSheet.create({
   skeletonMetric: {
     flex: 1,
   },
+  skeletonMetricCard: {
+    flex: 1,
+    minHeight: 120,
+    gap: 10,
+  },
+  skeletonRowCard: {
+    minHeight: 84,
+    justifyContent: 'center',
+  },
   skeletonRow: {
-    borderRadius: 12,
     gap: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -567,6 +616,10 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 8,
   },
+  skeletonRecentCard: {
+    minHeight: 72,
+    justifyContent: 'center',
+  },
   skeletonRecentRow: {
     minHeight: 56,
     gap: 12,
@@ -574,72 +627,100 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   hero: {
-    borderRadius: 20,
+    borderRadius: 28,
+    borderWidth: 1,
     paddingHorizontal: 24,
     paddingVertical: 24,
     overflow: 'hidden',
     position: 'relative',
-    gap: 8,
+    gap: 12,
   },
   heroBgIcon: {
     position: 'absolute',
-    right: -14,
-    top: -10,
+    right: -18,
+    top: -16,
   },
   heroKicker: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 10,
-    letterSpacing: 3,
+    fontSize: 11,
+    letterSpacing: 0.3,
     fontFamily: 'Inter_500Medium',
   },
   heroName: {
-    color: '#ffffff',
-    fontSize: 28,
-    lineHeight: 32,
+    fontSize: 30,
+    lineHeight: 34,
     fontFamily: 'Inter_600SemiBold',
   },
-  heroSlug: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 13,
-    letterSpacing: 3,
-    fontFamily: 'Inter_500Medium',
-  },
-  heroPills: {
+  heroMetaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
-    marginTop: 8,
   },
-  blurPill: {
-    borderRadius: 6,
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  heroSlugPlate: {
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  blurText: {
-    color: '#ffffff',
-    fontSize: 10,
+  heroSlugPrefix: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  heroSlugValue: {
+    fontSize: 14,
     fontFamily: 'Inter_500Medium',
-    letterSpacing: 0.2,
+    letterSpacing: 1.4,
   },
   heroActions: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 8,
+    marginTop: 2,
   },
   heroActionWrap: {
     flex: 1,
   },
   heroActionBtn: {
-    minHeight: 40,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    minHeight: 46,
+    borderRadius: 14,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  heroActionBtnPrimary: {
+    shadowColor: '#111111',
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+  heroActionBtnSecondary: {
+    shadowColor: '#111111',
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+  },
   heroActionText: {
-    color: '#ffffff',
     fontSize: 12,
     fontFamily: 'Inter_600SemiBold',
+  },
+  heroGlow: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    opacity: 0.65,
+  },
+  heroGlowLeft: {
+    left: -70,
+    top: -90,
+  },
+  heroGlowRight: {
+    right: -72,
+    bottom: -82,
   },
   metricsGrid: {
     flexDirection: 'row',

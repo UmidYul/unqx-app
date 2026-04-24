@@ -276,11 +276,7 @@ export function DotsLoader({ color }: { color: string }): React.JSX.Element {
 }
 
 export function CheckCircle({ tokens }: { tokens: ThemeTokens }): React.JSX.Element {
-  const iconColor = tokens.bg === '#ffffff' ? tokens.accent : tokens.text;
-
-  return (
-    <CheckCircle2 size={26} color={iconColor} strokeWidth={1.8} />
-  );
+  return <CheckCircle2 size={26} color={tokens.accent} strokeWidth={1.8} />;
 }
 
 interface SparklineProps {
@@ -326,20 +322,22 @@ export function QRDisplay({ slug, size = 150 }: QRDisplayProps): React.JSX.Eleme
 
 const styles = StyleSheet.create({
   pill: {
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   pillText: {
     fontSize: 10,
     fontWeight: '500',
-    letterSpacing: 0.2,
+    letterSpacing: 0.6,
     fontFamily: UI_FONT,
   },
   label: {
     fontSize: 10,
-    letterSpacing: 2,
+    letterSpacing: 2.4,
     textTransform: 'uppercase',
     fontWeight: '500',
     fontFamily: UI_FONT,
@@ -349,7 +347,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   row: {
-    minHeight: 44,
+    minHeight: 48,
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -374,11 +372,11 @@ const styles = StyleSheet.create({
   scanArea: {
     width: '100%',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    paddingVertical: 24,
+    paddingVertical: 28,
   },
   ringsShell: {
     width: 220,
@@ -430,8 +428,8 @@ const styles = StyleSheet.create({
   },
   qrShell: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 16,
+    padding: 12,
     alignSelf: 'center',
   },
 });

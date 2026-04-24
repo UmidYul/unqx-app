@@ -2,6 +2,8 @@ import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { BellRing } from 'lucide-react-native';
 
+import { resolveShadowStyle } from '@/design/appDesign';
+import { useThemeContext } from '@/theme/ThemeProvider';
 import { ThemeTokens } from '@/types';
 
 interface NotificationPermissionPromptProps {
@@ -17,10 +19,21 @@ export function NotificationPermissionPrompt({
   onAllow,
   onLater,
 }: NotificationPermissionPromptProps): React.JSX.Element {
+  const { design } = useThemeContext();
+
   return (
     <Modal visible={visible} transparent animationType='fade' onRequestClose={onLater}>
       <View style={styles.backdrop}>
-        <View style={[styles.card, { backgroundColor: tokens.phoneBg, borderColor: tokens.border }]}>
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: design.authSurface.backgroundColor,
+              borderColor: design.authSurface.borderColor,
+            },
+            resolveShadowStyle(design.authSurface),
+          ]}
+        >
           <View style={[styles.iconWrap, { backgroundColor: `${tokens.accent}14` }]}>
             <BellRing size={20} strokeWidth={1.5} color={tokens.accent} />
           </View>
@@ -51,15 +64,15 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    borderRadius: 16,
+    borderRadius: 30,
     borderWidth: 1,
-    paddingHorizontal: 18,
-    paddingVertical: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
   },
   iconWrap: {
     width: 42,
     height: 42,
-    borderRadius: 21,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -76,8 +89,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   primaryBtn: {
-    minHeight: 44,
-    borderRadius: 10,
+    minHeight: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -86,8 +99,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
   },
   secondaryBtn: {
-    minHeight: 44,
-    borderRadius: 10,
+    minHeight: 48,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

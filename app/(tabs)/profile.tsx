@@ -17,7 +17,7 @@ import { WristbandPage } from '@/components/profile/WristbandPage';
 import { normalizeButtonIconKey } from '@/components/profile/buttonIcons';
 import { ShareSheet } from '@/components/ShareSheet';
 import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
-import { SkeletonBlock, SkeletonCircle } from '@/components/ui/skeleton';
+import { SkeletonBlock, SkeletonCard, SkeletonCircle } from '@/components/ui/skeleton';
 import { Label, Pill } from '@/components/ui/shared';
 import { useBiometrics } from '@/hooks/useBiometrics';
 import { MESSAGES } from '@/constants/messages';
@@ -193,7 +193,7 @@ function normalizeCardTheme(rawTheme: unknown): ProfileCard['theme'] {
   return 'default_dark';
 }
 
-function parseProfileCard(raw: unknown): ProfileCard {
+function parseProfileCard(raw: unknown): ProfileCard | null {
   const payload = raw as { user?: any; card?: any; profileCard?: any; slugs?: any[]; selectedSlug?: string };
   const sourceUser = payload?.user ?? payload;
   const card = payload?.card ?? sourceUser?.card ?? sourceUser?.profileCard ?? payload?.profileCard ?? {};
@@ -1480,24 +1480,47 @@ function ProfilePage(): React.JSX.Element {
     return (
       <AppShell title={MESSAGES.ui.screens.profile} tokens={tokens}>
         <View style={styles.skeletonWrap}>
-          <View style={styles.skeletonHero}>
-            <SkeletonCircle tokens={tokens} size={58} />
-            <View style={styles.skeletonHeroBody}>
-              <SkeletonBlock tokens={tokens} height={18} width='55%' />
-              <SkeletonBlock tokens={tokens} height={12} width='42%' />
-              <View style={styles.skeletonPills}>
-                <SkeletonBlock tokens={tokens} height={20} width={76} radius={6} />
-                <SkeletonBlock tokens={tokens} height={20} width={96} radius={6} />
+          <SkeletonCard tokens={tokens} style={styles.skeletonHeroCard}>
+            <View style={styles.skeletonHero}>
+              <SkeletonCircle tokens={tokens} size={58} />
+              <View style={styles.skeletonHeroBody}>
+                <SkeletonBlock tokens={tokens} height={18} width='55%' />
+                <SkeletonBlock tokens={tokens} height={12} width='42%' />
+                <View style={styles.skeletonPills}>
+                  <SkeletonBlock tokens={tokens} height={20} width={76} radius={999} />
+                  <SkeletonBlock tokens={tokens} height={20} width={96} radius={999} />
+                </View>
               </View>
             </View>
-          </View>
+          </SkeletonCard>
           <View style={styles.skeletonShareRow}>
-            <SkeletonBlock tokens={tokens} height={112} radius={12} style={styles.skeletonShareCard} />
-            <SkeletonBlock tokens={tokens} height={112} radius={12} style={styles.skeletonShareCard} />
+            <SkeletonCard tokens={tokens} style={styles.skeletonShareCard}>
+              <SkeletonBlock tokens={tokens} height={18} width='58%' radius={8} />
+              <SkeletonBlock tokens={tokens} height={11} width='76%' radius={6} />
+              <SkeletonBlock tokens={tokens} height={11} width='52%' radius={6} />
+            </SkeletonCard>
+            <SkeletonCard tokens={tokens} style={styles.skeletonShareCard}>
+              <SkeletonBlock tokens={tokens} height={18} width='52%' radius={8} />
+              <SkeletonBlock tokens={tokens} height={11} width='72%' radius={6} />
+              <SkeletonBlock tokens={tokens} height={11} width='48%' radius={6} />
+            </SkeletonCard>
           </View>
-          <SkeletonBlock tokens={tokens} height={64} radius={12} />
-          <SkeletonBlock tokens={tokens} height={64} radius={12} />
-          <SkeletonBlock tokens={tokens} height={154} radius={14} />
+          <SkeletonCard tokens={tokens} style={styles.skeletonListCard}>
+            <SkeletonBlock tokens={tokens} height={13} width='38%' radius={6} />
+            <SkeletonBlock tokens={tokens} height={10} width='68%' radius={6} />
+            <SkeletonBlock tokens={tokens} height={10} width='56%' radius={6} />
+          </SkeletonCard>
+          <SkeletonCard tokens={tokens} style={styles.skeletonListCard}>
+            <SkeletonBlock tokens={tokens} height={13} width='34%' radius={6} />
+            <SkeletonBlock tokens={tokens} height={10} width='64%' radius={6} />
+            <SkeletonBlock tokens={tokens} height={10} width='44%' radius={6} />
+          </SkeletonCard>
+          <SkeletonCard tokens={tokens} style={styles.skeletonLargeCard}>
+            <SkeletonBlock tokens={tokens} height={14} width='42%' radius={7} />
+            <SkeletonBlock tokens={tokens} height={10} width='78%' radius={6} />
+            <SkeletonBlock tokens={tokens} height={10} width='74%' radius={6} />
+            <SkeletonBlock tokens={tokens} height={10} width='60%' radius={6} />
+          </SkeletonCard>
         </View>
       </AppShell>
     );
@@ -2239,6 +2262,9 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     gap: 14,
   },
+  skeletonHeroCard: {
+    padding: 18,
+  },
   skeletonHero: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2260,6 +2286,16 @@ const styles = StyleSheet.create({
   },
   skeletonShareCard: {
     flex: 1,
+    minHeight: 112,
+    gap: 10,
+  },
+  skeletonListCard: {
+    minHeight: 74,
+    gap: 10,
+  },
+  skeletonLargeCard: {
+    minHeight: 154,
+    gap: 10,
   },
   errorState: {
     marginHorizontal: 20,
