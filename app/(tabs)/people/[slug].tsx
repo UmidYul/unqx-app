@@ -201,7 +201,8 @@ function ResidentProfilePage(): React.JSX.Element {
       totalSlugPrice: 'Jami slug narxi',
       views: 'ko\'rishlar',
       back: 'Orqaga',
-      searchSlug: 'Slug qidirish',
+      searchSlug: 'UNQ qidirish',
+      searchSlugPlaceholder: 'AAA000',
       buySlug: 'Sotib olish',
       slugPricePending: 'Narx aniqlanmoqda',
       slugAvailable: 'Slug bo\'sh',
@@ -260,7 +261,8 @@ function ResidentProfilePage(): React.JSX.Element {
       totalSlugPrice: 'Общая цена slug',
       views: 'просмотров',
       back: 'Назад',
-      searchSlug: 'Поиск slug',
+      searchSlug: 'Поиск UNQ',
+      searchSlugPlaceholder: 'AAA000',
       buySlug: 'Купить',
       slugPricePending: 'Цена уточняется',
       slugAvailable: 'Slug свободен',
@@ -923,7 +925,8 @@ function ResidentProfilePage(): React.JSX.Element {
             >
               <SlugLookup
                 copy={{
-                  placeholder: profileText.searchSlug,
+                  title: profileText.searchSlug,
+                  placeholder: profileText.searchSlugPlaceholder,
                   priceLabel: profileText.slugPrice,
                   pricePending: profileText.slugPricePending,
                   available: profileText.slugAvailable,
@@ -1077,7 +1080,8 @@ function ResidentProfilePage(): React.JSX.Element {
           >
             <SlugLookup
               copy={{
-                placeholder: profileText.searchSlug,
+                title: profileText.searchSlug,
+                placeholder: profileText.searchSlugPlaceholder,
                 priceLabel: profileText.slugPrice,
                 pricePending: profileText.slugPricePending,
                 available: profileText.slugAvailable,

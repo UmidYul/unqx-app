@@ -178,7 +178,8 @@ function HomePage(): React.JSX.Element {
       activationRequiredSub: 'QR va ulashish uchun avval SLUG egallab tarifni faollashtiring',
       share: 'Ulashish',
       showQr: 'QR ko\'rsatish',
-      searchSlug: 'Slug qidirish',
+      searchSlug: 'UNQ qidirish',
+      searchSlugPlaceholder: 'AAA000',
       slugPrice: 'Slug narxi',
       slugPricePending: 'Narx aniqlanmoqda',
       slugAvailable: 'Slug bo\'sh',
@@ -207,7 +208,8 @@ function HomePage(): React.JSX.Element {
       activationRequiredSub: 'Чтобы открыть QR и поделиться визиткой, сначала купите slug и активируйте тариф',
       share: 'Поделиться',
       showQr: 'Показать QR',
-      searchSlug: 'Поиск slug',
+      searchSlug: 'Поиск UNQ',
+      searchSlugPlaceholder: 'AAA000',
       slugPrice: 'Цена slug',
       slugPricePending: 'Цена уточняется',
       slugAvailable: 'Slug свободен',
@@ -490,7 +492,7 @@ function HomePage(): React.JSX.Element {
             <SlugLookup
               copy={{
                 title: homeText.searchSlug,
-                placeholder: homeText.searchSlug,
+                placeholder: homeText.searchSlugPlaceholder,
                 priceLabel: homeText.slugPrice,
                 pricePending: homeText.slugPricePending,
                 available: homeText.slugAvailable,

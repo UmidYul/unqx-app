@@ -7,7 +7,7 @@ import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useRetryImageUri } from '@/hooks/useRetryImageUri';
 import { lookupSlugLike } from '@/services/mobileApi';
 import { SlugLookupResult } from '@/types';
-import { normalizeLookupSlug } from '@/utils/slug';
+import { formatUnqInput, isCompleteUnq } from '@/utils/slug';
 import { toast } from '@/utils/toast';
 import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
 
@@ -93,8 +93,8 @@ export function SlugLookup({
   }, []);
 
   const performLookupSlug = React.useCallback(async (rawSlug: string, silent: boolean) => {
-    const targetSlug = normalizeLookupSlug(rawSlug);
-    if (!targetSlug) {
+    const targetSlug = formatUnqInput(rawSlug);
+    if (!targetSlug || !isCompleteUnq(targetSlug)) {
       clearLookup();
       return;
     }
@@ -132,15 +132,16 @@ export function SlugLookup({
   }, [performLookupSlug, searchSlugValue]);
 
   const handleSearchSlugChange = React.useCallback((value: string) => {
-    setSearchSlugValue(value);
-    if (!normalizeLookupSlug(value)) {
+    const formattedValue = formatUnqInput(value);
+    setSearchSlugValue(formattedValue);
+    if (!formattedValue) {
       clearLookup();
     }
   }, [clearLookup]);
 
   React.useEffect(() => {
-    const targetSlug = normalizeLookupSlug(searchSlugValue);
-    if (!targetSlug) {
+    const targetSlug = formatUnqInput(searchSlugValue);
+    if (!targetSlug || !isCompleteUnq(targetSlug)) {
       clearLookup();
       return;
     }
@@ -236,6 +237,7 @@ export function SlugLookup({
             placeholderTextColor={theme.mutedText}
             autoCapitalize='characters'
             autoCorrect={false}
+            maxLength={6}
             style={[styles.searchInput, { color: theme.text }]}
           />
         </View>
@@ -276,8 +278,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    fontSize: 12,
-    fontFamily: 'Inter_500Medium',
+    fontSize: 18,
+    lineHeight: 20,
+    fontFamily: 'CormorantGaramond_600SemiBold',
+    letterSpacing: 0.2,
   },
   lookupTopRow: {
     flexDirection: 'row',
@@ -286,27 +290,28 @@ const styles = StyleSheet.create({
   },
   searchBox: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 42,
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
   slugPrefix: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Inter_400Regular',
   },
   searchInput: {
     flex: 1,
-    fontSize: 18,
-    fontFamily: 'Inter_500Medium',
+    fontSize: 16,
+    letterSpacing: 2.2,
+    fontFamily: 'Inter_400Regular',
     paddingVertical: 0,
   },
   searchAction: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',

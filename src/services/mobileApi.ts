@@ -3,7 +3,7 @@ import { resolveAssetUrl } from '@/lib/assetUrl';
 import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { API_ORIGIN } from '@/config/api';
 import { ProfileCard, ResidentProfile, SlugLookupOwner, SlugLookupResult, SlugLookupStatus } from '@/types';
-import { normalizeLookupSlug } from '@/utils/slug';
+import { isCompleteUnq, normalizeLookupSlug } from '@/utils/slug';
 
 const memoryCache = new Map<string, { value: unknown; expiresAt: number }>();
 const ANALYTICS_TZ_OFFSET_HOURS = 5;
@@ -1139,6 +1139,18 @@ export async function lookupSlugLike(slug: string): Promise<SlugLookupResult> {
   const normalizedSlug = normalizeResidentSlug(slug);
   if (!normalizedSlug) {
     throw new ApiError('Slug is required', 400, 'VALIDATION_ERROR');
+  }
+
+  if (!isCompleteUnq(normalizedSlug)) {
+    return {
+      slug: normalizedSlug,
+      status: 'invalid_format',
+      available: false,
+      price: null,
+      owner: null,
+      canOpenOwner: false,
+      canBuy: false,
+    };
   }
 
   const cacheKey = `slug-lookup:${normalizedSlug}`;
