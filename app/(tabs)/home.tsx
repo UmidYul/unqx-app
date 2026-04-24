@@ -11,6 +11,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/ErrorState';
 import { QRCodeModal } from '@/components/QRCodeModal';
 import { ScreenTransition } from '@/components/ScreenTransition';
+import { SlugLookup } from '@/components/SlugLookup';
 import { ShareSheet } from '@/components/ShareSheet';
 import { SkeletonBlock, SkeletonCard, SkeletonCircle } from '@/components/ui/skeleton';
 import { AnimatedPressable } from '@/components/ui/AnimatedPressable';
@@ -161,6 +162,7 @@ function HomePage(): React.JSX.Element {
   const { safePush } = useThrottledNavigation();
   const { language } = useLanguageContext();
   const isUz = language === 'uz';
+  const locale = isUz ? 'uz-UZ' : 'ru-RU';
 
   const homeText = isUz
     ? {
@@ -176,6 +178,17 @@ function HomePage(): React.JSX.Element {
       activationRequiredSub: 'QR va ulashish uchun avval SLUG egallab tarifni faollashtiring',
       share: 'Ulashish',
       showQr: 'QR ko\'rsatish',
+      searchSlug: 'Slug qidirish',
+      slugPrice: 'Slug narxi',
+      slugPricePending: 'Narx aniqlanmoqda',
+      slugAvailable: 'Slug bo\'sh',
+      slugTaken: 'Slug band',
+      slugPending: 'Kutilmoqda',
+      slugBlocked: 'Slug bloklangan',
+      slugInvalidFormat: 'Slug formati noto\'g\'ri',
+      buySlug: 'Sotib olish',
+      slugSearchError: 'Slug bo\'yicha qidirib bo\'lmadi',
+      openLinkFailed: 'Havolani ochib bo\'lmadi',
       today: 'Bugun',
       realtime: 'real vaqtda yangilanadi',
       totalTaps: 'Jami taplar',
@@ -194,6 +207,17 @@ function HomePage(): React.JSX.Element {
       activationRequiredSub: 'Чтобы открыть QR и поделиться визиткой, сначала купите slug и активируйте тариф',
       share: 'Поделиться',
       showQr: 'Показать QR',
+      searchSlug: 'Поиск slug',
+      slugPrice: 'Цена slug',
+      slugPricePending: 'Цена уточняется',
+      slugAvailable: 'Slug свободен',
+      slugTaken: 'Slug занят',
+      slugPending: 'Ожидает активации',
+      slugBlocked: 'Slug заблокирован',
+      slugInvalidFormat: 'Неверный формат slug',
+      buySlug: 'Купить',
+      slugSearchError: 'Не удалось выполнить поиск slug',
+      openLinkFailed: 'Не удалось открыть ссылку',
       today: 'Сегодня',
       realtime: 'обновляется в реальном времени',
       totalTaps: 'Всего тапов',
@@ -462,6 +486,34 @@ function HomePage(): React.JSX.Element {
                 </AnimatedPressable>
               </View>
             </View>
+
+            <SlugLookup
+              copy={{
+                title: homeText.searchSlug,
+                placeholder: homeText.searchSlug,
+                priceLabel: homeText.slugPrice,
+                pricePending: homeText.slugPricePending,
+                available: homeText.slugAvailable,
+                taken: homeText.slugTaken,
+                pending: homeText.slugPending,
+                blocked: homeText.slugBlocked,
+                invalidFormat: homeText.slugInvalidFormat,
+                buy: homeText.buySlug,
+                searchError: homeText.slugSearchError,
+                openLinkFailed: homeText.openLinkFailed,
+              }}
+              locale={locale}
+              theme={{
+                surface: tokens.surface,
+                border: tokens.border,
+                text: tokens.text,
+                mutedText: tokens.textMuted,
+                primaryBg: tokens.accent,
+                primaryText: tokens.accentText,
+                chipBg: tokens.inputBg,
+              }}
+              onOpenOwner={(slug) => safePush(`/(tabs)/people/${slug}`)}
+            />
 
             <View style={styles.metricsGrid}>
               <View style={[styles.metricCard, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>

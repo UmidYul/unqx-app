@@ -2,7 +2,8 @@ import { apiClient, ApiError } from '@/lib/apiClient';
 import { resolveAssetUrl } from '@/lib/assetUrl';
 import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { API_ORIGIN } from '@/config/api';
-import { ProfileCard, ResidentProfile } from '@/types';
+import { ProfileCard, ResidentProfile, SlugLookupOwner, SlugLookupResult, SlugLookupStatus } from '@/types';
+import { normalizeLookupSlug } from '@/utils/slug';
 
 const memoryCache = new Map<string, { value: unknown; expiresAt: number }>();
 const ANALYTICS_TZ_OFFSET_HOURS = 5;
@@ -114,6 +115,11 @@ function toFiniteNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function toNullableNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function computeGrowthPercent(current: number, delta: number): number {
   const safeCurrent = Number.isFinite(current) ? current : 0;
   const safeDelta = Number.isFinite(delta) ? delta : 0;
@@ -216,11 +222,7 @@ function normalizeTapSource(value: unknown): 'nfc' | 'qr' | 'direct' | 'share' |
 }
 
 function normalizeResidentSlug(value: unknown): string {
-  return String(value ?? '')
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 20);
+  return normalizeLookupSlug(value);
 }
 
 function parseResidentSlugs(raw: unknown, fallbackSlug: string): string[] {
@@ -251,6 +253,75 @@ function parseResidentSlugs(raw: unknown, fallbackSlug: string): string[] {
   }
 
   return Array.from(set);
+}
+
+function mapLookupOwner(source: unknown): SlugLookupOwner | null {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  const item = source as Record<string, unknown>;
+  const slug = normalizeResidentSlug(
+    item.slug
+    ?? item.fullSlug
+    ?? item.selectedSlug
+    ?? item.unq
+    ?? item.code
+    ?? item.username,
+  );
+  const name = String(
+    item.name
+    ?? item.displayName
+    ?? item.ownerName
+    ?? item.fullName
+    ?? '',
+  ).trim();
+  const avatarRaw = item.avatarUrl ?? item.avatar_url ?? item.avatar ?? item.photoUrl ?? item.photo_url ?? item.photo;
+  const avatarUrl = avatarRaw ? resolveAssetUrl(String(avatarRaw)) : undefined;
+
+  if (!slug && !name && !avatarUrl) {
+    return null;
+  }
+
+  return {
+    slug: slug || undefined,
+    name: name || undefined,
+    avatarUrl,
+  };
+}
+
+function readAvailabilityInfo(payload: any): { available: boolean | null; validFormat: boolean | null; reason: string } {
+  const source = payload?.item ?? payload ?? {};
+  const available = typeof source?.available === 'boolean' ? source.available : null;
+  const validFormat = typeof source?.validFormat === 'boolean' ? source.validFormat : null;
+  const reason = String(source?.reason ?? '').trim().toLowerCase();
+
+  return { available, validFormat, reason };
+}
+
+function resolveSlugLookupStatus(input: {
+  available: boolean | null;
+  validFormat: boolean | null;
+  reason: string;
+  hasOwnerProfile: boolean;
+  hasPrice: boolean;
+}): SlugLookupStatus {
+  if (input.validFormat === false || input.reason === 'invalid_format') {
+    return 'invalid_format';
+  }
+  if (input.available === true) {
+    return 'available';
+  }
+  if (input.reason === 'taken' || input.reason === 'pending' || input.reason === 'blocked') {
+    return input.reason;
+  }
+  if (input.hasOwnerProfile) {
+    return 'taken';
+  }
+  if (input.hasPrice) {
+    return 'available';
+  }
+  return 'blocked';
 }
 
 function privateAccessStorageKey(slug: string): string {
@@ -1062,6 +1133,82 @@ export async function fetchResidentProfileLike(slug: string): Promise<ResidentPr
 
   const publicCard = await publicCardPromise;
   return mergePublicCardData(fallback, publicCard);
+}
+
+export async function lookupSlugLike(slug: string): Promise<SlugLookupResult> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  if (!normalizedSlug) {
+    throw new ApiError('Slug is required', 400, 'VALIDATION_ERROR');
+  }
+
+  const cacheKey = `slug-lookup:${normalizedSlug}`;
+  const cached = readCache<SlugLookupResult>(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const [availabilitySettled, priceSettled] = await Promise.allSettled([
+    apiClient.get<any>('/cards/availability', { query: { slug: normalizedSlug } }),
+    apiClient.get<any>('/cards/slug-price', { query: { slug: normalizedSlug } }),
+  ]);
+
+  const availabilityPayload = availabilitySettled.status === 'fulfilled' ? availabilitySettled.value : null;
+  const availabilityInfo = readAvailabilityInfo(availabilityPayload);
+  const shouldFetchOwnerProfile = availabilityInfo.available === false && availabilityInfo.reason !== 'pending' && availabilityInfo.reason !== 'blocked' && availabilityInfo.reason !== 'invalid_format';
+
+  let ownerProfile: ResidentProfile | null = null;
+  if (shouldFetchOwnerProfile) {
+    try {
+      ownerProfile = await fetchResidentProfileLike(normalizedSlug);
+    } catch {
+      ownerProfile = null;
+    }
+  }
+
+  if (!availabilityPayload && priceSettled.status !== 'fulfilled' && !ownerProfile) {
+    throw availabilitySettled.status === 'rejected'
+      ? availabilitySettled.reason
+      : (priceSettled.status === 'rejected' ? priceSettled.reason : new Error('Slug lookup failed'));
+  }
+
+  const pricePayload = priceSettled.status === 'fulfilled' ? priceSettled.value : null;
+  const numericPrice = toNullableNumber(
+    pricePayload?.slugPrice
+    ?? pricePayload?.price
+    ?? pricePayload?.amount
+    ?? pricePayload?.calculatedPrice
+    ?? availabilityPayload?.slugPrice
+    ?? availabilityPayload?.item?.slugPrice,
+  );
+
+  const status = resolveSlugLookupStatus({
+    ...availabilityInfo,
+    hasOwnerProfile: Boolean(ownerProfile),
+    hasPrice: numericPrice !== null,
+  });
+
+  const owner = status === 'taken'
+    ? (
+      mapLookupOwner({
+        slug: ownerProfile?.slug,
+        name: ownerProfile?.name,
+        avatarUrl: ownerProfile?.avatarUrl,
+      })
+      ?? mapLookupOwner(availabilityPayload?.owner ?? availabilityPayload?.item?.owner)
+    )
+    : null;
+
+  const result: SlugLookupResult = {
+    slug: normalizedSlug,
+    status,
+    available: status === 'available',
+    price: numericPrice,
+    owner,
+    canOpenOwner: status === 'taken' && Boolean(owner?.slug),
+    canBuy: status === 'available',
+  };
+
+  return writeCache(cacheKey, result, 20_000);
 }
 
 export async function unlockResidentPrivateProfileLike(slug: string, password: string): Promise<{ expiresAt: string | null }> {

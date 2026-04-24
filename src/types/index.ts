@@ -337,6 +337,24 @@ export interface ResidentProfile {
   privateAccessExpiresAt?: string | null;
 }
 
+export type SlugLookupStatus = 'available' | 'taken' | 'pending' | 'blocked' | 'invalid_format';
+
+export interface SlugLookupOwner {
+  slug?: string;
+  name?: string;
+  avatarUrl?: string;
+}
+
+export interface SlugLookupResult {
+  slug: string;
+  status: SlugLookupStatus;
+  available: boolean;
+  price: number | null;
+  owner: SlugLookupOwner | null;
+  canOpenOwner: boolean;
+  canBuy: boolean;
+}
+
 export interface PrivateAccessPassword {
   id: string;
   label?: string;

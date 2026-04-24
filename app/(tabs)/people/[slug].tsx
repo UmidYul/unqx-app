@@ -11,13 +11,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Check, ChevronLeft, Download, Globe, Hash, Lock, Mail, MapPin, Phone, Search, Star, UserCheck, UserPlus } from 'lucide-react-native';
+import { Check, ChevronLeft, Download, Globe, Hash, Lock, Mail, MapPin, Phone, Star, UserCheck, UserPlus } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
 import { AppShell } from '@/components/AppShell';
+import { SlugLookup } from '@/components/SlugLookup';
 import { withProtectedTab } from '@/components/auth/withProtectedTab';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/ErrorState';
@@ -202,8 +203,12 @@ function ResidentProfilePage(): React.JSX.Element {
       back: 'Orqaga',
       searchSlug: 'Slug qidirish',
       buySlug: 'Sotib olish',
+      slugPricePending: 'Narx aniqlanmoqda',
       slugAvailable: 'Slug bo\'sh',
       slugTaken: 'Slug band',
+      slugPending: 'Kutilmoqda',
+      slugBlocked: 'Slug bloklangan',
+      slugInvalidFormat: 'Slug formati noto\'g\'ri',
       searchError: 'Slug bo\'yicha qidirib bo\'lmadi',
       rating: 'Reyting',
       top: 'Top',
@@ -257,8 +262,12 @@ function ResidentProfilePage(): React.JSX.Element {
       back: 'Назад',
       searchSlug: 'Поиск slug',
       buySlug: 'Купить',
+      slugPricePending: 'Цена уточняется',
       slugAvailable: 'Slug свободен',
       slugTaken: 'Slug занят',
+      slugPending: 'Ожидает активации',
+      slugBlocked: 'Slug заблокирован',
+      slugInvalidFormat: 'Неверный формат slug',
       searchError: 'Не удалось выполнить поиск slug',
       rating: 'Рейтинг',
       top: 'Топ',
@@ -481,16 +490,6 @@ function ResidentProfilePage(): React.JSX.Element {
   const hasContacts = contactRows.length > 0;
   const hasScoreBlock = resolvedScoreValue > 0;
   const links = Array.isArray(profile?.buttons) ? profile.buttons : [];
-  const [searchSlugValue, setSearchSlugValue] = React.useState(normalizedSlug);
-  const [lookupPending, setLookupPending] = React.useState(false);
-  const [lookupResult, setLookupResult] = React.useState<{
-    slug: string;
-    available: boolean;
-    price: number | null;
-    profile: ResidentProfile | null;
-  } | null>(null);
-  const lookupRequestIdRef = React.useRef(0);
-  const lookupAvatar = useRetryImageUri(lookupResult?.profile?.avatarUrl);
   const [privatePassword, setPrivatePassword] = React.useState('');
   const [privateError, setPrivateError] = React.useState('');
   const lockShake = useSharedValue(0);
@@ -507,6 +506,14 @@ function ResidentProfilePage(): React.JSX.Element {
       withTiming(0, { duration: 45 }),
     );
   }, [lockShake]);
+
+  const handleOpenLookupOwner = React.useCallback((slugToOpen: string) => {
+    const targetSlug = normalizeResidentSlug(slugToOpen);
+    if (!targetSlug || targetSlug === normalizedSlug) {
+      return;
+    }
+    router.push(`/(tabs)/people/${targetSlug}`);
+  }, [normalizedSlug, router]);
 
   const saveMutation = useMutation({
     networkMode: 'offlineFirst',
@@ -743,110 +750,6 @@ function ResidentProfilePage(): React.JSX.Element {
     subscribeMutation.mutate();
   }, [isOnline, normalizedSlug, subscribeMutation]);
 
-  React.useEffect(() => {
-    setSearchSlugValue(normalizedSlug);
-  }, [normalizedSlug]);
-
-  const performLookupSlug = React.useCallback(async (rawSlug: string, silent: boolean) => {
-    const targetSlug = normalizeResidentSlug(rawSlug);
-    if (!targetSlug) {
-      setLookupResult(null);
-      return;
-    }
-    if (!isOnline) {
-      if (!silent) {
-        toast.info(MESSAGES.toast.offlineQueued);
-      }
-      return;
-    }
-
-    const requestId = lookupRequestIdRef.current + 1;
-    lookupRequestIdRef.current = requestId;
-    setLookupPending(true);
-    try {
-      const [availabilitySettled, priceSettled, profileSettled] = await Promise.allSettled([
-        apiClient.get<any>('/cards/availability', { query: { slug: targetSlug } }),
-        apiClient.get<any>('/cards/slug-price', { query: { slug: targetSlug } }),
-        fetchResidentProfileLike(targetSlug),
-      ]);
-
-      const availabilityPayload = availabilitySettled.status === 'fulfilled' ? availabilitySettled.value : null;
-      const availableFromApi = typeof availabilityPayload?.available === 'boolean'
-        ? availabilityPayload.available
-        : (typeof availabilityPayload?.item?.available === 'boolean' ? availabilityPayload.item.available : null);
-
-      const pricePayload = priceSettled.status === 'fulfilled' ? priceSettled.value : null;
-      const numericPrice = parseNumeric(
-        pricePayload?.slugPrice
-        ?? pricePayload?.price
-        ?? pricePayload?.amount
-        ?? availabilityPayload?.slugPrice
-        ?? availabilityPayload?.item?.slugPrice,
-      );
-
-      const profileCandidate = profileSettled.status === 'fulfilled' ? profileSettled.value : null;
-      const resolvedAvailable = availableFromApi !== null ? availableFromApi : !profileCandidate;
-
-      if (lookupRequestIdRef.current !== requestId) {
-        return;
-      }
-      setLookupResult({
-        slug: targetSlug,
-        available: resolvedAvailable,
-        price: numericPrice,
-        profile: resolvedAvailable ? null : profileCandidate,
-      });
-    } catch {
-      if (!silent) {
-        toast.error(profileText.searchError);
-      }
-    } finally {
-      if (lookupRequestIdRef.current === requestId) {
-        setLookupPending(false);
-      }
-    }
-  }, [isOnline, profileText.searchError]);
-
-  const handleLookupSlug = React.useCallback(async () => {
-    await performLookupSlug(searchSlugValue, false);
-  }, [performLookupSlug, searchSlugValue]);
-
-  const handleSearchSlugChange = React.useCallback((value: string) => {
-    setSearchSlugValue(value);
-    if (!normalizeResidentSlug(value)) {
-      // Invalidate any in-flight lookup so stale responses cannot restore old result.
-      lookupRequestIdRef.current += 1;
-      setLookupResult(null);
-      setLookupPending(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    const targetSlug = normalizeResidentSlug(searchSlugValue);
-    if (!targetSlug) {
-      lookupRequestIdRef.current += 1;
-      setLookupResult(null);
-      setLookupPending(false);
-      return;
-    }
-
-    const timerId = setTimeout(() => {
-      void performLookupSlug(searchSlugValue, true);
-    }, 300);
-
-    return () => clearTimeout(timerId);
-  }, [performLookupSlug, searchSlugValue]);
-
-  const handleBuySlug = React.useCallback(async () => {
-    const targetSlug = lookupResult?.slug ? encodeURIComponent(lookupResult.slug) : '';
-    if (!targetSlug) {
-      return;
-    }
-    await Linking.openURL(`https://unqx.uz/?slug=${targetSlug}`).catch(() => {
-      toast.error(profileText.openLinkFailed);
-    });
-  }, [lookupResult?.slug, profileText.openLinkFailed]);
-
   const viewsValue = Number(profile?.taps ?? 0);
   const priceValue = typeof profile?.slugPrice === 'number' && Number.isFinite(profile.slugPrice)
     ? `${profile.slugPrice.toLocaleString(locale)} сум`
@@ -863,9 +766,6 @@ function ResidentProfilePage(): React.JSX.Element {
     ? `${profileText.top} ${roundedTopPercent}%`
     : (resolvedLeaderboardPosition !== null && resolvedLeaderboardPosition > 0 ? `#${Math.round(resolvedLeaderboardPosition)}` : '—');
   const footerViewsText = `${viewsValue.toLocaleString(locale)} ${profileText.views}`;
-  const lookupPriceText = lookupResult?.price !== null && lookupResult?.price !== undefined
-    ? `${lookupResult.price.toLocaleString(locale)} сум`
-    : '—';
   const publicCardAddress = React.useMemo(
     () => [contactAddress, profilePostcode].map((value) => String(value ?? '').trim()).filter(Boolean).join(', '),
     [contactAddress, profilePostcode],
@@ -1021,8 +921,33 @@ function ResidentProfilePage(): React.JSX.Element {
                 />
               }
             >
-              <View style={styles.slugLookupWrap}>
-                <View style={styles.slugLookupTopRow}>
+              <SlugLookup
+                copy={{
+                  placeholder: profileText.searchSlug,
+                  priceLabel: profileText.slugPrice,
+                  pricePending: profileText.slugPricePending,
+                  available: profileText.slugAvailable,
+                  taken: profileText.slugTaken,
+                  pending: profileText.slugPending,
+                  blocked: profileText.slugBlocked,
+                  invalidFormat: profileText.slugInvalidFormat,
+                  buy: profileText.buySlug,
+                  searchError: profileText.searchError,
+                  openLinkFailed: profileText.openLinkFailed,
+                }}
+                locale={locale}
+                initialSlug={normalizedSlug}
+                containerStyle={styles.slugLookupWrap}
+                theme={{
+                  surface: themedSurface,
+                  border: themedBorder,
+                  text: themedText,
+                  mutedText: themedMutedText,
+                  primaryBg: themedPrimaryBg,
+                  primaryText: themedPrimaryText,
+                  chipBg: themedChipBg,
+                }}
+                leading={(
                   <AnimatedPressable
                     style={[styles.backButton, { borderColor: themedBorder, backgroundColor: themedSurface }]}
                     onPress={() => router.back()}
@@ -1030,83 +955,9 @@ function ResidentProfilePage(): React.JSX.Element {
                     <ChevronLeft size={16} color={themedText} strokeWidth={1.8} />
                     <Text style={[styles.backButtonText, { color: themedText }]}>{profileText.back}</Text>
                   </AnimatedPressable>
-                  <View style={[styles.slugSearchBox, { borderColor: themedBorder, backgroundColor: themedSurface }]}>
-                    <Text style={[styles.slugPrefix, { color: themedMutedText }]}>unqx.uz/</Text>
-                    <TextInput
-                      value={searchSlugValue}
-                      onChangeText={handleSearchSlugChange}
-                      placeholder={profileText.searchSlug}
-                      placeholderTextColor={themedMutedText}
-                      autoCapitalize='characters'
-                      autoCorrect={false}
-                      style={[styles.slugSearchInput, { color: themedText }]}
-                    />
-                  </View>
-                  <AnimatedPressable
-                    style={[styles.slugSearchAction, { borderColor: themedBorder, backgroundColor: themedSurface }]}
-                    onPress={() => {
-                      void handleLookupSlug();
-                    }}
-                  >
-                    {lookupPending ? (
-                      <ActivityIndicator size='small' color={themedText} />
-                    ) : (
-                      <Search size={16} color={themedText} strokeWidth={1.8} />
-                    )}
-                  </AnimatedPressable>
-                </View>
-                {lookupResult ? (
-                  <View style={[styles.lookupResultCard, { borderColor: themedBorder, backgroundColor: themedSurface }]}>
-                    {lookupResult.available ? (
-                      <>
-                        <View style={styles.lookupResultInfo}>
-                          <Text style={[styles.lookupSlug, { color: themedText }]}>{lookupResult.slug}</Text>
-                          <Text style={[styles.lookupStatus, { color: themedMutedText }]}>{profileText.slugAvailable}</Text>
-                        </View>
-                        <View style={styles.lookupResultRight}>
-                          <Text style={[styles.lookupPrice, { color: themedText }]}>{lookupPriceText}</Text>
-                          <AnimatedPressable
-                            style={[styles.buyButton, { borderColor: themedPrimaryBg, backgroundColor: themedPrimaryBg }]}
-                            onPress={() => {
-                              void handleBuySlug();
-                            }}
-                          >
-                            <Text style={[styles.buyButtonText, { color: themedPrimaryText }]}>{profileText.buySlug}</Text>
-                          </AnimatedPressable>
-                        </View>
-                      </>
-                    ) : (
-                      <>
-                        <View style={styles.lookupAvatarWrap}>
-                          {lookupAvatar.showImage && lookupAvatar.imageUri ? (
-                            <Image
-                              key={`${lookupResult.profile?.avatarUrl}:${lookupAvatar.retryCount}`}
-                            source={{ uri: lookupAvatar.imageUri }}
-                            style={styles.lookupAvatar}
-                            onError={lookupAvatar.onError}
-                          />
-                        ) : (
-                          <View style={[styles.lookupAvatar, { backgroundColor: themedChipBg }]}>
-                            <Text style={[styles.lookupAvatarText, { color: themedMutedText }]}>
-                              {initial(lookupResult.profile?.name ?? lookupResult.slug)}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.lookupResultInfo}>
-                        <Text style={[styles.lookupSlug, { color: themedText }]}>{lookupResult.slug}</Text>
-                        <Text style={[styles.lookupName, { color: themedMutedText }]}>
-                          {lookupResult.profile?.name || profileText.slugTaken}
-                        </Text>
-                      </View>
-                      <View style={styles.lookupResultRight}>
-                        <Text style={[styles.lookupPrice, { color: themedText }]}>{lookupPriceText}</Text>
-                      </View>
-                    </>
-                  )}
-                </View>
-              ) : null}
-            </View>
+                )}
+                onOpenOwner={handleOpenLookupOwner}
+              />
 
               <View style={[styles.heroCard, { backgroundColor: themedSurface, borderColor: themedBorder }]}>
                 <View style={styles.heroAvatarWrap}>
@@ -1224,8 +1075,33 @@ function ResidentProfilePage(): React.JSX.Element {
               />
             }
           >
-            <View style={styles.slugLookupWrap}>
-              <View style={styles.slugLookupTopRow}>
+            <SlugLookup
+              copy={{
+                placeholder: profileText.searchSlug,
+                priceLabel: profileText.slugPrice,
+                pricePending: profileText.slugPricePending,
+                available: profileText.slugAvailable,
+                taken: profileText.slugTaken,
+                pending: profileText.slugPending,
+                blocked: profileText.slugBlocked,
+                invalidFormat: profileText.slugInvalidFormat,
+                buy: profileText.buySlug,
+                searchError: profileText.searchError,
+                openLinkFailed: profileText.openLinkFailed,
+              }}
+              locale={locale}
+              initialSlug={normalizedSlug}
+              containerStyle={styles.slugLookupWrap}
+              theme={{
+                surface: themedSurface,
+                border: themedBorder,
+                text: themedText,
+                mutedText: themedMutedText,
+                primaryBg: themedPrimaryBg,
+                primaryText: themedPrimaryText,
+                chipBg: themedChipBg,
+              }}
+              leading={(
                 <AnimatedPressable
                   style={[styles.backButton, { borderColor: themedBorder, backgroundColor: themedSurface }]}
                   onPress={() => router.back()}
@@ -1233,83 +1109,9 @@ function ResidentProfilePage(): React.JSX.Element {
                   <ChevronLeft size={16} color={themedText} strokeWidth={1.8} />
                   <Text style={[styles.backButtonText, { color: themedText }]}>{profileText.back}</Text>
                 </AnimatedPressable>
-                <View style={[styles.slugSearchBox, { borderColor: themedBorder, backgroundColor: themedSurface }]}>
-                  <Text style={[styles.slugPrefix, { color: themedMutedText }]}>unqx.uz/</Text>
-                  <TextInput
-                    value={searchSlugValue}
-                    onChangeText={handleSearchSlugChange}
-                    placeholder={profileText.searchSlug}
-                    placeholderTextColor={themedMutedText}
-                    autoCapitalize='characters'
-                    autoCorrect={false}
-                    style={[styles.slugSearchInput, { color: themedText }]}
-                  />
-                </View>
-                <AnimatedPressable
-                  style={[styles.slugSearchAction, { borderColor: themedBorder, backgroundColor: themedSurface }]}
-                  onPress={() => {
-                    void handleLookupSlug();
-                  }}
-                >
-                  {lookupPending ? (
-                    <ActivityIndicator size='small' color={themedText} />
-                  ) : (
-                    <Search size={16} color={themedText} strokeWidth={1.8} />
-                  )}
-                </AnimatedPressable>
-              </View>
-              {lookupResult ? (
-                <View style={[styles.lookupResultCard, { borderColor: themedBorder, backgroundColor: themedSurface }]}>
-                  {lookupResult.available ? (
-                    <>
-                      <View style={styles.lookupResultInfo}>
-                        <Text style={[styles.lookupSlug, { color: themedText }]}>{lookupResult.slug}</Text>
-                        <Text style={[styles.lookupStatus, { color: themedMutedText }]}>{profileText.slugAvailable}</Text>
-                      </View>
-                      <View style={styles.lookupResultRight}>
-                        <Text style={[styles.lookupPrice, { color: themedText }]}>{lookupPriceText}</Text>
-                        <AnimatedPressable
-                          style={[styles.buyButton, { borderColor: themedPrimaryBg, backgroundColor: themedPrimaryBg }]}
-                          onPress={() => {
-                            void handleBuySlug();
-                          }}
-                        >
-                          <Text style={[styles.buyButtonText, { color: themedPrimaryText }]}>{profileText.buySlug}</Text>
-                        </AnimatedPressable>
-                      </View>
-                    </>
-                  ) : (
-                    <>
-                      <View style={styles.lookupAvatarWrap}>
-                        {lookupAvatar.showImage && lookupAvatar.imageUri ? (
-                          <Image
-                            key={`${lookupResult.profile?.avatarUrl}:${lookupAvatar.retryCount}`}
-                            source={{ uri: lookupAvatar.imageUri }}
-                            style={styles.lookupAvatar}
-                            onError={lookupAvatar.onError}
-                          />
-                        ) : (
-                          <View style={[styles.lookupAvatar, { backgroundColor: themedChipBg }]}>
-                            <Text style={[styles.lookupAvatarText, { color: themedMutedText }]}>
-                              {initial(lookupResult.profile?.name ?? lookupResult.slug)}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.lookupResultInfo}>
-                        <Text style={[styles.lookupSlug, { color: themedText }]}>{lookupResult.slug}</Text>
-                        <Text style={[styles.lookupName, { color: themedMutedText }]}>
-                          {lookupResult.profile?.name || profileText.slugTaken}
-                        </Text>
-                      </View>
-                      <View style={styles.lookupResultRight}>
-                        <Text style={[styles.lookupPrice, { color: themedText }]}>{lookupPriceText}</Text>
-                      </View>
-                    </>
-                  )}
-                </View>
-              ) : null}
-            </View>
+              )}
+              onOpenOwner={handleOpenLookupOwner}
+            />
 
             <View style={[styles.summaryMetaCard, { borderColor: themedBorder, backgroundColor: themedSurface }]}>
               <View style={styles.badgesRow}>
@@ -1537,11 +1339,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 8,
   },
-  slugLookupTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   backButton: {
     minHeight: 44,
     borderWidth: 1,
@@ -1555,97 +1352,6 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
-  },
-  slugSearchBox: {
-    flex: 1,
-    minHeight: 44,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  slugPrefix: {
-    fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-  },
-  slugSearchInput: {
-    flex: 1,
-    fontSize: 18,
-    fontFamily: 'Inter_500Medium',
-    paddingVertical: 0,
-  },
-  slugSearchAction: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lookupResultCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    minHeight: 66,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  lookupAvatarWrap: {
-    width: 34,
-    height: 34,
-  },
-  lookupAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lookupAvatarText: {
-    fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  lookupResultInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  lookupSlug: {
-    fontSize: 18,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  lookupName: {
-    fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-  },
-  lookupStatus: {
-    fontSize: 12,
-    fontFamily: 'Inter_500Medium',
-  },
-  lookupResultRight: {
-    minWidth: 90,
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  lookupPrice: {
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    textAlign: 'right',
-  },
-  buyButton: {
-    minHeight: 28,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buyButtonText: {
-    fontSize: 12,
-    fontFamily: 'Inter_600SemiBold',
   },
   coverWrap: {
     marginHorizontal: -20,
