@@ -1,5 +1,19 @@
 import React from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Switch, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  Switch,
+  useWindowDimensions,
+} from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Camera, Plus, Trash2 } from 'lucide-react-native';
@@ -50,6 +64,89 @@ function LinearThemePreview({ themeId }: { themeId: ProfileCard['theme'] }): Rea
   );
 }
 
+function resolveButtonValueInputMeta(icon: string, isUz: boolean) {
+  const kind = normalizeButtonIconKey(icon);
+
+  if (kind === 'phone' || kind === 'whatsapp') {
+    return {
+      placeholder: '+998 90 123 45 67',
+      keyboardType: 'phone-pad' as const,
+      autoCapitalize: 'none' as const,
+      autoCorrect: false,
+    };
+  }
+
+  if (kind === 'email') {
+    return {
+      placeholder: 'name@example.com',
+      keyboardType: 'email-address' as const,
+      autoCapitalize: 'none' as const,
+      autoCorrect: false,
+    };
+  }
+
+  if (kind === 'telegram') {
+    return {
+      placeholder: isUz ? '@username yoki t.me/username' : '@username или t.me/username',
+      keyboardType: 'default' as const,
+      autoCapitalize: 'none' as const,
+      autoCorrect: false,
+    };
+  }
+
+  if (kind === 'instagram') {
+    return {
+      placeholder: isUz ? '@username yoki instagram.com/username' : '@username или instagram.com/username',
+      keyboardType: 'default' as const,
+      autoCapitalize: 'none' as const,
+      autoCorrect: false,
+    };
+  }
+
+  if (kind === 'tiktok') {
+    return {
+      placeholder: isUz ? '@username yoki tiktok.com/@username' : '@username или tiktok.com/@username',
+      keyboardType: 'default' as const,
+      autoCapitalize: 'none' as const,
+      autoCorrect: false,
+    };
+  }
+
+  if (kind === 'youtube') {
+    return {
+      placeholder: isUz ? '@kanal yoki youtube.com/@kanal' : '@канал или youtube.com/@канал',
+      keyboardType: 'default' as const,
+      autoCapitalize: 'none' as const,
+      autoCorrect: false,
+    };
+  }
+
+  if (kind === 'card') {
+    return {
+      placeholder: '8600 1234 5678 9012',
+      keyboardType: 'number-pad' as const,
+      autoCapitalize: 'none' as const,
+      autoCorrect: false,
+    };
+  }
+
+  if (kind === 'website') {
+    return {
+      placeholder: 'https://example.com',
+      keyboardType: 'url' as const,
+      autoCapitalize: 'none' as const,
+      autoCorrect: false,
+    };
+  }
+
+  return {
+    placeholder: isUz ? 'Havola yoki qiymat' : 'Ссылка или значение',
+    keyboardType: 'default' as const,
+    autoCapitalize: 'sentences' as const,
+    autoCorrect: false,
+  };
+}
+
 export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, onPreview, onSave }: CardEditorProps): React.JSX.Element {
   const { language } = useLanguageContext();
   const insets = useSafeAreaInsets();
@@ -81,11 +178,12 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
       premiumThemesHint: 'Premium mavzular faqat Premium tarifda mavjud',
       buttons: "Tugmalar",
       buttonTitle: 'Nomi',
+      buttonValue: 'Qiymat',
       save: "O'zgarishlarni saqlash",
       requiredName: 'Ism majburiy (kamida 2 belgi)',
       maxBio: 'Maksimum 120 belgi',
       invalidEmail: "Noto'g'ri email",
-      invalidButtons: "Nomi bor tugmalarda havola bo'lishi kerak",
+      invalidButtons: "Nomi bor tugmalarda qiymat bo'lishi kerak",
     }
     : {
       back: '← Назад',
@@ -113,11 +211,12 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
       premiumThemesHint: 'Премиум-темы доступны только на тарифе Premium',
       buttons: 'Кнопки',
       buttonTitle: 'Название',
+      buttonValue: 'Значение',
       save: 'Сохранить изменения',
       requiredName: 'Имя обязательно (минимум 2 символа)',
       maxBio: 'Максимум 120 символов',
       invalidEmail: 'Некорректный email',
-      invalidButtons: 'У всех кнопок с названием должна быть ссылка',
+      invalidButtons: 'У всех кнопок с названием должно быть значение',
     };
   // Валидация
   const [errors, setErrors] = React.useState<any>({});
@@ -256,7 +355,10 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
 
   return (
     <Modal visible={visible} animationType='slide' onRequestClose={onClose}>
-      <View style={[styles.root, { backgroundColor: tokens.phoneBg }]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[styles.root, { backgroundColor: tokens.phoneBg }]}
+      >
         <View
           style={[
             styles.header,
@@ -279,7 +381,12 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(32, insets.bottom + 72) }]}
+          keyboardShouldPersistTaps='handled'
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          automaticallyAdjustKeyboardInsets
+        >
           <View style={styles.avatarBlock}>
             <View style={[styles.avatar, { backgroundColor: `${tokens.accent}14` }]}>
               {avatarUploading ? (
@@ -521,26 +628,37 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
                     );
                   })}
                 </ScrollView>
+                {(() => {
+                  const valueInputMeta = resolveButtonValueInputMeta(button.icon, isUz);
 
-                <TextInput
-                  value={button.label}
-                  onChangeText={(v) => updateButton(index, { label: v })}
-                  placeholder={text.buttonTitle}
-                  placeholderTextColor={tokens.textMuted}
-                  style={[styles.inlineInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
-                />
-                <View style={styles.bottomRow}>
-                  <TextInput
-                    value={button.url}
-                    onChangeText={(v) => updateButton(index, { url: v })}
-                    placeholder='https://...'
-                    placeholderTextColor={tokens.textMuted}
-                    style={[styles.urlInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
-                  />
-                  <Pressable onPress={() => removeButton(index)} style={styles.removeBtn}>
-                    <Trash2 size={15} strokeWidth={1.5} color={tokens.red} />
-                  </Pressable>
-                </View>
+                  return (
+                    <>
+                      <TextInput
+                        value={button.label}
+                        onChangeText={(v) => updateButton(index, { label: v })}
+                        placeholder={text.buttonTitle}
+                        placeholderTextColor={tokens.textMuted}
+                        style={[styles.inlineInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
+                      />
+                      <Text style={[styles.fieldLabel, { color: tokens.textMuted }]}>{text.buttonValue}</Text>
+                      <View style={styles.bottomRow}>
+                        <TextInput
+                          value={button.url}
+                          onChangeText={(v) => updateButton(index, { url: v })}
+                          placeholder={valueInputMeta.placeholder}
+                          placeholderTextColor={tokens.textMuted}
+                          keyboardType={valueInputMeta.keyboardType}
+                          autoCapitalize={valueInputMeta.autoCapitalize}
+                          autoCorrect={valueInputMeta.autoCorrect}
+                          style={[styles.urlInput, { backgroundColor: tokens.inputBg, borderColor: tokens.border, color: tokens.text }]}
+                        />
+                        <Pressable onPress={() => removeButton(index)} style={styles.removeBtn}>
+                          <Trash2 size={15} strokeWidth={1.5} color={tokens.red} />
+                        </Pressable>
+                      </View>
+                    </>
+                  );
+                })()}
               </View>
             ))}
           </View>
@@ -582,7 +700,7 @@ export function CardEditor({ visible, tokens, card, saving, userPlan, onClose, o
             )}
           </Pressable>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

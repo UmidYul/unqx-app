@@ -44,6 +44,7 @@ import { ResidentProfile } from '@/types';
 import type { ProfileCard } from '@/types';
 import { useLanguageContext } from '@/i18n/LanguageProvider';
 import { useThemeContext } from '@/theme/ThemeProvider';
+import { isDarkThemeTokens } from '@/theme/tokens';
 import { formatSlug } from '@/utils/avatar';
 import { getPreferredTelegramUrl } from '@/utils/links';
 import { toast } from '@/utils/toast';
@@ -124,21 +125,6 @@ function formatCompact(value: number, locale: string): string {
   } catch {
     return String(value);
   }
-}
-
-function isDarkHexColor(value: string): boolean {
-  const normalized = String(value ?? '').trim();
-  const match = normalized.match(/^#([0-9a-f]{6})$/i);
-  if (!match) {
-    return false;
-  }
-
-  const hex = match[1];
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-  return brightness < 146;
 }
 
 function VerificationIcon({ color }: { color: string }): React.JSX.Element {
@@ -346,35 +332,34 @@ function ResidentProfilePage(): React.JSX.Element {
     [profile?.theme],
   );
   const pageThemeOverride = React.useMemo(() => {
-    const secondaryBg = pageThemeSpec.buttonSecondaryBg === 'transparent'
-      ? pageThemeSpec.surfaceBg
-      : pageThemeSpec.buttonSecondaryBg;
-    const secondaryBorder = pageThemeSpec.buttonSecondaryBorder === 'transparent'
-      ? pageThemeSpec.surfaceBorder
-      : pageThemeSpec.buttonSecondaryBorder;
-    const chipBg = pageThemeSpec.badgeBg === 'transparent' ? secondaryBg : pageThemeSpec.badgeBg;
-    const chipBorder = pageThemeSpec.badgeBorder === 'transparent' ? secondaryBorder : pageThemeSpec.badgeBorder;
+    const surfaceBg = pageThemeSpec.surfaceBg;
+    const surfaceBorder = pageThemeSpec.surfaceBorder === 'transparent'
+      ? pageThemeSpec.cardBorder
+      : pageThemeSpec.surfaceBorder;
+    const chipBg = pageThemeSpec.badgeBg === 'transparent' ? surfaceBg : pageThemeSpec.badgeBg;
+    const chipBorder = pageThemeSpec.badgeBorder === 'transparent' ? surfaceBorder : pageThemeSpec.badgeBorder;
     const backdropStart = pageThemeSpec.cardGradient[0] ?? pageThemeSpec.cardBg;
     const backdropEnd = pageThemeSpec.cardGradient[pageThemeSpec.cardGradient.length - 1] ?? pageThemeSpec.surfaceBg;
+    const isDarkSurface = isDarkThemeTokens({ bg: pageThemeSpec.cardBg }) || !isDarkThemeTokens({ bg: pageThemeSpec.nameColor });
 
     return {
       bg: pageThemeSpec.cardBg,
-      surface: secondaryBg,
+      surface: surfaceBg,
       text: pageThemeSpec.nameColor,
       mutedText: pageThemeSpec.roleColor,
       chipBg,
       chipText: pageThemeSpec.badgeText,
       accent: pageThemeSpec.accentColor,
-      border: secondaryBorder,
+      border: surfaceBorder,
       primaryBg: pageThemeSpec.buttonPrimaryBg,
       primaryText: pageThemeSpec.buttonPrimaryText,
       backdropStart,
       backdropEnd,
       backdropAccent: `${pageThemeSpec.accentColor}18`,
       backdropGlow: `${pageThemeSpec.avatarBg}88`,
-      overlayStroke: `${pageThemeSpec.surfaceBorder}55`,
+      overlayStroke: `${surfaceBorder}55`,
       overlayStrokeSoft: `${chipBorder}33`,
-      isDark: isDarkHexColor(pageThemeSpec.cardBg),
+      isDark: isDarkSurface,
     };
   }, [pageThemeSpec]);
   const themedSurface = pageThemeOverride.surface ?? pageThemeOverride.bg;
