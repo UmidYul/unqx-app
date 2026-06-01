@@ -119,7 +119,7 @@ export default function ResetPasswordPage(): React.JSX.Element {
     >
       <AuthScaffold
         tokens={tokens}
-        eyebrow='UNQX / Reset Password'
+        eyebrow='UNQX / Сброс пароля'
         title={MESSAGES.ui.auth.resetPasswordTitle}
         subtitle={MESSAGES.ui.auth.resetPasswordSubtitle}
         topAction={{ label: 'Назад', onPress: () => safePush('/forgot-password') }}

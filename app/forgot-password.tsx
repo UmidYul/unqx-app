@@ -54,7 +54,7 @@ export default function ForgotPasswordPage(): React.JSX.Element {
     >
       <AuthScaffold
         tokens={tokens}
-        eyebrow='UNQX / Recovery'
+        eyebrow='UNQX / Восстановление'
         title={MESSAGES.ui.auth.forgotPasswordTitle}
         subtitle={MESSAGES.ui.auth.forgotPasswordSubtitle}
         topAction={{ label: 'Назад к входу', onPress: () => safePush('/login') }}

@@ -79,7 +79,8 @@ export function BottomNav({ tokens, themeOverride }: BottomNavProps): React.JSX.
       style={[
         styles.container,
         {
-          borderTopColor: 'transparent',
+          borderTopWidth: themeOverride ? StyleSheet.hairlineWidth : 0,
+          borderTopColor: themeOverride ? navSurfaceBorder : 'transparent',
           backgroundColor: navSurfaceBackground,
           minHeight: navMinHeight,
           paddingTop: navTopPadding,
@@ -108,8 +109,8 @@ export function BottomNav({ tokens, themeOverride }: BottomNavProps): React.JSX.
                 if (pathname?.includes(`/${item.id}`)) {
                   return;
                 }
-                if (!signedIn && item.id !== 'nfc') {
-                  safeReplace('/login');
+                if (!signedIn && item.id !== 'nfc' && item.id !== 'home') {
+                  safeReplace(`/login?next=${encodeURIComponent(item.route)}`);
                   return;
                 }
                 setActiveTab(item.id as ScreenTab);

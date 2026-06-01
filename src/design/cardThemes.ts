@@ -1,5 +1,98 @@
 import { CardThemeRegistry, CardThemeSpec, ProfileCardTheme } from '@/types';
 
+function hexToRgb(value: string): { r: number; g: number; b: number } | null {
+  const match = /^#?([0-9a-f]{6})$/i.exec(String(value ?? '').trim());
+  if (!match) return null;
+  return {
+    r: Number.parseInt(match[1].slice(0, 2), 16),
+    g: Number.parseInt(match[1].slice(2, 4), 16),
+    b: Number.parseInt(match[1].slice(4, 6), 16),
+  };
+}
+
+function rgba(value: string, alpha: number): string {
+  const rgb = hexToRgb(value);
+  if (!rgb) return value;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+function buildMonochromeTheme(input: {
+  id: Extract<
+    ProfileCardTheme,
+    'color_red' | 'color_orange' | 'color_yellow' | 'color_green' | 'color_teal' | 'color_blue' | 'color_purple' | 'color_pink'
+  >;
+  label: string;
+  swatch: string;
+  surfaceBg: string;
+  base: string;
+  deep: string;
+  accent: string;
+  text: string;
+  role: string;
+  muted: string;
+  buttonText: string;
+  buttonSecondaryText?: string;
+  badgeText: string;
+  border: string;
+  isLight?: boolean;
+}): CardThemeSpec {
+  const isLight = Boolean(input.isLight);
+  return {
+    id: input.id,
+    label: input.label,
+    premium: true,
+    swatch: input.swatch,
+    cardGradient: [input.deep, input.base, input.surfaceBg],
+    cardBg: input.base,
+    surfaceBg: rgba(input.surfaceBg, isLight ? 0.9 : 0.78),
+    cardBorder: input.border,
+    surfaceBorder: rgba(input.accent, isLight ? 0.26 : 0.24),
+    dividerColor: rgba(input.accent, isLight ? 0.24 : 0.2),
+    nameColor: input.text,
+    roleColor: input.role,
+    mutedColor: input.muted,
+    accentColor: input.accent,
+    emailColor: input.text,
+    buttonPrimaryBg: input.accent,
+    buttonPrimaryGradient: [input.accent, input.base],
+    buttonPrimaryText: input.buttonText,
+    buttonPrimaryBorder: rgba(input.accent, 0.78),
+    buttonSecondaryBg: isLight ? rgba('#ffffff', 0.44) : rgba(input.deep, 0.34),
+    buttonSecondaryText: input.buttonSecondaryText ?? input.text,
+    buttonSecondaryBorder: rgba(input.accent, isLight ? 0.36 : 0.28),
+    badgeText: input.badgeText,
+    badgeBg: isLight ? rgba('#ffffff', 0.22) : rgba('#000000', 0.16),
+    badgeBorder: rgba(input.accent, isLight ? 0.3 : 0.24),
+    topLineColor: rgba(input.accent, 0.7),
+    topLineGradient: ['rgba(255,255,255,0)', rgba(input.accent, 0.7), 'rgba(255,255,255,0)'],
+    avatarBg: input.base,
+    avatarGradient: [input.base, input.surfaceBg],
+    avatarText: input.text,
+    avatarBorder: rgba(input.accent, isLight ? 0.42 : 0.28),
+    cardRadius: 24,
+    fontFamily: 'Inter_500Medium',
+    nameFontStyle: 'normal',
+    nameFontWeight: '700',
+    roleLetterSpacing: 1.8,
+    scoreLabelColor: input.role,
+    scoreValueColor: input.text,
+    scoreBarFill: input.accent,
+    scoreBarTrack: rgba(input.base, isLight ? 0.18 : 0.4),
+    scorePercentileColor: input.muted,
+    shadowColor: input.deep,
+    shadowOpacity: isLight ? 0.16 : 0.52,
+    shadowRadius: isLight ? 18 : 24,
+    shadowOffsetY: isLight ? 14 : 18,
+    elevation: isLight ? 8 : 14,
+    overlay: 'monochrome_flow',
+    buttonShine: true,
+    footerText: input.role,
+    widgetPrimary: input.base,
+    widgetSecondary: rgba(input.surfaceBg, isLight ? 0.88 : 0.74),
+    widgetAccent: input.accent,
+  };
+}
+
 const CARD_THEME_REGISTRY: CardThemeRegistry = {
   default_dark: {
     id: 'default_dark',
@@ -30,7 +123,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#4a4a4a',
     avatarBorder: '#ececec',
     cardRadius: 20,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '400',
     roleLetterSpacing: 0,
@@ -83,7 +176,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#4a6880',
     avatarBorder: '#b0c4d4',
     cardRadius: 24,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '300',
     roleLetterSpacing: 2,
@@ -136,7 +229,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#7a6650',
     avatarBorder: '#c8bdb0',
     cardRadius: 20,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'italic',
     nameFontWeight: '400',
     roleLetterSpacing: 2,
@@ -188,7 +281,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#555555',
     avatarBorder: '#dddddd',
     cardRadius: 0,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '800',
     roleLetterSpacing: 3,
@@ -242,7 +335,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#e7dbbf',
     avatarBorder: 'rgba(231, 219, 191, 0.24)',
     cardRadius: 20,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'italic',
     nameFontWeight: '400',
     roleLetterSpacing: 2,
@@ -296,7 +389,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#3f5143',
     avatarBorder: 'rgba(109, 126, 110, 0.3)',
     cardRadius: 24,
-    fontFamily: 'Manrope_600SemiBold',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '600',
     roleLetterSpacing: 1.2,
@@ -350,7 +443,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#d6e6ff',
     avatarBorder: 'rgba(123, 157, 211, 0.34)',
     cardRadius: 20,
-    fontFamily: 'Sora_500Medium',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '500',
     roleLetterSpacing: 1.5,
@@ -404,7 +497,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#d9c184',
     avatarBorder: 'rgba(201, 173, 106, 0.3)',
     cardRadius: 20,
-    fontFamily: 'DMSerifDisplay_400Regular',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '500',
     roleLetterSpacing: 1.4,
@@ -458,7 +551,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#f4e3cb',
     avatarBorder: 'rgba(120, 76, 48, 0.66)',
     cardRadius: 3,
-    fontFamily: 'CormorantGaramond_700Bold',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '700',
     roleLetterSpacing: 0.8,
@@ -510,7 +603,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#ffffff',
     avatarBorder: 'rgba(255, 255, 255, 0.25)',
     cardRadius: 21,
-    fontFamily: 'System',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '600',
     roleLetterSpacing: 1.2,
@@ -564,7 +657,7 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     avatarText: '#c9a55a',
     avatarBorder: 'rgba(201, 165, 90, 0.19)',
     cardRadius: 22,
-    fontFamily: 'CormorantGaramond_600SemiBold',
+    fontFamily: 'Inter_500Medium',
     nameFontStyle: 'normal',
     nameFontWeight: '600',
     roleLetterSpacing: 1.4,
@@ -585,6 +678,182 @@ const CARD_THEME_REGISTRY: CardThemeRegistry = {
     widgetSecondary: '#2d0a12',
     widgetAccent: '#c9a55a',
   },
+  graffiti_neon: {
+    id: 'graffiti_neon',
+    label: 'Graffiti Neon',
+    premium: true,
+    swatch: '#19142a',
+    cardGradient: ['#12111d', '#19142a', '#0f1220'],
+    cardBg: '#151422',
+    surfaceBg: 'rgba(15, 18, 31, 0.82)',
+    cardBorder: 'rgba(94, 247, 255, 0.28)',
+    surfaceBorder: 'rgba(242, 132, 255, 0.22)',
+    dividerColor: 'rgba(139, 255, 94, 0.24)',
+    nameColor: '#f7fbff',
+    roleColor: '#86f7ff',
+    mutedColor: '#f284ff',
+    accentColor: '#9bff62',
+    emailColor: '#dffcff',
+    buttonPrimaryBg: '#5ef7ff',
+    buttonPrimaryGradient: ['#5ef7ff', '#f54fff', '#b5ff5e'],
+    buttonPrimaryText: '#11131a',
+    buttonPrimaryBorder: 'rgba(94, 247, 255, 0.54)',
+    buttonSecondaryBg: 'rgba(16, 20, 32, 0.54)',
+    buttonSecondaryText: '#f5fbff',
+    buttonSecondaryBorder: 'rgba(242, 132, 255, 0.34)',
+    badgeText: '#f8a7ff',
+    badgeBg: 'rgba(30, 18, 45, 0.52)',
+    badgeBorder: 'rgba(242, 132, 255, 0.34)',
+    topLineColor: '#5ef7ff',
+    topLineGradient: ['rgba(94,247,255,0)', 'rgba(94,247,255,0.92)', 'rgba(181,255,94,0.9)'],
+    avatarBg: '#19142a',
+    avatarGradient: ['#19142a', '#10131f'],
+    avatarText: '#f7fbff',
+    avatarBorder: 'rgba(94, 247, 255, 0.26)',
+    cardRadius: 26,
+    fontFamily: 'Inter_500Medium',
+    nameFontStyle: 'normal',
+    nameFontWeight: '800',
+    roleLetterSpacing: 2.4,
+    scoreLabelColor: '#86f7ff',
+    scoreValueColor: '#f7fbff',
+    scoreBarFill: '#9bff62',
+    scoreBarTrack: 'rgba(94, 247, 255, 0.18)',
+    scorePercentileColor: '#f284ff',
+    shadowColor: '#040812',
+    shadowOpacity: 0.7,
+    shadowRadius: 28,
+    shadowOffsetY: 20,
+    elevation: 18,
+    overlay: 'graffiti_chaos',
+    buttonShine: true,
+    footerText: '#dffcff',
+    widgetPrimary: '#151422',
+    widgetSecondary: '#0f1220',
+    widgetAccent: '#9bff62',
+  },
+  color_red: buildMonochromeTheme({
+    id: 'color_red',
+    label: 'Red',
+    swatch: '#8e1627',
+    surfaceBg: '#3c0710',
+    base: '#8e1627',
+    deep: '#2d050c',
+    accent: '#ff6b85',
+    text: '#fff2f5',
+    role: '#ffb8c6',
+    muted: '#ffc7d3',
+    buttonText: '#2b0710',
+    badgeText: '#ffe0e7',
+    border: '#ff6b85',
+  }),
+  color_orange: buildMonochromeTheme({
+    id: 'color_orange',
+    label: 'Orange',
+    swatch: '#c85600',
+    surfaceBg: '#4f2100',
+    base: '#c85600',
+    deep: '#341300',
+    accent: '#ffb957',
+    text: '#fff4e5',
+    role: '#ffd89f',
+    muted: '#ffe3b8',
+    buttonText: '#3a1900',
+    badgeText: '#fff0d7',
+    border: '#ffb957',
+  }),
+  color_yellow: buildMonochromeTheme({
+    id: 'color_yellow',
+    label: 'Yellow',
+    swatch: '#d1a800',
+    surfaceBg: '#f3e4a5',
+    base: '#d1a800',
+    deep: '#5f4600',
+    accent: '#fff3a6',
+    text: '#332500',
+    role: '#6f5400',
+    muted: '#7f6310',
+    buttonText: '#332500',
+    buttonSecondaryText: '#4a3900',
+    badgeText: '#4a3900',
+    border: '#fff3a6',
+    isLight: true,
+  }),
+  color_green: buildMonochromeTheme({
+    id: 'color_green',
+    label: 'Green',
+    swatch: '#1f8f47',
+    surfaceBg: '#0d3317',
+    base: '#1f8f47',
+    deep: '#0a2210',
+    accent: '#b4ff82',
+    text: '#f2fff4',
+    role: '#d0ffb4',
+    muted: '#c1f2b2',
+    buttonText: '#0e2613',
+    badgeText: '#efffed',
+    border: '#b4ff82',
+  }),
+  color_teal: buildMonochromeTheme({
+    id: 'color_teal',
+    label: 'Teal',
+    swatch: '#0f8c93',
+    surfaceBg: '#072f33',
+    base: '#0f8c93',
+    deep: '#052026',
+    accent: '#91f8ff',
+    text: '#ecffff',
+    role: '#c5fdff',
+    muted: '#b6eef2',
+    buttonText: '#072126',
+    badgeText: '#ebffff',
+    border: '#91f8ff',
+  }),
+  color_blue: buildMonochromeTheme({
+    id: 'color_blue',
+    label: 'Blue',
+    swatch: '#1d63d6',
+    surfaceBg: '#0b234d',
+    base: '#1d63d6',
+    deep: '#091733',
+    accent: '#8fc8ff',
+    text: '#eef6ff',
+    role: '#cadeff',
+    muted: '#c3d8f4',
+    buttonText: '#0b1d3a',
+    badgeText: '#eff6ff',
+    border: '#8fc8ff',
+  }),
+  color_purple: buildMonochromeTheme({
+    id: 'color_purple',
+    label: 'Purple',
+    swatch: '#7a2fca',
+    surfaceBg: '#33124f',
+    base: '#7a2fca',
+    deep: '#220a37',
+    accent: '#d6adff',
+    text: '#fbf4ff',
+    role: '#ead7ff',
+    muted: '#dbc6f4',
+    buttonText: '#27113a',
+    badgeText: '#f7efff',
+    border: '#d6adff',
+  }),
+  color_pink: buildMonochromeTheme({
+    id: 'color_pink',
+    label: 'Pink',
+    swatch: '#d53c84',
+    surfaceBg: '#57163b',
+    base: '#d53c84',
+    deep: '#3a0e26',
+    accent: '#ffb6dc',
+    text: '#fff3f9',
+    role: '#ffd2e9',
+    muted: '#f5c2dc',
+    buttonText: '#3f0f28',
+    badgeText: '#fff0f8',
+    border: '#ffb6dc',
+  }),
 };
 
 export const CARD_THEME_OPTIONS = Object.values(CARD_THEME_REGISTRY).map((theme) => ({
@@ -607,6 +876,15 @@ export function normalizeProfileCardTheme(rawTheme: unknown): ProfileCardTheme {
   if (raw === 'aurora_codex') return 'aurora_codex';
   if (raw === 'nebula_glass') return 'nebula_glass';
   if (raw === 'velours') return 'velours';
+  if (raw === 'graffiti_neon') return 'graffiti_neon';
+  if (raw === 'color_red') return 'color_red';
+  if (raw === 'color_orange') return 'color_orange';
+  if (raw === 'color_yellow') return 'color_yellow';
+  if (raw === 'color_green') return 'color_green';
+  if (raw === 'color_teal') return 'color_teal';
+  if (raw === 'color_blue') return 'color_blue';
+  if (raw === 'color_purple') return 'color_purple';
+  if (raw === 'color_pink') return 'color_pink';
   return 'default_dark';
 }
 

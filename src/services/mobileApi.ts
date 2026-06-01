@@ -1,8 +1,36 @@
 import { apiClient, ApiError } from '@/lib/apiClient';
+import {
+  normalizePetCatalogItem,
+  normalizePetRequest,
+  normalizeProfileAvatarFrame,
+  normalizeProfileEmojiBackgroundPack,
+  normalizeProfilePet,
+  sortProfilePets,
+} from '@/design/cardExtras';
+import { normalizeProfileCardTheme } from '@/design/cardThemes';
 import { resolveAssetUrl } from '@/lib/assetUrl';
 import { storageDeleteItem, storageGetItem, storageSetItem } from '@/lib/secureStorage';
 import { API_ORIGIN } from '@/config/api';
-import { ProfileCard, ResidentProfile, SlugLookupOwner, SlugLookupResult, SlugLookupStatus } from '@/types';
+import {
+  FollowListItem,
+  FollowSummary,
+  PetCatalogItem,
+  PetRequest,
+  ProfileCard,
+  PublicProfileBadge,
+  ResidentProfile,
+  ResidentPausedState,
+  SlugLookupOwner,
+  SlugLookupResult,
+  SlugLookupStatus,
+  ViewerCommentComposer,
+  WallComment,
+  WallCommentAuthor,
+  WallFeed,
+  WallPagination,
+  WallPost,
+} from '@/types';
+import { extractSlug } from '@/utils/links';
 import { isCompleteUnq, normalizeLookupSlug } from '@/utils/slug';
 
 const memoryCache = new Map<string, { value: unknown; expiresAt: number }>();
@@ -99,6 +127,34 @@ function normalizeButtons(buttons: ProfileCard['buttons']) {
 
 function normalizeProfileString(value: unknown): string {
   return String(value ?? '').trim();
+}
+
+function normalizeProfilePetList(items: unknown): ProfileCard['pets'] {
+  return sortProfilePets(
+    (Array.isArray(items) ? items : []).map((item) => {
+      if (!item || typeof item !== 'object') {
+        return item;
+      }
+      const source = item as Record<string, unknown>;
+      const rawAssetUrl = resolveAssetUrl(source.assetUrl ? String(source.assetUrl) : undefined);
+      return {
+        ...source,
+        assetUrl: rawAssetUrl ?? source.assetUrl,
+      };
+    }),
+  );
+}
+
+function parsePetCatalogItems(input: unknown): PetCatalogItem[] {
+  return (Array.isArray(input) ? input : [])
+    .map((item) => normalizePetCatalogItem(item))
+    .filter((item): item is PetCatalogItem => item !== null);
+}
+
+function parsePetRequests(input: unknown): PetRequest[] {
+  return (Array.isArray(input) ? input : [])
+    .map((item) => normalizePetRequest(item))
+    .filter((item): item is PetRequest => item !== null);
 }
 
 function normalizeLegacyMobileTheme(value: unknown): 'light' | 'dark' | 'gradient' {
@@ -443,13 +499,278 @@ function mapResidentProfile(raw: any): ResidentProfile {
     username: source?.username ? String(source.username) : undefined,
     verified,
     verifiedCompany: verifiedCompany || undefined,
-    theme: source?.theme ? String(source.theme) : undefined,
+    theme: source?.theme ? normalizeProfileCardTheme(source.theme) : undefined,
+    avatarFrame: normalizeProfileAvatarFrame(source?.avatarFrame),
+    emojiBackgroundPack: normalizeProfileEmojiBackgroundPack(source?.emojiBackgroundPack),
+    pets: normalizeProfilePetList(source?.pets),
+    showBranding: typeof source?.showBranding === 'boolean' ? source.showBranding : true,
     isPrivate: Boolean(source?.isPrivate ?? raw?.privateAccess?.required),
     isLocked: Boolean(source?.isLocked ?? (raw?.privateAccess?.required && !raw?.privateAccess?.granted)),
     lockedMessage: source?.lockedMessage ? String(source.lockedMessage) : undefined,
     privateAccessExpiresAt: source?.privateAccessExpiresAt
       ? String(source.privateAccessExpiresAt)
       : (raw?.privateAccess?.expiresAt ? String(raw.privateAccess.expiresAt) : null),
+    wall: normalizeWallFeed(raw?.wall ?? source?.wall),
+    followSummary: normalizeFollowSummary(raw?.followSummary ?? source?.followSummary),
+    viewerCommentComposer: normalizeViewerCommentComposer(raw?.viewerCommentComposer ?? source?.viewerCommentComposer),
+  };
+}
+
+function normalizeWallPagination(input: unknown, fallback: Partial<WallPagination> = {}): WallPagination {
+  const source = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  const page = Math.max(1, Number(source.page ?? fallback.page ?? 1) || 1);
+  const pageSize = Math.max(1, Number(source.pageSize ?? fallback.pageSize ?? 10) || 10);
+  const total = Math.max(0, Number(source.total ?? fallback.total ?? 0) || 0);
+  const hasMore = typeof source.hasMore === 'boolean'
+    ? source.hasMore
+    : page * pageSize < total;
+
+  return {
+    page,
+    pageSize,
+    total,
+    hasMore,
+  };
+}
+
+function normalizeViewerCommentComposer(input: unknown): ViewerCommentComposer | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const source = input as Record<string, unknown>;
+  const avatarUrl = resolveAssetUrl(
+    typeof source.avatarUrl === 'string'
+      ? source.avatarUrl
+      : (typeof source.avatar_url === 'string' ? source.avatar_url : undefined),
+  );
+  const initials = String(source.initials ?? '').trim();
+  const placeholder = String(source.placeholder ?? '').trim();
+
+  if (!avatarUrl && !initials && !placeholder) {
+    return null;
+  }
+
+  return {
+    avatarUrl,
+    initials: initials || undefined,
+    placeholder: placeholder || undefined,
+  };
+}
+
+function normalizeWallCommentAuthor(input: unknown): WallCommentAuthor {
+  const source = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  const name = String(source.name ?? source.displayName ?? source.fullName ?? source.wallAuthorLabel ?? 'UNQX').trim() || 'UNQX';
+  const profileHref = String(source.profileHref ?? source.profileUrl ?? source.href ?? '').trim();
+  const primarySlug = normalizeResidentSlug(
+    source.primarySlug
+    ?? source.slug
+    ?? source.fullSlug
+    ?? source.username
+    ?? extractSlug(profileHref),
+  );
+
+  return {
+    id: source.id != null ? String(source.id) : (source.userId != null ? String(source.userId) : undefined),
+    name,
+    wallAuthorLabel: String(source.wallAuthorLabel ?? source.role ?? '').trim() || undefined,
+    verified: Boolean(source.verified ?? source.isVerified),
+    profileHref: profileHref || undefined,
+    primarySlug: primarySlug || undefined,
+    avatarUrl: resolveAssetUrl(
+      typeof source.avatarUrl === 'string'
+        ? source.avatarUrl
+        : (typeof source.avatar_url === 'string' ? source.avatar_url : undefined),
+    ),
+    initials: String(source.initials ?? '').trim() || undefined,
+  };
+}
+
+function normalizeWallComment(input: unknown): WallComment | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const source = input as Record<string, unknown>;
+  const id = source.id != null ? String(source.id) : '';
+  const content = String(source.content ?? source.body ?? source.text ?? '').trim();
+
+  if (!id || !content) {
+    return null;
+  }
+
+  return {
+    id,
+    postId: source.postId != null ? String(source.postId) : undefined,
+    userId: source.userId != null ? String(source.userId) : undefined,
+    content,
+    createdAt: String(source.createdAt ?? source.postedAt ?? source.publishedAt ?? '').trim() || undefined,
+    updatedAt: String(source.updatedAt ?? '').trim() || undefined,
+    isEdited: Boolean(source.isEdited ?? source.edited),
+    viewerCanDelete: Boolean(source.viewerCanDelete ?? source.canDelete),
+    author: normalizeWallCommentAuthor(source.author ?? source.user ?? source.owner ?? {}),
+  };
+}
+
+function normalizeWallPost(input: unknown): WallPost | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const source = input as Record<string, unknown>;
+  const id = source.id != null ? String(source.id) : '';
+  const content = String(source.content ?? source.body ?? source.text ?? '').trim();
+
+  if (!id || !content) {
+    return null;
+  }
+
+  const comments = (Array.isArray(source.comments) ? source.comments : [])
+    .map((comment) => normalizeWallComment(comment))
+    .filter((comment): comment is WallComment => comment !== null);
+  const likesCount = Math.max(0, Number(source.likesCount ?? source.likes ?? source.likes_count ?? 0) || 0);
+  const commentsCountRaw = Number(source.commentsCount ?? source.comments_count ?? comments.length);
+  const commentsCount = Number.isFinite(commentsCountRaw) ? Math.max(0, commentsCountRaw) : comments.length;
+
+  return {
+    id,
+    content,
+    createdAt: String(source.createdAt ?? source.postedAt ?? source.publishedAt ?? '').trim() || undefined,
+    updatedAt: String(source.updatedAt ?? '').trim() || undefined,
+    status: String(source.status ?? '').trim() || undefined,
+    commentsEnabled: source.commentsEnabled !== false,
+    likesCount,
+    commentsCount,
+    comments,
+    viewerHasLiked: Boolean(source.viewerHasLiked ?? source.likedByViewer ?? source.viewerLiked),
+    viewerCanLike: source.viewerCanLike !== false,
+    viewerCanComment: source.viewerCanComment !== false,
+    viewerCanEdit: Boolean(source.viewerCanEdit ?? source.canEdit),
+    viewerCanDelete: Boolean(source.viewerCanDelete ?? source.canDelete),
+    isEdited: Boolean(source.isEdited ?? source.edited),
+  };
+}
+
+function normalizeWallFeed(input: unknown): WallFeed | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const source = input as Record<string, unknown>;
+  const items = (Array.isArray(source.items) ? source.items : [])
+    .map((item) => normalizeWallPost(item))
+    .filter((item): item is WallPost => item !== null);
+  const pagination = normalizeWallPagination(source.pagination, {
+    page: 1,
+    pageSize: Math.max(items.length, 1),
+    total: items.length,
+  });
+
+  return {
+    enabled: typeof source.enabled === 'boolean' ? source.enabled : true,
+    items,
+    pagination,
+  };
+}
+
+function normalizeFollowItem(input: unknown): FollowListItem | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const source = input as Record<string, unknown>;
+  const name = String(source.name ?? source.displayName ?? source.fullName ?? '').trim();
+  if (!name) {
+    return null;
+  }
+
+  const profileHref = String(source.profileHref ?? source.profileUrl ?? source.href ?? '').trim();
+  const primarySlug = normalizeResidentSlug(
+    source.primarySlug
+    ?? source.slug
+    ?? source.fullSlug
+    ?? source.username
+    ?? extractSlug(profileHref),
+  );
+
+  return {
+    userId: source.userId != null ? String(source.userId) : (source.id != null ? String(source.id) : undefined),
+    name,
+    initials: String(source.initials ?? '').trim() || undefined,
+    avatarUrl: resolveAssetUrl(
+      typeof source.avatarUrl === 'string'
+        ? source.avatarUrl
+        : (typeof source.avatar_url === 'string' ? source.avatar_url : undefined),
+    ),
+    primarySlug: primarySlug || undefined,
+    role: String(source.role ?? source.wallAuthorLabel ?? '').trim() || undefined,
+    verified: Boolean(source.verified ?? source.isVerified),
+    followedAt: String(source.followedAt ?? source.createdAt ?? '').trim() || undefined,
+    isFollowing: typeof source.isFollowing === 'boolean' ? source.isFollowing : undefined,
+    canFollow: typeof source.canFollow === 'boolean' ? source.canFollow : undefined,
+    requiresAuth: typeof source.requiresAuth === 'boolean' ? source.requiresAuth : undefined,
+    isPubliclyReachable: typeof source.isPubliclyReachable === 'boolean' ? source.isPubliclyReachable : undefined,
+    profileHref: profileHref || undefined,
+  };
+}
+
+function normalizeFollowSummary(input: unknown): FollowSummary | undefined {
+  if (!input || typeof input !== 'object') {
+    return undefined;
+  }
+
+  const source = input as Record<string, unknown>;
+  const countsSource = source.counts && typeof source.counts === 'object' ? source.counts as Record<string, unknown> : {};
+  const viewerSource = source.viewer && typeof source.viewer === 'object' ? source.viewer as Record<string, unknown> : {};
+  const followingPreview = (Array.isArray((source.previews as any)?.following) ? (source.previews as any).following : [])
+    .map((item: unknown) => normalizeFollowItem(item))
+    .filter((item: FollowListItem | null): item is FollowListItem => item !== null);
+  const followersPreview = (Array.isArray((source.previews as any)?.followers) ? (source.previews as any).followers : [])
+    .map((item: unknown) => normalizeFollowItem(item))
+    .filter((item: FollowListItem | null): item is FollowListItem => item !== null);
+
+  return {
+    counts: {
+      followers: Math.max(0, Number(countsSource.followers ?? source.followersCount ?? 0) || 0),
+      following: Math.max(0, Number(countsSource.following ?? source.followingCount ?? 0) || 0),
+    },
+    viewer: {
+      isFollowing: Boolean(viewerSource.isFollowing ?? source.isFollowing),
+      canFollow: viewerSource.canFollow !== false,
+      requiresAuth: Boolean(viewerSource.requiresAuth ?? source.requiresAuth),
+    },
+    unreadFollowersCount: Math.max(0, Number(source.unreadFollowersCount ?? 0) || 0) || undefined,
+    previews: {
+      following: followingPreview,
+      followers: followersPreview.length > 0 ? followersPreview : undefined,
+    },
+  };
+}
+
+interface FollowListPayload {
+  type: 'followers' | 'following';
+  items: FollowListItem[];
+  pagination: WallPagination;
+}
+
+function normalizeFollowListPayload(
+  input: unknown,
+  type: 'followers' | 'following',
+  page: number,
+): FollowListPayload {
+  const source = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  const items = (Array.isArray(source.items) ? source.items : [])
+    .map((item) => normalizeFollowItem(item))
+    .filter((item): item is FollowListItem => item !== null);
+
+  return {
+    type,
+    items,
+    pagination: normalizeWallPagination(source.pagination, {
+      page,
+      pageSize: Math.max(items.length, 1),
+      total: items.length,
+    }),
   };
 }
 
@@ -978,12 +1299,79 @@ export async function fetchDirectoryLike(query: string, page: number): Promise<u
 }
 
 interface PublicCardData {
-  theme?: string;
+  theme?: ProfileCard['theme'];
+  avatarFrame?: ProfileCard['avatarFrame'];
+  emojiBackgroundPack?: ProfileCard['emojiBackgroundPack'];
+  pets?: ProfileCard['pets'];
+  showBranding?: boolean;
   buttons?: Array<{ type?: string; label: string; url: string; isActive?: boolean }>;
   score?: number | null;
   topBadge?: { rank: number; periodLabel?: string } | null;
   viewsCount?: number;
   tariff?: string;
+  wall?: WallFeed | null;
+  followSummary?: FollowSummary;
+  viewerCommentComposer?: ViewerCommentComposer | null;
+  officialUnqBadge?: PublicProfileBadge | null;
+  staffBadge?: PublicProfileBadge | null;
+  shareUrl?: string;
+  viewsLabel?: string;
+  paused?: ResidentPausedState | null;
+  trackViaPageRequest?: boolean;
+}
+
+function normalizePublicProfileBadge(input: unknown): PublicProfileBadge | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const source = input as Record<string, unknown>;
+  const label = String(source.label ?? source.title ?? source.text ?? '').trim();
+  const shortLabel = String(source.shortLabel ?? source.shortText ?? '').trim();
+  const tone = String(source.tone ?? source.variant ?? source.kind ?? '').trim();
+  const description = String(source.description ?? source.body ?? source.subtitle ?? '').trim();
+  const periodLabel = String(source.periodLabel ?? source.period ?? '').trim();
+  const rank = Number(source.rank ?? source.value ?? source.position);
+
+  if (!label && !shortLabel && !description && !Number.isFinite(rank)) {
+    return null;
+  }
+
+  return {
+    label: label || shortLabel || description || 'UNQX',
+    shortLabel: shortLabel || undefined,
+    tone: tone || undefined,
+    description: description || undefined,
+    periodLabel: periodLabel || undefined,
+    rank: Number.isFinite(rank) ? rank : undefined,
+  };
+}
+
+function normalizePausedState(input: unknown): ResidentPausedState | null {
+  if (typeof input === 'boolean') {
+    return input ? { active: true } : null;
+  }
+
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const source = input as Record<string, unknown>;
+  const active = source.active === true || source.paused === true || source.isPaused === true;
+  const label = String(source.label ?? source.title ?? '').trim();
+  const message = String(source.message ?? source.reason ?? source.description ?? '').trim();
+  const resumeAt = source.resumeAt ? String(source.resumeAt) : (source.expiresAt ? String(source.expiresAt) : null);
+
+  if (!active && !label && !message && !resumeAt) {
+    return null;
+  }
+
+  return {
+    active: active || Boolean(label || message || resumeAt),
+    label: label || undefined,
+    message: message || undefined,
+    resumeAt,
+  };
 }
 
 async function fetchPublicCardData(slug: string): Promise<PublicCardData | null> {
@@ -999,17 +1387,30 @@ async function fetchPublicCardData(slug: string): Promise<PublicCardData | null>
     clearTimeout(timeout);
     if (!response.ok) return null;
     const html = await response.text();
-    const match = html.match(/<script[^>]*>(\{"card":\{[\s\S]*?\})\s*<\/script>/);
+    const match = html.match(/<script[^>]*id=["']card-view-data["'][^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/i);
     if (!match?.[1]) return null;
     const parsed = JSON.parse(match[1]);
     const card = parsed?.card;
     return {
-      theme: card?.theme ? String(card.theme) : undefined,
+      theme: card?.theme ? normalizeProfileCardTheme(card.theme) : undefined,
+      avatarFrame: normalizeProfileAvatarFrame(card?.avatarFrame),
+      emojiBackgroundPack: normalizeProfileEmojiBackgroundPack(card?.emojiBackgroundPack),
+      pets: normalizeProfilePetList(card?.pets),
+      showBranding: typeof card?.showBranding === 'boolean' ? card.showBranding : undefined,
       buttons: Array.isArray(card?.buttons) ? card.buttons : undefined,
       score: parsed?.score ?? null,
       topBadge: parsed?.topBadge ?? null,
       viewsCount: card?.viewsCount ?? undefined,
       tariff: card?.tariff ? String(card.tariff) : undefined,
+      wall: normalizeWallFeed(parsed?.wall),
+      followSummary: normalizeFollowSummary(parsed?.followSummary),
+      viewerCommentComposer: normalizeViewerCommentComposer(parsed?.viewerCommentComposer),
+      officialUnqBadge: normalizePublicProfileBadge(parsed?.officialUnqBadge),
+      staffBadge: normalizePublicProfileBadge(parsed?.staffBadge),
+      shareUrl: parsed?.shareUrl ? new URL(String(parsed.shareUrl), API_ORIGIN).toString() : undefined,
+      viewsLabel: parsed?.viewsLabel ? String(parsed.viewsLabel) : undefined,
+      paused: normalizePausedState(parsed?.paused),
+      trackViaPageRequest: parsed?.trackViaPageRequest === true,
     };
   } catch {
     return null;
@@ -1023,6 +1424,22 @@ function mergePublicCardData(profile: ResidentProfile, publicCard: PublicCardDat
 
   if (!merged.theme && publicCard.theme) {
     merged.theme = publicCard.theme;
+  }
+
+  if (!merged.avatarFrame && publicCard.avatarFrame) {
+    merged.avatarFrame = publicCard.avatarFrame;
+  }
+
+  if (!merged.emojiBackgroundPack && publicCard.emojiBackgroundPack) {
+    merged.emojiBackgroundPack = publicCard.emojiBackgroundPack;
+  }
+
+  if ((!merged.pets || merged.pets.length === 0) && publicCard.pets && publicCard.pets.length > 0) {
+    merged.pets = publicCard.pets;
+  }
+
+  if (merged.showBranding === undefined && typeof publicCard.showBranding === 'boolean') {
+    merged.showBranding = publicCard.showBranding;
   }
 
   if ((!merged.buttons || merged.buttons.length === 0) && publicCard.buttons && publicCard.buttons.length > 0) {
@@ -1055,6 +1472,46 @@ function mergePublicCardData(profile: ResidentProfile, publicCard: PublicCardDat
 
   if (publicCard.tariff && !merged.plan) {
     merged.plan = publicCard.tariff;
+  }
+
+  if (!merged.wall && publicCard.wall) {
+    merged.wall = publicCard.wall;
+  }
+
+  if (!merged.followSummary && publicCard.followSummary) {
+    merged.followSummary = publicCard.followSummary;
+  }
+
+  if (!merged.viewerCommentComposer && publicCard.viewerCommentComposer) {
+    merged.viewerCommentComposer = publicCard.viewerCommentComposer;
+  }
+
+  if (!merged.topBadge && publicCard.topBadge) {
+    merged.topBadge = normalizePublicProfileBadge(publicCard.topBadge);
+  }
+
+  if (!merged.officialUnqBadge && publicCard.officialUnqBadge) {
+    merged.officialUnqBadge = publicCard.officialUnqBadge;
+  }
+
+  if (!merged.staffBadge && publicCard.staffBadge) {
+    merged.staffBadge = publicCard.staffBadge;
+  }
+
+  if (!merged.shareUrl && publicCard.shareUrl) {
+    merged.shareUrl = publicCard.shareUrl;
+  }
+
+  if (!merged.viewsLabel && publicCard.viewsLabel) {
+    merged.viewsLabel = publicCard.viewsLabel;
+  }
+
+  if (!merged.paused && publicCard.paused) {
+    merged.paused = publicCard.paused;
+  }
+
+  if (merged.trackViaPageRequest === undefined && typeof publicCard.trackViaPageRequest === 'boolean') {
+    merged.trackViaPageRequest = publicCard.trackViaPageRequest;
   }
 
   return merged;
@@ -1389,6 +1846,235 @@ export async function fetchProfileLike(): Promise<unknown> {
   }
 }
 
+function extractWallPayload(input: unknown): WallFeed {
+  const source = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  const normalized = normalizeWallFeed(source.wall ?? source);
+  if (normalized) {
+    return normalized;
+  }
+
+  return {
+    enabled: true,
+    items: [],
+    pagination: {
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      hasMore: false,
+    },
+  };
+}
+
+function extractWallPostPayload(input: unknown): WallPost | null {
+  const source = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  return normalizeWallPost(source.post ?? source.item ?? source);
+}
+
+function extractFollowSummaryPayload(input: unknown): FollowSummary | undefined {
+  const source = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  return normalizeFollowSummary(source.followSummary ?? source.summary ?? source);
+}
+
+async function resolveOwnPrimarySlugLike(): Promise<string> {
+  const cachedProfile = readCache<any>('profile');
+  const cachedSlug = normalizeResidentSlug(
+    pickPrimarySlug(cachedProfile)
+    ?? cachedProfile?.card?.slug
+    ?? cachedProfile?.user?.card?.slug
+    ?? cachedProfile?.selectedSlug,
+  );
+  if (cachedSlug) {
+    return cachedSlug;
+  }
+
+  const profile = await fetchProfileLike() as any;
+  const resolved = normalizeResidentSlug(
+    pickPrimarySlug(profile)
+    ?? profile?.card?.slug
+    ?? profile?.user?.card?.slug
+    ?? profile?.selectedSlug,
+  );
+  if (!resolved) {
+    throw new ApiError('Profile slug is required', 400, 'PROFILE_SLUG_REQUIRED');
+  }
+  return resolved;
+}
+
+export async function fetchResidentWallLike(slug: string, page = 1, pageSize = 10): Promise<WallFeed> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  if (!normalizedSlug) {
+    throw new ApiError('Slug is required', 400, 'VALIDATION_ERROR');
+  }
+
+  const payload = await apiClient.get<any>(`/cards/${encodeURIComponent(normalizedSlug)}/wall-posts`, {
+    query: {
+      page,
+      pageSize,
+    },
+  });
+
+  return extractWallPayload({
+    enabled: true,
+    ...(payload?.wall ?? payload ?? {}),
+  });
+}
+
+export async function toggleResidentFollowLike(slug: string, followingNow: boolean): Promise<FollowSummary | undefined> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  if (!normalizedSlug) {
+    throw new ApiError('Slug is required', 400, 'VALIDATION_ERROR');
+  }
+
+  const path = `/cards/${encodeURIComponent(normalizedSlug)}/follow`;
+  const payload = followingNow
+    ? await apiClient.delete<any>(path)
+    : await apiClient.post<any>(path, {});
+  return extractFollowSummaryPayload(payload);
+}
+
+export async function fetchResidentFollowsLike(
+  slug: string,
+  type: 'followers' | 'following',
+  page = 1,
+): Promise<FollowListPayload> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  if (!normalizedSlug) {
+    throw new ApiError('Slug is required', 400, 'VALIDATION_ERROR');
+  }
+
+  const payload = await apiClient.get<any>(`/cards/${encodeURIComponent(normalizedSlug)}/follows`, {
+    query: { type, page },
+  });
+  return normalizeFollowListPayload(payload, type, page);
+}
+
+export async function toggleWallPostLike(slug: string, postId: string, likedNow: boolean): Promise<WallPost | null> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  const normalizedPostId = String(postId ?? '').trim();
+  if (!normalizedSlug || !normalizedPostId) {
+    throw new ApiError('Post like target is invalid', 400, 'VALIDATION_ERROR');
+  }
+
+  const path = `/cards/${encodeURIComponent(normalizedSlug)}/wall-posts/${encodeURIComponent(normalizedPostId)}/like`;
+  const payload = likedNow
+    ? await apiClient.delete<any>(path)
+    : await apiClient.put<any>(path, {});
+  return extractWallPostPayload(payload);
+}
+
+export async function createWallCommentLike(slug: string, postId: string, content: string): Promise<WallPost | null> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  const normalizedPostId = String(postId ?? '').trim();
+  const normalizedContent = String(content ?? '').trim();
+  if (!normalizedSlug || !normalizedPostId || !normalizedContent) {
+    throw new ApiError('Comment payload is invalid', 400, 'VALIDATION_ERROR');
+  }
+
+  const payload = await apiClient.post<any>(
+    `/cards/${encodeURIComponent(normalizedSlug)}/wall-posts/${encodeURIComponent(normalizedPostId)}/comments`,
+    { content: normalizedContent },
+  );
+  return extractWallPostPayload(payload);
+}
+
+export async function deleteWallCommentLike(slug: string, postId: string, commentId: string): Promise<WallPost | null> {
+  const normalizedSlug = normalizeResidentSlug(slug);
+  const normalizedPostId = String(postId ?? '').trim();
+  const normalizedCommentId = String(commentId ?? '').trim();
+  if (!normalizedSlug || !normalizedPostId || !normalizedCommentId) {
+    throw new ApiError('Comment target is invalid', 400, 'VALIDATION_ERROR');
+  }
+
+  const payload = await apiClient.delete<any>(
+    `/cards/${encodeURIComponent(normalizedSlug)}/wall-posts/${encodeURIComponent(normalizedPostId)}/comments/${encodeURIComponent(normalizedCommentId)}`,
+  );
+  return extractWallPostPayload(payload);
+}
+
+export async function fetchMyWallLike(page = 1, pageSize = 10): Promise<WallFeed> {
+  const slug = await resolveOwnPrimarySlugLike();
+  return fetchResidentWallLike(slug, page, pageSize);
+}
+
+export async function createMyWallPostLike(content: string): Promise<WallPost | null> {
+  const slug = await resolveOwnPrimarySlugLike();
+  const normalizedContent = String(content ?? '').trim();
+  if (!normalizedContent) {
+    throw new ApiError('Post content is required', 400, 'VALIDATION_ERROR');
+  }
+
+  const payload = await apiClient.postFirst<any>(
+    [
+      `/cards/${encodeURIComponent(slug)}/wall-posts`,
+      '/profile/wall-posts',
+      '/me/wall-posts',
+    ],
+    {
+      slug,
+      content: normalizedContent,
+    },
+  );
+  return extractWallPostPayload(payload);
+}
+
+export async function updateMyWallPostLike(postId: string, content: string): Promise<WallPost | null> {
+  const slug = await resolveOwnPrimarySlugLike();
+  const normalizedPostId = String(postId ?? '').trim();
+  const normalizedContent = String(content ?? '').trim();
+  if (!normalizedPostId || !normalizedContent) {
+    throw new ApiError('Post payload is invalid', 400, 'VALIDATION_ERROR');
+  }
+
+  const payload = await apiClient.putFirst<any>(
+    [
+      `/cards/${encodeURIComponent(slug)}/wall-posts/${encodeURIComponent(normalizedPostId)}`,
+      `/profile/wall-posts/${encodeURIComponent(normalizedPostId)}`,
+      `/me/wall-posts/${encodeURIComponent(normalizedPostId)}`,
+    ],
+    {
+      slug,
+      content: normalizedContent,
+    },
+  );
+  return extractWallPostPayload(payload);
+}
+
+export async function deleteMyWallPostLike(postId: string): Promise<{ ok: boolean }> {
+  const slug = await resolveOwnPrimarySlugLike();
+  const normalizedPostId = String(postId ?? '').trim();
+  if (!normalizedPostId) {
+    throw new ApiError('Post id is required', 400, 'VALIDATION_ERROR');
+  }
+
+  await apiClient.deleteFirst<any>([
+    `/cards/${encodeURIComponent(slug)}/wall-posts/${encodeURIComponent(normalizedPostId)}`,
+    `/profile/wall-posts/${encodeURIComponent(normalizedPostId)}`,
+    `/me/wall-posts/${encodeURIComponent(normalizedPostId)}`,
+  ]);
+  return { ok: true };
+}
+
+export function extractPetCatalogFromProfileLike(raw: unknown): PetCatalogItem[] {
+  const payload = raw as { petCatalog?: unknown[]; user?: any };
+  return parsePetCatalogItems(payload?.petCatalog ?? payload?.user?.petCatalog ?? []);
+}
+
+export function extractOwnedPetsFromProfileLike(raw: unknown): ProfileCard['pets'] {
+  const payload = raw as { pets?: unknown[]; card?: any; user?: any };
+  const source = payload?.pets ?? payload?.card?.pets ?? payload?.user?.card?.pets ?? [];
+  return normalizeProfilePetList(source);
+}
+
+export function extractPetRequestsFromProfileLike(raw: unknown): PetRequest[] {
+  const payload = raw as { requests?: unknown[]; user?: any };
+  const source = Array.isArray(payload?.requests)
+    ? payload.requests
+    : Array.isArray(payload?.user?.requests)
+      ? payload.user.requests
+      : [];
+  return parsePetRequests(source);
+}
+
 export async function saveProfileCardLike(card: ProfileCard): Promise<unknown> {
   const rawCard = card as any;
   const role = normalizeProfileString(rawCard?.job ?? rawCard?.role);
@@ -1410,9 +2096,21 @@ export async function saveProfileCardLike(card: ProfileCard): Promise<unknown> {
     email: normalizedEmail || null,
     extraPhone: normalizeProfileString(rawCard?.extraPhone) || normalizedPhone,
     theme: normalizedTheme,
+    avatarFrame: normalizeProfileAvatarFrame(rawCard?.avatarFrame),
+    emojiBackgroundPack: normalizeProfileEmojiBackgroundPack(rawCard?.emojiBackgroundPack),
     tags,
     showBranding: typeof rawCard?.showBranding === 'boolean' ? rawCard.showBranding : true,
   };
+
+  const normalizedPets = (normalizeProfilePetList(rawCard?.pets) ?? []).map((pet) => ({
+    id: pet.id,
+    displayName: pet.displayName,
+    isVisible: pet.isVisible !== false,
+  }));
+
+  if (normalizedPets.length > 0) {
+    payload.pets = normalizedPets;
+  }
 
   if (Array.isArray(card.buttons) && card.buttons.length > 0) {
     payload.buttons = card.buttons
@@ -1483,6 +2181,13 @@ export async function saveProfileCardLike(card: ProfileCard): Promise<unknown> {
     invalidateCache(['profile', 'current-user']);
     return saved;
   }
+}
+
+export async function createPetRequestLike(payload: { petType: string; displayName: string }): Promise<unknown> {
+  return apiClient.post('/profile/pet-requests', {
+    petType: String(payload.petType ?? '').trim().toLowerCase(),
+    displayName: normalizeProfileString(payload.displayName),
+  });
 }
 
 export async function submitViolationReportLike(input: { type: string; message: string }): Promise<unknown> {

@@ -81,8 +81,11 @@ export const API_PATHS = {
   cards: {
     search: "/cards/search",
     availability: "/cards/availability",
+    availabilityBulk: "/cards/availability-bulk",
     waitlist: "/cards/waitlist",
+    randomFreeSlug: "/random-free-slug",
     slugCounter: "/cards/slug-counter",
+    slugGenerateAffordable: "/cards/slug-generate-affordable",
     slugSuggestions: "/cards/slug-suggestions",
     slugPrice: "/cards/slug-price",
     pricing: "/cards/pricing",

@@ -3,8 +3,11 @@ export const queryKeys = {
   analytics: ['analytics'] as const,
   contacts: ['contacts'] as const,
   residentProfile: (slug: string) => ['resident-profile', slug] as const,
+  residentWall: (slug: string, page: number) => ['resident-wall', slug, page] as const,
+  residentFollows: (slug: string, type: 'followers' | 'following', page: number) => ['resident-follows', slug, type, page] as const,
   directory: (query: string, page: number) => ['directory', query, page] as const,
   leaderboard: ['leaderboard'] as const,
+  meWall: (page: number) => ['me-wall', page] as const,
   nfcHistory: ['nfc-history'] as const,
   nfcLocalHistory: ['nfc-local-history'] as const,
   nfcTags: ['nfc-tags'] as const,
@@ -14,4 +17,6 @@ export const queryKeys = {
   order: (id: string) => ['order', id] as const,
   homeSummary: ['home-summary'] as const,
   homeRecent: ['home-recent'] as const,
+  publicHome: ['public-home'] as const,
+  publicHomeViewer: (slugsKey: string) => ['public-home-viewer', slugsKey] as const,
 } as const;

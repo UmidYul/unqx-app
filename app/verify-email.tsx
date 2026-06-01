@@ -132,7 +132,7 @@ export default function VerifyEmailPage(): React.JSX.Element {
     >
       <AuthScaffold
         tokens={tokens}
-        eyebrow='UNQX / Verify Email'
+        eyebrow='UNQX / Подтверждение email'
         title={MESSAGES.ui.auth.verifyEmailTitle}
         subtitle={MESSAGES.ui.auth.verifyEmailSubtitle}
         topAction={{ label: 'Назад', onPress: () => safePush('/login') }}

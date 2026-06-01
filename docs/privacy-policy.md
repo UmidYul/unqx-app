@@ -14,7 +14,7 @@ This policy explains what data we collect, how we use it, and how we protect it.
 - Email
 - Telegram username
 - Profile photo (optional)
-- Job and company details
+- Job and company details                                                                                       
 - Social links
 
 ### 2.2 Data collected automatically

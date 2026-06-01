@@ -187,6 +187,42 @@ function OverlayArtwork({ theme }: { theme: CardThemeSpec }): React.JSX.Element 
           <Path d='M0 540C72 520 150 522 236 542C292 554 326 558 360 554' stroke='rgba(201,165,90,0.08)' strokeWidth='1' fill='none' />
         </Svg>
       );
+    case 'graffiti_chaos':
+      return (
+        <Svg viewBox='0 0 360 600' preserveAspectRatio='none' style={StyleSheet.absoluteFill}>
+          <Defs>
+            <SvgGradient id='gf-swipe' x1='0%' y1='0%' x2='100%' y2='100%'>
+              <Stop offset='0%' stopColor='rgba(94,247,255,0.18)' />
+              <Stop offset='50%' stopColor='rgba(245,79,255,0.26)' />
+              <Stop offset='100%' stopColor='rgba(181,255,94,0.16)' />
+            </SvgGradient>
+          </Defs>
+          <Circle cx='78' cy='106' r='136' fill='rgba(245,79,255,0.1)' />
+          <Circle cx='300' cy='486' r='176' fill='rgba(94,247,255,0.08)' />
+          <Path d='M22 94C78 66 126 58 188 74C250 90 292 92 344 72' stroke='rgba(94,247,255,0.32)' strokeWidth='3.2' fill='none' strokeLinecap='round' />
+          <Path d='M-8 380C82 336 144 330 230 358C292 378 328 382 372 364' stroke='rgba(181,255,94,0.22)' strokeWidth='2.2' fill='none' strokeLinecap='round' />
+          <Path d='M44 172 118 150 92 226 170 206' stroke='rgba(245,79,255,0.34)' strokeWidth='2.4' fill='none' strokeLinecap='round' strokeLinejoin='round' />
+          <Path d='M250 110 316 132 286 184 338 214' stroke='rgba(94,247,255,0.24)' strokeWidth='2.4' fill='none' strokeLinecap='round' strokeLinejoin='round' />
+          <Path d='M0 0H360V600H0Z' fill='url(#gf-swipe)' opacity='0.42' />
+          <Circle cx='78' cy='244' r='5' fill='rgba(94,247,255,0.76)' />
+          <Circle cx='108' cy='232' r='3.2' fill='rgba(245,79,255,0.8)' />
+          <Circle cx='278' cy='84' r='4.2' fill='rgba(181,255,94,0.76)' />
+          <Circle cx='306' cy='96' r='2.6' fill='rgba(94,247,255,0.78)' />
+          <Circle cx='286' cy='420' r='4.6' fill='rgba(245,79,255,0.72)' />
+        </Svg>
+      );
+    case 'monochrome_flow':
+      return (
+        <Svg viewBox='0 0 360 600' preserveAspectRatio='none' style={StyleSheet.absoluteFill}>
+          <Circle cx='286' cy='118' r='164' fill='rgba(255,255,255,0.1)' />
+          <Circle cx='54' cy='512' r='144' fill='rgba(255,255,255,0.06)' />
+          <Path d='M0 92C72 72 144 76 216 98C280 118 324 118 360 108' stroke='rgba(255,255,255,0.12)' strokeWidth='1.1' fill='none' />
+          <Path d='M0 284C74 264 146 270 218 292C280 312 324 316 360 306' stroke='rgba(255,255,255,0.1)' strokeWidth='1' fill='none' />
+          <Path d='M0 512C78 494 150 500 222 522C284 540 326 544 360 536' stroke='rgba(255,255,255,0.08)' strokeWidth='0.9' fill='none' />
+          <Rect x='28' y='150' width='126' height='18' rx='9' fill='rgba(255,255,255,0.07)' />
+          <Rect x='188' y='404' width='144' height='16' rx='8' fill='rgba(255,255,255,0.06)' />
+        </Svg>
+      );
     default:
       return null;
   }

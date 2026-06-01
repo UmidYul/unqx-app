@@ -1,7 +1,9 @@
 import React from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 
+import { AvatarFrameOverlay, CardEmojiBackground, CardPetsOverlay } from '@/components/profile/CardOrnaments';
 import { CardThemeBackdrop } from '@/components/profile/CardThemeBackdrop';
 import { findButtonIcon } from '@/components/profile/buttonIcons';
 import { resolveProfileCardTheme } from '@/design/cardThemes';
@@ -20,6 +22,8 @@ interface ProfileCardSurfaceProps {
   card: ProfileCard;
   websiteLabel?: string;
   companyLine?: string;
+  verified?: boolean;
+  verifiedCompany?: string;
   scoreLabel?: string;
   scoreTopLabel?: string;
   scoreValue?: string;
@@ -127,10 +131,23 @@ function ThemeTopLine({ theme }: { theme: ReturnType<typeof resolveProfileCardTh
   return <View style={[styles.topLine, { backgroundColor: theme.topLineColor }]} />;
 }
 
+function VerificationIcon({ color }: { color: string }): React.JSX.Element {
+  return (
+    <Svg width={14} height={14} viewBox='0 0 24 24'>
+      <Path
+        fill={color}
+        d='M12 2.5l2.2 1.8 2.8-.3 1.2 2.5 2.5 1.2-.3 2.8L21.5 12l-1.8 2.2.3 2.8-2.5 1.2-1.2 2.5-2.8-.3L12 21.5l-2.2-1.8-2.8.3-1.2-2.5-2.5-1.2.3-2.8L2.5 12l1.8-2.2-.3-2.8 2.5-1.2 1.2-2.5 2.8.3L12 2.5Zm-1.1 13.1 5-5-1.1-1.1-3.9 3.9-1.8-1.8-1.1 1.1 2.9 2.9Z'
+      />
+    </Svg>
+  );
+}
+
 export function ProfileCardSurface({
   card,
   websiteLabel,
   companyLine,
+  verified,
+  verifiedCompany,
   scoreLabel = 'UNQ SCORE',
   scoreTopLabel = 'Top 38%',
   scoreValue = '547',
@@ -138,7 +155,7 @@ export function ProfileCardSurface({
   footerViewsLabel = '© 352 просмотров',
   aboutTitle = 'КОНТАКТЫ',
   onButtonPress,
-  showScoreBlock = true,
+  showScoreBlock = false,
   style,
 }: ProfileCardSurfaceProps): React.JSX.Element {
   const theme = resolveProfileCardTheme(card.theme);
@@ -146,13 +163,24 @@ export function ProfileCardSurface({
   const hashtag = String(card.hashtag || '').trim();
   const resolvedHashtag = hashtag ? (hashtag.startsWith('#') ? hashtag : `#${hashtag}`) : '#UNQX';
   const primaryButtons = card.buttons.filter((button) => button.label).slice(0, 4);
-  const themeTextStyle = { fontFamily: theme.fontFamily } as const;
-  const resolvedCompanyLine = companyLine ?? `unqx ${card.email ? '• verified' : '• owner'}`;
+  const resolvedVerified = verified ?? card.verified ?? false;
+  const resolvedVerifiedCompany = String(verifiedCompany ?? card.verifiedCompany ?? '').trim();
+  const resolvedCompanyLine = String(companyLine ?? '').trim();
+  const resolvedVerifiedLabel = resolvedVerifiedCompany
+    || resolvedCompanyLine.replace(/\s*[•·]\s*verified$/i, '').trim()
+    || (resolvedVerified ? 'unqx' : '');
+  const fallbackCompanyLine = resolvedCompanyLine || `unqx ${card.email ? '• verified' : '• owner'}`;
   const resolvedWebsiteLabel = websiteLabel ?? `unqx.uz / ${card.slug || 'demo'}`;
   const boundedFillPercent = Math.max(0, Math.min(100, scoreFillPercent));
   const contactLines = [card.address, card.postcode, card.email, card.phone, card.extraPhone]
     .map((value) => String(value ?? '').trim())
     .filter(Boolean);
+  const normalizedNameLength = String(card.name ?? '').replace(/\s+/g, '').length;
+  const resolvedNameMetrics = normalizedNameLength > 16
+    ? { fontSize: 34, lineHeight: 36 }
+    : normalizedNameLength > 11
+      ? { fontSize: 38, lineHeight: 40 }
+      : { fontSize: 42, lineHeight: 44 };
 
   return (
     <View
@@ -178,79 +206,102 @@ export function ProfileCardSurface({
       <View style={styles.metaRow}>
         <View style={styles.slugRow}>
           <View style={[styles.slugChip, { backgroundColor: theme.badgeBg, borderColor: theme.badgeBorder || theme.cardBorder }]}>
-            <Text style={[styles.slugChipText, themeTextStyle, { color: theme.badgeText }]}>{`# ${card.slug || 'AAA001'}`}</Text>
+            <Text style={[styles.slugChipText, { color: theme.badgeText }]}>{`# ${card.slug || 'AAA001'}`}</Text>
           </View>
           {(card.tags ?? []).slice(0, 2).map((tag, index) => (
             <View
               key={`${tag}-${index}`}
               style={[styles.slugChip, { backgroundColor: theme.badgeBg, borderColor: theme.badgeBorder || theme.cardBorder }]}
             >
-              <Text style={[styles.slugChipText, themeTextStyle, { color: theme.badgeText }]}>{tag.startsWith('#') ? tag : `# ${tag}`}</Text>
+              <Text style={[styles.slugChipText, { color: theme.badgeText }]}>{tag.startsWith('#') ? tag : `# ${tag}`}</Text>
             </View>
           ))}
         </View>
         <View style={[styles.priceChip, { backgroundColor: theme.surfaceBg, borderColor: theme.surfaceBorder }]}>
-          <Text style={[styles.priceChipText, themeTextStyle, { color: theme.emailColor }]}>{resolvedWebsiteLabel}</Text>
+          <Text style={[styles.priceChipText, { color: theme.emailColor }]}>{resolvedWebsiteLabel}</Text>
         </View>
       </View>
 
       {card.showBranding !== false ? (
         <View style={styles.brandBlock}>
-          <Text style={[styles.brandTitle, themeTextStyle, { color: theme.nameColor }]}>UNQX</Text>
-          <Text style={[styles.brandSubtitle, themeTextStyle, { color: theme.roleColor }]}>POWERED BY SCXR</Text>
+          <Text style={[styles.brandTitle, { color: theme.nameColor }]}>UNQX</Text>
+          <Text style={[styles.brandSubtitle, { color: theme.roleColor }]}>POWERED BY SCXR</Text>
         </View>
       ) : null}
 
       <View style={styles.profileBlock}>
-        <View
-          style={[
-            styles.avatarWrap,
-            {
-              borderColor: theme.avatarBorder,
-              backgroundColor: theme.avatarBg,
-            },
-          ]}
-        >
-          {theme.avatarGradient ? (
-            <LinearGradient colors={theme.avatarGradient as [string, string]} style={StyleSheet.absoluteFill} />
-          ) : null}
-          {avatarImage.showImage && avatarImage.imageUri ? (
-            <Image
-              key={`${card.avatarUrl}:${avatarImage.retryCount}`}
-              source={{ uri: avatarImage.imageUri }}
-              style={styles.avatarImage}
-              onError={avatarImage.onError}
-            />
-          ) : (
-            <Text style={[styles.avatarText, themeTextStyle, { color: theme.avatarText }]}>{card.name[0] || 'U'}</Text>
-          )}
-        </View>
+        <CardEmojiBackground pack={card.emojiBackgroundPack} theme={theme} />
+        <CardPetsOverlay pets={card.pets} theme={theme} />
 
-        <Text
-          style={[
-            styles.name,
-            {
-              color: theme.nameColor,
-              fontFamily: theme.fontFamily,
-              fontStyle: theme.nameFontStyle,
-              fontWeight: theme.nameFontWeight,
-            },
-          ]}
-        >
-          {card.name}
-        </Text>
-        <Text style={[styles.companyLine, themeTextStyle, { color: theme.emailColor }]}>{resolvedCompanyLine}</Text>
-        <Text style={[styles.role, themeTextStyle, { color: theme.roleColor, letterSpacing: theme.roleLetterSpacing }]}>{card.job}</Text>
-        {card.bio ? <Text style={[styles.bio, themeTextStyle, { color: theme.emailColor }]}>{card.bio}</Text> : null}
+        <View style={styles.profileMain}>
+          <View style={styles.avatarWrap}>
+            <View
+              style={[
+                styles.avatarInner,
+                {
+                  borderColor: theme.avatarBorder,
+                  backgroundColor: theme.avatarBg,
+                },
+              ]}
+            >
+              {theme.avatarGradient ? (
+                <LinearGradient colors={theme.avatarGradient as [string, string]} style={StyleSheet.absoluteFill} />
+              ) : null}
+              {avatarImage.showImage && avatarImage.imageUri ? (
+                <Image
+                  key={`${card.avatarUrl}:${avatarImage.retryCount}`}
+                  source={{ uri: avatarImage.imageUri }}
+                  style={styles.avatarImage}
+                  onError={avatarImage.onError}
+                />
+              ) : (
+                <Text style={[styles.avatarText, { color: theme.avatarText }]}>{card.name[0] || 'U'}</Text>
+              )}
+            </View>
+            <AvatarFrameOverlay frame={card.avatarFrame} theme={theme} />
+          </View>
+
+          <Text
+            style={[
+              styles.name,
+              {
+                color: theme.nameColor,
+                fontFamily: 'Inter_600SemiBold',
+                fontSize: resolvedNameMetrics.fontSize,
+                lineHeight: resolvedNameMetrics.lineHeight,
+              },
+            ]}
+          >
+            {card.name}
+          </Text>
+          {resolvedVerified || resolvedVerifiedCompany ? (
+            <View style={styles.companyLineRow}>
+              {resolvedVerifiedLabel ? (
+                <Text style={[styles.companyLine, styles.companyLineInline, { color: theme.emailColor }]}>
+                  {resolvedVerifiedLabel}
+                </Text>
+              ) : null}
+              {resolvedVerified ? (
+                <View style={styles.companyLineIcon}>
+                  <VerificationIcon color={theme.emailColor} />
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={[styles.companyLine, { color: theme.emailColor }]}>{fallbackCompanyLine}</Text>
+          )}
+          <Text style={[styles.role, { color: theme.roleColor, letterSpacing: theme.roleLetterSpacing }]}>{card.job}</Text>
+          {card.bio ? <Text style={[styles.bio, { color: theme.emailColor }]}>{card.bio}</Text> : null}
+        </View>
       </View>
 
       {showScoreBlock ? (
         <View style={[styles.scoreBlock, { backgroundColor: theme.surfaceBg, borderColor: theme.surfaceBorder }]}>
           <View style={styles.scoreHead}>
-            <Text style={[styles.scoreLabel, themeTextStyle, { color: theme.scoreLabelColor }]}>{scoreLabel}</Text>
-            <Text style={[styles.scoreTop, themeTextStyle, { color: theme.scorePercentileColor }]}>{scoreTopLabel}</Text>
+            <Text style={[styles.scoreLabel, { color: theme.scoreLabelColor }]}>{scoreLabel}</Text>
+            <Text style={[styles.scoreTop, { color: theme.scorePercentileColor }]}>{scoreTopLabel}</Text>
           </View>
-          <Text style={[styles.scoreValue, themeTextStyle, { color: theme.scoreValueColor }]}>{scoreValue}</Text>
+          <Text style={[styles.scoreValue, { color: theme.scoreValueColor }]}>{scoreValue}</Text>
           <View style={[styles.scoreTrack, { backgroundColor: theme.scoreBarTrack }]}>
             <View style={[styles.scoreFill, { width: `${boundedFillPercent}%`, backgroundColor: theme.scoreBarFill }]} />
           </View>
@@ -273,7 +324,7 @@ export function ProfileCardSurface({
                 themeGradient={usePrimary ? theme.buttonPrimaryGradient : theme.buttonSecondaryGradient}
                 textColor={usePrimary ? theme.buttonPrimaryText : theme.buttonSecondaryText}
                 borderColor={usePrimary ? theme.buttonPrimaryBorder : theme.buttonSecondaryBorder}
-                fontFamily={theme.fontFamily}
+                fontFamily='Inter_500Medium'
                 onPress={onButtonPress ? () => onButtonPress(button, index) : undefined}
               />
             );
@@ -283,13 +334,13 @@ export function ProfileCardSurface({
 
       <View style={[styles.divider, { backgroundColor: theme.dividerColor }]} />
 
-      <Text style={[styles.hashtag, themeTextStyle, { color: theme.accentColor }]}>{resolvedHashtag}</Text>
+      <Text style={[styles.hashtag, { color: theme.accentColor }]}>{resolvedHashtag}</Text>
 
       {contactLines.length > 0 ? (
         <View style={[styles.aboutCard, { backgroundColor: theme.surfaceBg, borderColor: theme.surfaceBorder }]}>
-          <Text style={[styles.aboutKicker, themeTextStyle, { color: theme.roleColor }]}>{aboutTitle}</Text>
+          <Text style={[styles.aboutKicker, { color: theme.roleColor }]}>{aboutTitle}</Text>
           {contactLines.map((line, index) => (
-            <Text key={`${line}-${index}`} style={[styles.aboutText, themeTextStyle, { color: theme.emailColor }]}>
+            <Text key={`${line}-${index}`} style={[styles.aboutText, { color: theme.emailColor }]}>
               {line}
             </Text>
           ))}
@@ -297,8 +348,8 @@ export function ProfileCardSurface({
       ) : null}
 
       <View style={styles.footLine}>
-        <Text style={[styles.footText, themeTextStyle, { color: theme.footerText }]}>{footerViewsLabel}</Text>
-        <Text style={[styles.footText, themeTextStyle, { color: theme.footerText }]}>{card.showBranding === false ? '' : '• UNQX'}</Text>
+        <Text style={[styles.footText, { color: theme.footerText }]}>{footerViewsLabel}</Text>
+        <Text style={[styles.footText, { color: theme.footerText }]}>{card.showBranding === false ? '' : '• UNQX'}</Text>
       </View>
     </View>
   );
@@ -418,10 +469,26 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
   },
   profileBlock: {
-    alignItems: 'center',
+    width: '100%',
     marginTop: 22,
+    minHeight: 238,
+    position: 'relative',
+  },
+  profileMain: {
+    width: '100%',
+    minHeight: 238,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 72,
   },
   avatarWrap: {
+    width: 128,
+    height: 128,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInner: {
     width: 110,
     height: 110,
     borderRadius: 55,
@@ -448,6 +515,25 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 16,
     fontFamily: 'Inter_500Medium',
+  },
+  companyLineRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  companyLineInline: {
+    marginTop: 0,
+    textAlign: 'center',
+  },
+  companyLineIcon: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   role: {
     marginTop: 8,

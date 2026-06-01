@@ -13,5 +13,5 @@ export default function TabsIndex(): React.JSX.Element {
     return <AuthLoadingScreen tokens={tokens} title='Проверка доступа...' />;
   }
 
-  return <Redirect href={signedIn ? '/(tabs)/home' : '/(tabs)/nfc'} />;
+  return <Redirect href='/(tabs)/home' />;
 }

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/Button';
 import { AuthScaffold } from '@/components/auth/AuthScaffold';
 import { LanguageCode } from '@/constants/messages';
 import { useLanguageContext } from '@/i18n/LanguageProvider';
-import { useThemeContext } from '@/theme/ThemeProvider';
 import { ThemeTokens } from '@/types';
 
 interface LanguagePickerScreenProps {
@@ -16,14 +15,12 @@ interface LanguagePickerScreenProps {
 
 const LANGUAGES: { code: LanguageCode; flag: string; label: string; sublabel: string }[] = [
   { code: 'ru', flag: 'RU', label: 'Русский', sublabel: 'Основной язык интерфейса' },
-  { code: 'uz', flag: 'UZ', label: "O'zbekcha", sublabel: 'Interfeysning asosiy tili' },
+  { code: 'uz', flag: 'UZ', label: 'Узбекский', sublabel: 'Интерфейс на узбекском языке' },
 ];
 
 export function LanguagePickerScreen({ tokens, onComplete }: LanguagePickerScreenProps): React.JSX.Element {
   const { setLanguage } = useLanguageContext();
   const [selected, setSelected] = React.useState<LanguageCode | null>(null);
-  const { theme } = useThemeContext();
-  const isDark = theme === 'dark';
 
   const handleSelect = React.useCallback((code: LanguageCode) => {
     setSelected(code);
@@ -40,9 +37,9 @@ export function LanguagePickerScreen({ tokens, onComplete }: LanguagePickerScree
   return (
     <AuthScaffold
       tokens={tokens}
-      eyebrow='UNQX / Language'
-      title={isDark ? 'Выберите язык интерфейса' : 'Choose your language'}
-      subtitle='Приложение сохранит выбор и синхронизирует тексты onboarding, auth и profile flow.'
+      eyebrow='UNQX / Язык'
+      title='Выберите язык'
+      brandTagline=''
     >
       <View style={styles.cards}>
         {LANGUAGES.map((lang) => {
@@ -83,7 +80,7 @@ export function LanguagePickerScreen({ tokens, onComplete }: LanguagePickerScree
       </View>
 
       <View style={styles.footer}>
-        <Button tokens={tokens} label='Продолжить / Davom etish' onPress={handleContinue} disabled={!selected} size='lg' />
+        <Button tokens={tokens} label='Продолжить' onPress={handleContinue} disabled={!selected} size='lg' />
       </View>
     </AuthScaffold>
   );

@@ -17,7 +17,6 @@ interface WidgetPreviewProps {
 export function WidgetPreview({ card, totalTaps, tokens }: WidgetPreviewProps): React.JSX.Element {
   const today = Math.max(1, Math.round(totalTaps / 10));
   const theme = resolveProfileCardTheme(card.theme);
-  const themeTextStyle = { fontFamily: theme.fontFamily } as const;
 
   const copyInstruction = async () => {
     await Clipboard.setStringAsync('Виджеты добавляются через системное меню iOS/Android. Сделай системный скриншот и передай дизайнеру.');
@@ -45,10 +44,10 @@ export function WidgetPreview({ card, totalTaps, tokens }: WidgetPreviewProps): 
         >
           <LinearGradient colors={theme.cardGradient as [string, string]} style={[StyleSheet.absoluteFill, { borderRadius: Math.max(18, theme.cardRadius - 2) }]} />
           <CardThemeBackdrop theme={theme} rounded={Math.max(18, theme.cardRadius - 2)} />
-          <Text style={[styles.widgetKicker, themeTextStyle, { color: theme.roleColor }]}>ТАПОВ</Text>
-          <Text style={[styles.widgetBig, themeTextStyle, { color: theme.nameColor }]}>{totalTaps}</Text>
-          <Text style={[styles.widgetMeta, themeTextStyle, { color: theme.emailColor }]}>unqx.uz</Text>
-          <Text style={[styles.widgetMeta2, themeTextStyle, { color: theme.mutedColor }]}>Сегодня</Text>
+          <Text style={[styles.widgetKicker, { color: theme.roleColor }]}>ТАПОВ</Text>
+          <Text style={[styles.widgetBig, { color: theme.nameColor }]}>{totalTaps}</Text>
+          <Text style={[styles.widgetMeta, { color: theme.emailColor }]}>unqx.uz</Text>
+          <Text style={[styles.widgetMeta2, { color: theme.mutedColor }]}>Сегодня</Text>
         </View>
 
         <View
@@ -61,10 +60,10 @@ export function WidgetPreview({ card, totalTaps, tokens }: WidgetPreviewProps): 
             },
           ]}
         >
-          <Text style={[styles.widgetKicker, themeTextStyle, { color: theme.roleColor }]}>{card.slug}</Text>
+          <Text style={[styles.widgetKicker, { color: theme.roleColor }]}>{card.slug}</Text>
           <View>
-            <Text style={[styles.widgetBig2, themeTextStyle, { color: theme.scoreValueColor }]}>{today}</Text>
-            <Text style={[styles.widgetMeta, themeTextStyle, { color: theme.emailColor }]}>тапа сегодня</Text>
+            <Text style={[styles.widgetBig2, { color: theme.scoreValueColor }]}>{today}</Text>
+            <Text style={[styles.widgetMeta, { color: theme.emailColor }]}>тапа сегодня</Text>
             <View style={styles.tinyBars}>
               {[4, 7, 3, 9, 6, 8, 5].map((h, i) => (
                 <View
@@ -94,9 +93,9 @@ export function WidgetPreview({ card, totalTaps, tokens }: WidgetPreviewProps): 
         ]}
       >
         <View>
-          <Text style={[styles.widgetKicker, themeTextStyle, { color: theme.roleColor }]}>{`UNQX · ${card.slug}`}</Text>
-          <Text style={[styles.widgetWideBig, themeTextStyle, { color: theme.scoreValueColor }]}>{totalTaps}</Text>
-          <Text style={[styles.widgetMeta, themeTextStyle, { color: theme.emailColor }]}>всего тапов · ↑ +32%</Text>
+          <Text style={[styles.widgetKicker, { color: theme.roleColor }]}>{`UNQX · ${card.slug}`}</Text>
+          <Text style={[styles.widgetWideBig, { color: theme.scoreValueColor }]}>{totalTaps}</Text>
+          <Text style={[styles.widgetMeta, { color: theme.emailColor }]}>всего тапов · ↑ +32%</Text>
         </View>
         <Sparkline data={[8, 14, 9, 18, 22, 16, 20, 13, 24, 19, 28]} color={theme.widgetAccent} width={88} height={40} />
       </View>

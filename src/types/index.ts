@@ -75,7 +75,39 @@ export type ProfileCardTheme =
   | 'golden_noir'
   | 'aurora_codex'
   | 'nebula_glass'
-  | 'velours';
+  | 'velours'
+  | 'graffiti_neon'
+  | 'color_red'
+  | 'color_orange'
+  | 'color_yellow'
+  | 'color_green'
+  | 'color_teal'
+  | 'color_blue'
+  | 'color_purple'
+  | 'color_pink';
+
+export type ProfileCardAvatarFrame =
+  | 'none'
+  | 'chrome_ring'
+  | 'neon_spray'
+  | 'sticker_bubble'
+  | 'chain_link'
+  | 'pixel_glow'
+  | 'starburst'
+  | 'drip_outline'
+  | 'tape_collage'
+  | 'orbit_dots';
+
+export type ProfileCardEmojiBackgroundPack =
+  | 'none'
+  | 'ghosts'
+  | 'stars'
+  | 'lightning'
+  | 'crowns'
+  | 'webs'
+  | 'hearts';
+
+export type ProfileCardPetType = 'kitten' | 'puppy' | 'snake';
 
 export interface CardThemeSpec {
   id: ProfileCardTheme;
@@ -136,7 +168,9 @@ export interface CardThemeSpec {
     | 'midnight_constellation'
     | 'noir_gold_dust'
     | 'codex_corner_lines'
-    | 'velvet_weave';
+    | 'velvet_weave'
+    | 'graffiti_chaos'
+    | 'monochrome_flow';
   buttonShine: boolean;
   footerText: string;
   widgetPrimary: string;
@@ -296,6 +330,115 @@ export interface Resident {
   saved?: boolean;
 }
 
+export interface ViewerCommentComposer {
+  avatarUrl?: string;
+  initials?: string;
+  placeholder?: string;
+}
+
+export interface WallCommentAuthor {
+  id?: string;
+  name: string;
+  wallAuthorLabel?: string;
+  verified?: boolean;
+  profileHref?: string;
+  primarySlug?: string;
+  avatarUrl?: string;
+  initials?: string;
+}
+
+export interface WallComment {
+  id: string;
+  postId?: string;
+  userId?: string;
+  content: string;
+  createdAt?: string;
+  updatedAt?: string;
+  isEdited?: boolean;
+  viewerCanDelete?: boolean;
+  author: WallCommentAuthor;
+}
+
+export interface WallPost {
+  id: string;
+  content: string;
+  createdAt?: string;
+  updatedAt?: string;
+  status?: string;
+  commentsEnabled: boolean;
+  likesCount: number;
+  commentsCount: number;
+  comments: WallComment[];
+  viewerHasLiked: boolean;
+  viewerCanLike: boolean;
+  viewerCanComment?: boolean;
+  viewerCanEdit?: boolean;
+  viewerCanDelete?: boolean;
+  isEdited?: boolean;
+}
+
+export interface WallPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  hasMore: boolean;
+}
+
+export interface WallFeed {
+  enabled: boolean;
+  items: WallPost[];
+  pagination: WallPagination;
+}
+
+export interface FollowListItem {
+  userId?: string;
+  name: string;
+  initials?: string;
+  avatarUrl?: string;
+  primarySlug?: string;
+  role?: string;
+  verified?: boolean;
+  followedAt?: string;
+  isFollowing?: boolean;
+  canFollow?: boolean;
+  requiresAuth?: boolean;
+  isPubliclyReachable?: boolean;
+  profileHref?: string;
+}
+
+export interface FollowSummary {
+  counts: {
+    followers: number;
+    following: number;
+  };
+  viewer: {
+    isFollowing: boolean;
+    canFollow: boolean;
+    requiresAuth: boolean;
+  };
+  unreadFollowersCount?: number;
+  previews: {
+    following: FollowListItem[];
+    followers?: FollowListItem[];
+  };
+}
+
+export interface PublicProfileBadge {
+  label: string;
+  shortLabel?: string;
+  tone?: string;
+  description?: string;
+  periodLabel?: string;
+  rank?: number;
+}
+
+export interface ResidentPausedState {
+  active: boolean;
+  label?: string;
+  message?: string;
+  resumeAt?: string | null;
+}
+
 export interface ResidentProfile {
   name: string;
   slug: string;
@@ -330,11 +473,25 @@ export interface ResidentProfile {
   username?: string;
   verified?: boolean;
   verifiedCompany?: string;
-  theme?: string;
+  theme?: ProfileCardTheme;
+  avatarFrame?: ProfileCardAvatarFrame;
+  emojiBackgroundPack?: ProfileCardEmojiBackgroundPack;
+  pets?: ProfileCardPet[];
+  showBranding?: boolean;
   isPrivate?: boolean;
   isLocked?: boolean;
   lockedMessage?: string;
   privateAccessExpiresAt?: string | null;
+  wall?: WallFeed | null;
+  followSummary?: FollowSummary;
+  viewerCommentComposer?: ViewerCommentComposer | null;
+  topBadge?: PublicProfileBadge | null;
+  officialUnqBadge?: PublicProfileBadge | null;
+  staffBadge?: PublicProfileBadge | null;
+  shareUrl?: string;
+  viewsLabel?: string;
+  paused?: ResidentPausedState | null;
+  trackViaPageRequest?: boolean;
 }
 
 export type SlugLookupStatus = 'available' | 'taken' | 'pending' | 'blocked' | 'invalid_format';
@@ -389,6 +546,47 @@ export interface CardButton {
   url: string;
 }
 
+export interface ProfileCardPet {
+  id: string;
+  petType: ProfileCardPetType;
+  label: string;
+  assetUrl: string;
+  displayName: string;
+  priceSnapshot?: number;
+  isVisible: boolean;
+  createdAt?: string | null;
+}
+
+export interface PetCatalogItem {
+  id: string;
+  petType: ProfileCardPetType;
+  label: string;
+  description?: string;
+  assetUrl: string;
+  price: number;
+  defaultPrice?: number;
+  settingKey?: string;
+}
+
+export interface PetRequest {
+  id: string;
+  type: 'pet';
+  petType: ProfileCardPetType;
+  petLabel: string;
+  displayName: string;
+  priceSnapshot: number;
+  totalOneTime?: number;
+  status: 'pending' | 'approved' | 'rejected' | string;
+  statusBadge?: string;
+  adminNote?: string | null;
+  paymentReference?: string;
+  paymentUrl?: string;
+  createdAt?: string | null;
+  requestedAt?: string | null;
+  reviewedAt?: string | null;
+  purchasedAt?: string | null;
+}
+
 export interface ProfileCard {
   name: string;
   job: string;
@@ -404,7 +602,12 @@ export interface ProfileCard {
   email: string;
   slug: string;
   avatarUrl?: string;
+  verified?: boolean;
+  verifiedCompany?: string;
   theme: ProfileCardTheme;
+  avatarFrame?: ProfileCardAvatarFrame;
+  emojiBackgroundPack?: ProfileCardEmojiBackgroundPack;
+  pets?: ProfileCardPet[];
   buttons: CardButton[];
 }
 
@@ -427,4 +630,137 @@ export interface WristbandOrder {
   bracelet?: boolean;
   statusBadge?: string;
   adminNote?: string | null;
+}
+
+export interface PublicLiveStats {
+  activeCardsTotal: number;
+  todayCreated: number;
+  todayActivated: number;
+  todayTotal: number;
+  todayVisitors: number;
+}
+
+export interface PublicSlugCounter {
+  taken: number;
+  total: number;
+}
+
+export interface PublicHeroSearch {
+  title: string;
+  subtitle: string;
+  placeholder: string;
+  checkLabel: string;
+  primaryActionLabel: string;
+  secondaryActionLabel: string;
+  occupancyLabel?: string;
+  initialSlug?: string;
+}
+
+export interface FeaturedProfile {
+  slug: string;
+  href: string;
+  name: string;
+  avatarUrl?: string;
+  initials?: string;
+}
+
+export interface LatestHomePost {
+  id: string;
+  slug: string;
+  href: string;
+  commentsHref?: string;
+  shareHref?: string;
+  authorName: string;
+  authorSlug: string;
+  authorAvatarUrl?: string;
+  authorInitials?: string;
+  authorVerified?: boolean;
+  content: string;
+  publishedAtLabel: string;
+  likesCount: number;
+  commentsCount: number;
+  viewerHasLiked: boolean;
+  viewerIsFollowing: boolean;
+  loginNext?: string;
+}
+
+export interface LatestCreatedCard {
+  slug: string;
+  href: string;
+  rank?: string;
+  dateLabel?: string;
+  name: string;
+  avatarUrl?: string;
+  initials?: string;
+  role?: string;
+  kind?: string;
+  bio?: string;
+}
+
+export interface WeeklyTopCard {
+  slug: string;
+  href: string;
+  name: string;
+  avatarUrl?: string;
+  initials?: string;
+  rankLabel?: string;
+  viewsLabel?: string;
+  verified?: boolean;
+}
+
+export interface FaqItem {
+  question: string;
+  answer: string;
+}
+
+export interface StickerOffer {
+  eyebrow: string;
+  title: string;
+  description: string;
+  oldPrice?: string;
+  price: string;
+  discountBadge?: string;
+  availabilityLabel?: string;
+  metaLabel?: string;
+  points: string[];
+  note?: string;
+  imageUrl?: string;
+  ctaLabel: string;
+}
+
+export interface FooterLink {
+  label: string;
+  href: string;
+}
+
+export interface PublicFooter {
+  tagline: string;
+  links: FooterLink[];
+  phoneLabel?: string;
+  phoneHref?: string;
+  copyright: string;
+}
+
+export interface OfficialSlugConfig {
+  letters?: string[];
+  notices?: Array<{
+    pattern: string;
+    title?: string;
+    body?: string;
+    tone?: string;
+  }>;
+}
+
+export interface PublicHomePayload {
+  liveStats: PublicLiveStats | null;
+  slugCounter: PublicSlugCounter | null;
+  heroSearch: PublicHeroSearch;
+  featuredProfiles: FeaturedProfile[];
+  latestPosts: LatestHomePost[];
+  latestCreated: LatestCreatedCard[];
+  weeklyTop: WeeklyTopCard[];
+  stickerOffer: StickerOffer | null;
+  faq: FaqItem[];
+  footer: PublicFooter | null;
+  officialConfig: OfficialSlugConfig | null;
 }

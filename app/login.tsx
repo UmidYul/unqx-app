@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Redirect } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
 
 import { AuthScaffold } from '@/components/auth/AuthScaffold';
@@ -18,6 +18,7 @@ export default function LoginPage(): React.JSX.Element {
   const { safePush, safeReplace } = useThrottledNavigation();
   const { tokens } = useThemeContext();
   const { ready, signedIn } = useAuthStatus();
+  const { next } = useLocalSearchParams<{ next?: string | string[] }>();
 
   const [login, setLogin] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -25,6 +26,14 @@ export default function LoginPage(): React.JSX.Element {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [verificationEmail, setVerificationEmail] = React.useState<string>('');
+  const nextHref = React.useMemo(() => {
+    const value = Array.isArray(next) ? next[0] : next;
+    if (typeof value !== 'string') {
+      return '/(tabs)/home';
+    }
+    const trimmed = value.trim();
+    return trimmed.startsWith('/') ? trimmed : '/(tabs)/home';
+  }, [next]);
 
   const submit = React.useCallback(async () => {
     const normalizedLogin = login.trim();
@@ -52,7 +61,7 @@ export default function LoginPage(): React.JSX.Element {
         setVerificationEmail(emailForVerification);
         return;
       }
-      safeReplace('/(tabs)/home');
+      safeReplace(nextHref);
     } catch (e) {
       if (e instanceof AuthSessionError) {
         setError(toUserErrorMessage(e, MESSAGES.auth.loginError));
@@ -62,14 +71,14 @@ export default function LoginPage(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [login, password, safeReplace]);
+  }, [login, nextHref, password, safeReplace]);
 
   if (!ready) {
     return <AuthLoadingScreen tokens={tokens} title={MESSAGES.ui.auth.sessionChecking} />;
   }
 
   if (signedIn) {
-    return <Redirect href='/(tabs)/home' />;
+    return <Redirect href={nextHref} />;
   }
 
   return (
@@ -79,10 +88,10 @@ export default function LoginPage(): React.JSX.Element {
     >
       <AuthScaffold
         tokens={tokens}
-        eyebrow='UNQX / Login'
+        eyebrow='UNQX / Вход'
         title={MESSAGES.ui.auth.loginTitle}
         subtitle={MESSAGES.ui.auth.loginSubtitle}
-        topAction={{ label: 'Назад к NFC', onPress: () => safeReplace('/(tabs)/nfc') }}
+        topAction={{ label: 'Назад', onPress: () => safeReplace('/(tabs)/home') }}
         footer={(
           <View style={styles.footer}>
             <Text style={[styles.footerText, { color: tokens.textMuted }]}>{MESSAGES.ui.auth.loginForgotPassword}</Text>

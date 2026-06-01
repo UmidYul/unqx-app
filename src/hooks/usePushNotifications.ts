@@ -283,7 +283,7 @@ export function usePushNotifications(): {
               return;
             }
             if (data.type === 'order') {
-              safePush('/(tabs)/profile?wristband=1');
+              safePush('/(tabs)/profile');
               return;
             }
             if (data.type === 'elite') {

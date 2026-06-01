@@ -410,6 +410,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 28,
     paddingTop: 8,
+    paddingBottom: 18,
   },
   skipTop: {
     position: 'absolute',
@@ -542,6 +543,7 @@ const styles = StyleSheet.create({
   primaryBtnWrap: {
     marginHorizontal: 24,
     marginTop: 12,
+    alignSelf: 'stretch',
   },
   primaryText: {
     fontSize: 14,

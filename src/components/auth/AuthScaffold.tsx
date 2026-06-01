@@ -13,7 +13,8 @@ interface AuthScaffoldProps {
   tokens: ThemeTokens;
   eyebrow?: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
+  brandTagline?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
   topAction?: {
@@ -24,9 +25,10 @@ interface AuthScaffoldProps {
 
 export function AuthScaffold({
   tokens,
-  eyebrow = 'UNQX / Secure Access',
+  eyebrow = 'UNQX / Доступ',
   title,
   subtitle,
+  brandTagline = 'Цифровая визитка и NFC в одном приложении',
   children,
   footer,
   topAction,
@@ -85,13 +87,13 @@ export function AuthScaffold({
             </View>
             <View style={styles.brandText}>
               <Text style={[styles.brandName, { color: tokens.text }]}>{APP_DISPLAY_NAME}</Text>
-              <Text style={[styles.brandTagline, { color: tokens.textMuted }]}>Digital identity built from the homepage system</Text>
+              {brandTagline ? <Text style={[styles.brandTagline, { color: tokens.textMuted }]}>{brandTagline}</Text> : null}
             </View>
           </View>
 
           <Text style={[styles.eyebrow, { color: tokens.textMuted }]}>{eyebrow}</Text>
           <Text style={[styles.title, { color: tokens.text }]}>{title}</Text>
-          <Text style={[styles.subtitle, { color: tokens.textSub }]}>{subtitle}</Text>
+          {subtitle ? <Text style={[styles.subtitle, { color: tokens.textSub }]}>{subtitle}</Text> : null}
 
           <View style={styles.formSlot}>{children}</View>
         </View>
