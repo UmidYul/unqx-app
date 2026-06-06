@@ -31,7 +31,7 @@ interface BottomNavProps {
 const NAV_CONFIG = [
   { id: 'home', route: '/(tabs)/home', icon: House },
   { id: 'nfc', route: '/(tabs)/nfc', icon: Wifi },
-  { id: 'people', route: '/(tabs)/people', icon: UsersRound },
+  { id: 'people', route: '/(tabs)/people?tab=directory', icon: UsersRound },
   { id: 'analytics', route: '/(tabs)/analytics', icon: BarChart3 },
   { id: 'profile', route: '/(tabs)/profile', icon: UserRound },
 ];

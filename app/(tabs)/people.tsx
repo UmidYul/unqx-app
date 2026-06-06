@@ -40,6 +40,7 @@ import { formatSlug } from '@/utils/avatar';
 import { toast } from '@/utils/toast';
 
 type PeopleTab = 'contacts' | 'directory' | 'leaderboard';
+const DEFAULT_PEOPLE_TAB: PeopleTab = 'directory';
 
 function resolvePersonAvatar(item: any): string | undefined {
   return resolveAssetUrl(
@@ -288,7 +289,7 @@ function PeoplePage(): React.JSX.Element {
   const { isOnline } = useNetworkStatus({ invalidateOnReconnect: false });
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = React.useState<PeopleTab>('contacts');
+  const [activeTab, setActiveTab] = React.useState<PeopleTab>(DEFAULT_PEOPLE_TAB);
 
   const [contactsSearch, setContactsSearch] = React.useState('');
   const [favoritesOnly, setFavoritesOnly] = React.useState(false);
@@ -351,7 +352,9 @@ function PeoplePage(): React.JSX.Element {
     const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
     if (tabParam === 'contacts' || tabParam === 'directory' || tabParam === 'leaderboard') {
       setActiveTab(tabParam);
+      return;
     }
+    setActiveTab(DEFAULT_PEOPLE_TAB);
   }, [params.tab]);
 
   const contactsQuery = useQuery({

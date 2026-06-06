@@ -11,6 +11,7 @@ interface SitePageWebViewProps {
   uri?: string;
   onOpenProfile: (slug: string) => void;
   onOpenHome?: () => void;
+  extraInjectedJavaScript?: string;
 }
 
 const RETARGET_BLANK_INJECTION = `
@@ -38,10 +39,15 @@ export function SitePageWebView({
   uri = API_ORIGIN,
   onOpenProfile,
   onOpenHome,
+  extraInjectedJavaScript,
 }: SitePageWebViewProps): React.JSX.Element {
   const [currentUrl, setCurrentUrl] = React.useState(uri);
   const [loading, setLoading] = React.useState(true);
   const [hasError, setHasError] = React.useState(false);
+  const injectedJavaScript = React.useMemo(
+    () => [RETARGET_BLANK_INJECTION, extraInjectedJavaScript].filter(Boolean).join('\n'),
+    [extraInjectedJavaScript],
+  );
 
   const handleOpenExternal = React.useCallback(async (url: string) => {
     try {
@@ -100,7 +106,7 @@ export function SitePageWebView({
           setHasError(true);
           setLoading(false);
         }}
-        injectedJavaScript={RETARGET_BLANK_INJECTION}
+        injectedJavaScript={injectedJavaScript}
         setSupportMultipleWindows={false}
         startInLoadingState={false}
       />
