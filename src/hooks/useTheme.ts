@@ -102,11 +102,11 @@ export function useTheme(): UseThemeResult {
     }
   }, []);
 
-  const tokens = useMemo(() => (theme === 'dark' ? DARK_TOKENS : LIGHT_TOKENS), [theme]);
-  const design = useMemo(() => resolveAppDesign(theme), [theme]);
+  const tokens = useMemo(() => LIGHT_TOKENS, []);
+  const design = useMemo(() => resolveAppDesign('light'), []);
 
   return {
-    theme,
+    theme: 'light',
     autoTheme,
     tokens,
     design,

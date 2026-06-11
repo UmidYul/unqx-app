@@ -13,7 +13,7 @@ function PeoplePage(): React.JSX.Element {
 
   return (
     <ErrorBoundary>
-      <AppShell title={MESSAGES.ui.screens.people} tokens={tokens}>
+      <AppShell title={MESSAGES.ui.screens.people} tokens={tokens} hideHeader>
         <View style={styles.container}>
           <WebView
             source={{ uri: 'https://unqx.uz/directory' }}

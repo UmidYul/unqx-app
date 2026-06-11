@@ -897,3 +897,35 @@ export function listProfileCardThemes(): CardThemeSpec[] {
 }
 
 export { CARD_THEME_REGISTRY };
+
+function hexLuminance(hex: string): number {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+export function buildNavThemeFromCardSpec(spec: CardThemeSpec): {
+  bg: string;
+  text: string;
+  accent: string;
+  border: string;
+  surface?: string;
+  mutedText?: string;
+  primaryBg?: string;
+  primaryText?: string;
+  isDark?: boolean;
+} {
+  return {
+    bg: spec.cardBg,
+    text: spec.nameColor,
+    accent: spec.accentColor,
+    border: spec.cardBorder,
+    surface: spec.surfaceBg,
+    mutedText: spec.mutedColor,
+    primaryBg: spec.buttonPrimaryBg,
+    primaryText: spec.buttonPrimaryText,
+    isDark: hexLuminance(spec.cardBg) < 0.35,
+  };
+}

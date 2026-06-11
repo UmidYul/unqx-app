@@ -69,7 +69,7 @@ export function SitePageWebView({
     }
 
     const slug = getSiteProfileSlug(absolute);
-    if (slug) {
+    if (slug && slug !== getSiteProfileSlug(currentUrl)) {
       onOpenProfile(slug);
       return false;
     }

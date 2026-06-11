@@ -18,6 +18,7 @@ interface AppShellProps {
   tokens: ThemeTokens;
   children: React.ReactNode;
   allowNotifications?: boolean;
+  hideHeader?: boolean;
   themeOverride?: {
     bg: string;
     text: string;
@@ -39,7 +40,7 @@ interface AppShellProps {
   } | null;
 }
 
-export function AppShell({ title, tokens, children, allowNotifications = true, themeOverride }: AppShellProps): React.JSX.Element {
+export function AppShell({ title, tokens, children, allowNotifications = true, hideHeader = false, themeOverride }: AppShellProps): React.JSX.Element {
   const { theme, design } = useThemeContext();
   const unreadNotifications = useNfcStore((state) => state.unreadNotifications);
   const setUnreadNotifications = useNfcStore((state) => state.setUnreadNotifications);
@@ -85,7 +86,7 @@ export function AppShell({ title, tokens, children, allowNotifications = true, t
       <AppBackdrop themeOverride={themeOverride} />
 
       <View style={[styles.phoneFrame, { backgroundColor: 'transparent' }]}>
-        <View style={styles.topBar}>
+        {!hideHeader && <View style={styles.topBar}>
           <View
             style={[
               styles.topBarShell,
@@ -124,7 +125,7 @@ export function AppShell({ title, tokens, children, allowNotifications = true, t
               </Pressable>
             ) : <View style={styles.notificationPlaceholder} />}
           </View>
-        </View>
+        </View>}
 
         <View style={styles.content}>{children}</View>
 

@@ -3,10 +3,10 @@
     "name": "UNQX",
     "slug": "unqx-app",
     "scheme": "unqxapp",
-    "version": "1.0.32",
+    "version": "1.0.34",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,7 +15,7 @@
     "ios": {
       "bundleIdentifier": "uz.unqx.app",
       "supportsTablet": false,
-      "buildNumber": "32",
+      "buildNumber": "34",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NFCReaderUsageDescription": "UNQX использует NFC для чтения меток других пользователей, записи вашей ссылки unqx.uz/SLUG и проверки состояния тега.",
