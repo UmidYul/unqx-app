@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -58,54 +58,62 @@ export function AuthScaffold({
         </Pressable>
       ) : null}
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: insets.top + 72,
-            paddingBottom: Math.max(32, insets.bottom + 20),
-          },
-        ]}
-        keyboardShouldPersistTaps='handled'
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View
-          style={[
-            styles.panel,
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
             {
-              backgroundColor: design.authSurface.backgroundColor,
-              borderColor: design.authSurface.borderColor,
+              paddingTop: insets.top + 72,
+              paddingBottom: Math.max(32, insets.bottom + 20),
             },
-            resolveShadowStyle(design.authSurface),
           ]}
+          keyboardShouldPersistTaps='handled'
+          showsVerticalScrollIndicator={false}
         >
-          <LinearGradient colors={tokens.panelGradient} style={StyleSheet.absoluteFill} />
+          <View
+            style={[
+              styles.panel,
+              {
+                backgroundColor: design.authSurface.backgroundColor,
+                borderColor: design.authSurface.borderColor,
+              },
+              resolveShadowStyle(design.authSurface),
+            ]}
+          >
+            <LinearGradient colors={tokens.panelGradient} style={StyleSheet.absoluteFill} />
 
-          <View style={styles.brandRow}>
-            <View style={[styles.brandMark, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
-              <Image source={getBrandLogoSource(isDark)} style={styles.brandLogo} resizeMode='contain' />
+            <View style={styles.brandRow}>
+              <View style={[styles.brandMark, { backgroundColor: tokens.surface, borderColor: tokens.border }]}>
+                <Image source={getBrandLogoSource(isDark)} style={styles.brandLogo} resizeMode='contain' />
+              </View>
+              <View style={styles.brandText}>
+                <Text style={[styles.brandName, { color: tokens.text }]}>{APP_DISPLAY_NAME}</Text>
+                {brandTagline ? <Text style={[styles.brandTagline, { color: tokens.textMuted }]}>{brandTagline}</Text> : null}
+              </View>
             </View>
-            <View style={styles.brandText}>
-              <Text style={[styles.brandName, { color: tokens.text }]}>{APP_DISPLAY_NAME}</Text>
-              {brandTagline ? <Text style={[styles.brandTagline, { color: tokens.textMuted }]}>{brandTagline}</Text> : null}
-            </View>
+
+            <Text style={[styles.eyebrow, { color: tokens.textMuted }]}>{eyebrow}</Text>
+            <Text style={[styles.title, { color: tokens.text }]}>{title}</Text>
+            {subtitle ? <Text style={[styles.subtitle, { color: tokens.textSub }]}>{subtitle}</Text> : null}
+
+            <View style={styles.formSlot}>{children}</View>
           </View>
 
-          <Text style={[styles.eyebrow, { color: tokens.textMuted }]}>{eyebrow}</Text>
-          <Text style={[styles.title, { color: tokens.text }]}>{title}</Text>
-          {subtitle ? <Text style={[styles.subtitle, { color: tokens.textSub }]}>{subtitle}</Text> : null}
-
-          <View style={styles.formSlot}>{children}</View>
-        </View>
-
-        {footer ? <View style={styles.footerSlot}>{footer}</View> : null}
-      </ScrollView>
+          {footer ? <View style={styles.footerSlot}>{footer}</View> : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+  },
+  keyboardAvoid: {
     flex: 1,
   },
   scrollContent: {
